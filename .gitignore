@@ -1,0 +1,11 @@
+node_modules/
+# database, WAL files and anything generated at runtime (contains hashed passcodes and emailed passcodes)
+data/
+*.db
+*.db-shm
+*.db-wal
+.env
+.env.*
+*.log
+.dev.vars
+.wrangler/

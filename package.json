@@ -1,0 +1,26 @@
+{
+  "name": "elc-portal-kozhikode",
+  "version": "1.0.0",
+  "description": "Electoral Literacy Clubs portal - Kozhikode district",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "wrangler dev",
+    "demo": "node scripts/demo.js",
+    "admin-password": "node scripts/admin-password.js",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "localdb": "node scripts/localdb.js"
+  },
+  "dependencies": {
+    "postgres": "^3.4.9"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.9",
+    "@electric-sql/pglite-socket": "^0.2.12",
+    "wrangler": "^4.150.0"
+  }
+}
