@@ -200,8 +200,9 @@ route('DELETE', '/api/staff/assignments/:id', STAFF, async ctx => {
 route('GET', '/api/staff/requests', STAFF, async ctx => {
   const s = await scopeOf(ctx);
   const rows = await ctx.db.all(`SELECT r.*,c.name college,c.phone college_phone,tv.name to_village,tv.taluk to_taluk,fv.name from_village,
-      c.lat clat,c.lng clng,tv.lat tlat,tv.lng tlng, a.village_id from_vid
+      c.lat clat,c.lng clng,tv.lat tlat,tv.lng tlng, a.village_id from_vid, hc.name holder, ha.college_id holder_id
       FROM change_requests r JOIN colleges c ON c.id=r.college_id JOIN villages tv ON tv.id=r.to_village_id
+      LEFT JOIN assignments ha ON ha.village_id=r.to_village_id LEFT JOIN colleges hc ON hc.id=ha.college_id
       LEFT JOIN assignments a ON a.id=r.assignment_id LEFT JOIN villages fv ON fv.id=a.village_id
       ORDER BY (r.status='pending') DESC, r.id DESC`);
   return rows.filter(r => !s || s.colleges.has(r.college_id))
@@ -217,7 +218,8 @@ route('POST', '/api/staff/requests/:id/decide', STAFF, async ctx => {
     await assertVillage(ctx, r.to_village_id);
     await ctx.db.tx(async tx => {
       const a = r.assignment_id ? await tx.get('SELECT * FROM assignments WHERE id=?', r.assignment_id) : null;
-      if (await tx.get('SELECT 1 x FROM assignments WHERE village_id=?', r.to_village_id)) throw bad('That village is already allotted (to this or another college), so this request cannot be approved. Reject it or free the village first.');
+      const held = await tx.get('SELECT c.name FROM assignments a JOIN colleges c ON c.id=a.college_id WHERE a.village_id=?', r.to_village_id);
+      if (held) throw bad(`That village is currently allotted to ${held.name}, so this request cannot be approved yet. Free the village under Allotments first, or reject the request.`);
       if (a) {
         if (LOCKED.has(a.ack_status)) throw bad('The current village is already with the officer for acknowledgement');
         await tx.run("UPDATE assignments SET village_id=?,ack_status='none',ack_token=NULL WHERE id=?", r.to_village_id, a.id);

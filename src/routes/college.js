@@ -115,7 +115,6 @@ route('POST', '/api/college/requests', 'college', async ctx => {
   if (!village) throw bad('Choose a village from the list');
   const holder = await db.get('SELECT college_id FROM assignments WHERE village_id=?', to);
   if (holder && holder.college_id === c.id) throw bad('That village is already allotted to you');
-  if (holder) throw bad('Sorry, that village is already taken by another college. Please pick a free one.');
   let aid = null;
   if (b.assignment_id) {
     const a = await db.get('SELECT * FROM assignments WHERE id=? AND college_id=?', Number(b.assignment_id), c.id);

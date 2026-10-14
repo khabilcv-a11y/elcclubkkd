@@ -53,10 +53,10 @@ async function renderHome() {
   ${ANN.length ? html`<section class="section" id="notices"><div class="wrap"><div class="section-head"><div><h2>Announcements</h2><p>Latest updates from the district election office.</p></div></div>
     <div class="grid g2">${ANN.slice(0, 4).map(a => html`<article class="notice rv ${a.pinned ? 'pinned' : ''}"><h3>${a.pinned ? html`${icon('pin')} ` : ''}${a.title}</h3>${a.body ? html`<p>${a.body}</p>` : ''}<div class="when">${fdt(a.created_at)}</div></article>`)}</div></div></section>` : ''}
 
-  <section class="section" id="villagemap"><div class="wrap"><div class="section-head"><div><h2>Where our volunteers are working</h2><p>${t.villages_active} of ${t.villages_total} village offices have field volunteers active, ${t.villages_verified} are certified by their village officer. Select a village to see its progress.</p></div>
+  <section class="section" id="villagemap"><div class="wrap"><div class="section-head"><div><h2>Where our volunteers are working</h2><p>${t.villages_active} of ${t.villages_total} village offices have students present in the field, and ${t.villages_registered} have voters registered. Select a village to see its progress.</p></div>
     <div class="chips" id="mapfilter" role="group" aria-label="Filter villages"></div></div>
     <div class="map-wrap rv"><div id="map" role="application" aria-label="Map of Kozhikode villages with ELC activity"></div><div class="map-side"><label class="f"><span class="sr">Search villages</span><input type="search" id="vq" placeholder="Search a village or college…"></label><div id="vlist" role="list"></div></div></div>
-    <div class="legend"><span><i style="background:#0a9f4c"></i>Certified by officer</span><span><i style="background:#f7861d"></i>Volunteers active</span><span><i style="background:#8b92b0"></i>Allotted</span><span><i style="background:#fff"></i>Not yet allotted</span></div></div></section>
+    <div class="legend"><span><i style="background:#0a9f4c"></i>Voters registered</span><span><i style="background:#f7861d"></i>Students present</span><span><i style="background:#8b92b0"></i>Allotted</span><span><i style="background:#fff"></i>Not yet allotted</span></div></div></section>
 
   <section class="section" id="insights"><div class="wrap"><div class="section-head"><div><h2>Insights</h2><p>What the numbers say about the drive so far.</p></div></div>
     <div class="insights">${insightCards(ins, t)}</div>
@@ -82,8 +82,7 @@ function insightCards(i, t) {
     ${card(i.avg_per_field_day ?? '—', 'Voters per field day', `average across ${n(t.days_done)} field days`)}
     ${card(i.avg_per_volunteer_day ?? '—', 'Voters per volunteer-day', `from ${n(t.vdays_attended)} volunteer-days`)}
     ${card(i.coverage_pct == null ? '—' : i.coverage_pct + '%', 'Village coverage', `${t.villages_active} of ${t.villages_total} villages visited`)}
-    ${card(i.certified_pct == null ? '—' : i.certified_pct + '%', 'Villages certified', `${t.villages_verified} of ${t.villages_allotted} allotted villages signed off`)}
-    ${card(i.officer_verified_pct == null ? '—' : i.officer_verified_pct + '%', 'Officer-verified attendance', 'checked by village officers')}
+    ${card(n(t.colleges_submitted), 'Reports sent for certification', `of ${n(t.colleges)} colleges have sent their consolidated report to the village officer`)}
     ${card(n(i.week.this), 'Enrolled this week', arrow || 'last 7 days')}
     ${i.best_day ? card(n(i.best_day.registered), 'Best single day', fdateLong(i.best_day.date)) : ''}
     ${card(i.progress_pct == null ? '—' : i.progress_pct + '%', 'Programme progress', `${n(t.days_done)} of ${n(t.days_planned)} planned field days done`)}`;
@@ -124,9 +123,9 @@ function paintBoard(podSel, lbSel, limit) {
 
 // ---------- map ----------
 let MAPMARK = new Map(), MAPFILTER = 'all';
-const STATUS_LABEL = { verified: 'Certified', active: 'Volunteers active', allotted: 'Allotted', open: 'Not yet allotted' };
+const STATUS_LABEL = { registered: 'Voters registered', present: 'Students present', allotted: 'Allotted', open: 'Not yet allotted' };
 function wireMap() {
-  show($('#mapfilter'), html`${[['all', 'All'], ['active', 'Active'], ['verified', 'Certified'], ['allotted', 'Allotted'], ['open', 'Open']].map(([k, l]) => html`<button class="chip ${MAPFILTER === k ? 'on' : ''}" data-act="mapf" data-k="${k}" aria-pressed="${MAPFILTER === k}">${l}</button>`)}`);
+  show($('#mapfilter'), html`${[['all', 'All'], ['registered', 'Registered'], ['present', 'Present'], ['allotted', 'Allotted'], ['open', 'Open']].map(([k, l]) => html`<button class="chip ${MAPFILTER === k ? 'on' : ''}" data-act="mapf" data-k="${k}" aria-pressed="${MAPFILTER === k}">${l}</button>`)}`);
   paintVillageList();
   $('#vq')?.addEventListener('input', paintVillageList);
   const el = $('#map'); if (!el) return;
@@ -149,7 +148,7 @@ actions.mapf = el => { MAPFILTER = el.dataset.k; $$('#mapfilter .chip').forEach(
 function paintVillageList() {
   const q = ($('#vq')?.value || '').toLowerCase();
   const vs = BOARD.villages.filter(v => (MAPFILTER === 'all' || v.status === MAPFILTER) && (!q || [v.name, v.college, v.taluk, v.lsgi].some(x => String(x || '').toLowerCase().includes(q))));
-  const dot = s => ({ verified: '#0a9f4c', active: '#f7861d', allotted: '#8b92b0', open: '#d3d8e8' }[s]);
+  const dot = s => ({ registered: '#0a9f4c', present: '#f7861d', allotted: '#8b92b0', open: '#d3d8e8' }[s]);
   show($('#vlist'), vs.length ? html`${vs.slice(0, 120).map(v => html`<div class="vrow" role="listitem" tabindex="0" data-act="flyto" data-id="${v.id}"><span class="dot" style="color:${dot(v.status)}"></span><span class="grow"><b>${v.name}</b><small>${v.college || STATUS_LABEL[v.status]}${v.registered ? ` · ${n(v.registered)} enrolled` : ''}</small></span></div>`)}` : html`<p class="muted small">No villages match.</p>`);
 }
 actions.flyto = el => { const m = MAPMARK.get(Number(el.dataset.id)); if (m && MAP) { MAP.flyTo(m.getLatLng(), 12); m.openPopup(); $('#map').scrollIntoView({ block: 'center', behavior: reduced() ? 'auto' : 'smooth' }); } };
@@ -178,7 +177,7 @@ async function renderBoard() {
   show($('#app'), publicShell(html`<div class="wrap" style="padding-top:26px">
     ${pageHead('Display board', html`Live programme figures for Kozhikode district. Refreshes automatically.`, html`<button class="btn secondary" data-act="tv">${icon('eye')} Full screen</button><a class="btn secondary" href="#/">${icon('home')} Home</a>`, 'Electoral Literacy Clubs')}
     <div class="kpis">${kpi('Voters enrolled', t.registered, { ic: 'user-check', tone: 'green' })}${kpi('People reached', t.addressed, { ic: 'megaphone', tone: 'saffron' })}${kpi('Student volunteers', t.volunteers, { ic: 'users' })}
-      ${kpi('Colleges', t.colleges, { ic: 'building', tone: 'info' })}${kpi('Villages active', `${t.villages_active}/${t.villages_total}`, { ic: 'map-pin', count: false })}${kpi('Villages certified', t.villages_verified, { ic: 'certificate', tone: 'green' })}</div>
+      ${kpi('Colleges', t.colleges, { ic: 'building', tone: 'info' })}${kpi('Villages active', `${t.villages_active}/${t.villages_total}`, { ic: 'map-pin', count: false })}${kpi('Reports sent for certification', t.colleges_submitted, { ic: 'certificate', tone: 'green' })}</div>
     <div class="grid g2" style="margin-top:16px"><div class="card rv"><div class="card-head"><h3>Enrolment by taluk</h3></div><div class="bars" id="taluks"></div></div>
       <div class="card rv"><div class="card-head"><h3>Voters enrolled per field day</h3></div><div id="trend"></div></div></div>
     <div class="insights" style="margin-top:16px">${insightCards(BOARD.insights, t)}</div>

@@ -66,7 +66,7 @@ export async function publicBoard(db) {
   const sm = new Map(sums.map(r => [r.id, r]));
   const villages = villagesRaw.map(v => {
     const t = sm.get(v.id) || { days: 0, present: 0, addressed: 0, registered: 0, verified: 0, marked: 0 };
-    const status = v.ack_status === 'acknowledged' ? 'verified' : t.present > 0 ? 'active' : v.college_id ? 'allotted' : 'open';
+    const status = t.registered > 0 ? 'registered' : t.present > 0 ? 'present' : v.college_id ? 'allotted' : 'open';   // map pins follow the field work, not the certification
     return { id: v.id, name: v.name, taluk: v.taluk || 'Other', lsgi: v.lsgi, lat: v.lat, lng: v.lng, college: v.college || null, status,
       days: t.days, present: t.present, addressed: t.addressed, registered: t.registered };
   });
@@ -74,7 +74,7 @@ export async function publicBoard(db) {
   const tal = new Map();
   for (const v of villages) {
     const t = tal.get(v.taluk) || { taluk: v.taluk, villages: 0, allotted: 0, active: 0, certified: 0, registered: 0, addressed: 0 };
-    t.villages++; if (v.status !== 'open') t.allotted++; if (v.status === 'active' || v.status === 'verified') t.active++; if (v.status === 'verified') t.certified++;
+    t.villages++; if (v.status !== 'open') t.allotted++; if (v.status === 'present' || v.status === 'registered') t.active++; if (v.status === 'registered') t.certified++;
     t.registered += v.registered; t.addressed += v.addressed; tal.set(v.taluk, t);
   }
   const top = (key, filter = () => true) => {
@@ -82,7 +82,7 @@ export async function publicBoard(db) {
     return c && c[key] > 0 ? { id: c.id, name: c.short_name, value: c[key] } : null;
   };
   const awards = { registrations: top('registered'), outreach: top('addressed'), volunteers: top('volunteers'), verified: top('villages_ack'), attendance: top('attendance_pct', c => c.vdays_attended + c.vdays_absent >= 4) };
-  const active = villages.filter(v => v.status === 'active' || v.status === 'verified').length, allotted = villages.filter(v => v.status !== 'open').length, certified = villages.filter(v => v.status === 'verified').length;
+  const active = villages.filter(v => v.status === 'present' || v.status === 'registered').length, allotted = villages.filter(v => v.status !== 'open').length, withRegs = villages.filter(v => v.status === 'registered').length;
   const regIn = (from, to) => trend.filter(t => t.date >= from && t.date <= to).reduce((n, t) => n + t.registered, 0);
   const thisWeek = regIn(addDays(today, -6), today), prevWeek = regIn(addDays(today, -13), addDays(today, -7));
   const attended = sum('vdays_attended'), absent = sum('vdays_absent'), verifiedRows = sums.reduce((n, r) => n + r.verified, 0), markedRows = sums.reduce((n, r) => n + r.marked, 0);
@@ -91,12 +91,13 @@ export async function publicBoard(db) {
     totals: {
       colleges: colleges.length, volunteers: sum('volunteers'), students_enrolled: pool.n, officers: officers.n, days_done: daysDone, days_planned: daysPlanned,
       vdays_attended: attended, addressed: sum('addressed'), registered: sum('registered'), verified_registered: sum('verified_registered'),
-      villages_total: villages.length, villages_active: active, villages_verified: certified, villages_allotted: allotted,
+      villages_total: villages.length, villages_active: active, villages_registered: withRegs, villages_allotted: allotted,
+      colleges_submitted: colleges.filter(c => c.villages_submitted + c.villages_ack > 0).length,
     },
     insights: {
       conversion_pct: pct(sum('registered'), sum('addressed')), attendance_pct: pct(attended, attended + absent), avg_per_field_day: daysDone ? Math.round(sum('registered') / daysDone * 10) / 10 : null,
       avg_per_volunteer_day: attended ? Math.round(sum('registered') / attended * 10) / 10 : null, coverage_pct: pct(active, villages.length), allotted_pct: pct(allotted, villages.length),
-      certified_pct: pct(certified, allotted), officer_verified_pct: pct(verifiedRows, markedRows), progress_pct: pct(daysDone, daysPlanned),
+      progress_pct: pct(daysDone, daysPlanned),
       week: { this: thisWeek, prev: prevWeek, change_pct: prevWeek ? Math.round((thisWeek - prevWeek) * 100 / prevWeek) : null }, best_day: best && best.registered > 0 ? best : null,
     },
     taluks: [...tal.values()].sort((a, b) => b.registered - a.registered),
