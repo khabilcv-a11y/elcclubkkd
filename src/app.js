@@ -1,0 +1,106 @@
+// The portal's request handling: public + sign-in routes, then the college and staff routes. Runs inside the Portal object.
+import { openDb, log } from './lib/db.js';
+import { routes, route, guardCheck, COOKIE, setCookie, sessionUser, issueSession } from './lib/router.js';
+import { HttpError, verifySecret, normPasscode } from './lib/util.js';
+import { publicBoard } from './lib/stats.js';
+import './routes/college.js';
+import './routes/admin.js';
+
+// ---------- public + auth routes ----------
+let boardCache = { at: 0, data: null };
+route('GET', '/api/public/board', null, async ctx => {
+  if (boardCache.data && Date.now() - boardCache.at < 20000) return boardCache.data;     // leaderboard may be up to 20s old
+  boardCache = { at: Date.now(), data: await publicBoard(ctx.db) };
+  return boardCache.data;
+});
+route('GET', '/api/public/colleges', null, ctx => ctx.db.all('SELECT id,name FROM colleges WHERE active=1 ORDER BY name'));
+
+route('POST', '/api/auth/college', null, async ctx => {
+  const id = Number(ctx.body.college_id), key = `c:${ctx.ip}:${id}`;
+  await ctx.throttle(key);
+  const c = await ctx.db.get('SELECT * FROM colleges WHERE id=? AND active=1', id);
+  if (!c || !c.passcode_hash || !(await verifySecret(normPasscode(ctx.body.passcode), c.passcode_hash))) {
+    await log(ctx.db, 'college', c ? c.name : `id:${id}`, null, 'login_failed', 'Wrong passcode or passcode not issued', ctx.ip);
+    throw new HttpError(401, 'That passcode did not work. Check the email your coordinator received.');
+  }
+  await ctx.clearThrottle(key);
+  await ctx.db.run('UPDATE colleges SET last_login_at=? WHERE id=?', new Date().toISOString(), c.id);
+  await log(ctx.db, 'college', c.name, null, 'login', 'College signed in', ctx.ip);
+  await issueSession(ctx, 'college', c, 12);
+  ctx.db.lazy = true;                       // don't make the user wait for the "last login" write
+  return { ok: true };
+});
+route('POST', '/api/auth/college/logout', null, async ctx => {
+  const c = await sessionUser(ctx, 'college');
+  if (c) await log(ctx.db, 'college', c.name, null, 'logout', null, ctx.ip);
+  setCookie(ctx, COOKIE.college, '', 0);
+  return { ok: true };
+});
+
+route('POST', '/api/auth/staff', null, async ctx => {
+  const username = String(ctx.body.username || '').trim().toLowerCase(), key = `s:${ctx.ip}:${username}`;
+  await ctx.throttle(key);
+  const a = await ctx.db.get('SELECT * FROM admins WHERE username=?', username);
+  if (!a || !a.active || !(await verifySecret(String(ctx.body.password || ''), a.pass))) {
+    await log(ctx.db, 'staff', username, a && a.role, 'login_failed', a && !a.active ? 'Deactivated account' : 'Wrong username or password', ctx.ip);
+    throw new HttpError(401, 'Incorrect username or password');
+  }
+  await ctx.clearThrottle(key);
+  await ctx.db.run('UPDATE admins SET last_login_at=? WHERE id=?', new Date().toISOString(), a.id);
+  await log(ctx.db, 'staff', a.username, a.role, 'login', 'Signed in', ctx.ip);
+  await issueSession(ctx, 'staff', a, 8);
+  ctx.db.lazy = true;
+  return { ok: true };
+});
+route('POST', '/api/auth/staff/logout', null, async ctx => {
+  const u = await sessionUser(ctx, 'staff');
+  if (u) await log(ctx.db, 'staff', u.username, u.role, 'logout', null, ctx.ip);
+  setCookie(ctx, COOKIE.staff, '', 0);
+  return { ok: true };
+});
+
+// ---------- one request ----------
+const SEC = { 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'same-origin', 'Cache-Control': 'no-store' };
+
+async function readBody(req) {
+  if (req.method === 'GET' || req.method === 'HEAD') return {};
+  const text = await req.text();
+  if (text.length > 7e6) throw new HttpError(413, 'Request too large');
+  if (!text) return {};
+  try { return JSON.parse(text); } catch { throw new HttpError(400, 'Invalid JSON'); }
+}
+const json = (status, body) => Response.json(body, { status, headers: SEC });
+
+export async function handle(req, env, execCtx, extra) {
+  const url = new URL(req.url);
+  let db, ok = false;
+  try {
+    const r = routes.find(r => r.method === req.method && r.re.test(url.pathname));
+    if (!r) throw new HttpError(404, 'Not found');
+    if (req.method !== 'GET' && !/application\/json/.test(req.headers.get('content-type') || '')) throw new HttpError(415, 'JSON required');
+    const m = url.pathname.match(r.re);
+    db = await openDb(env, execCtx);
+    const ctx = { req, env, db, cookies: [], waitUntil: p => execCtx.waitUntil(p), secure: url.protocol === 'https:', ...extra,
+      params: Object.fromEntries(r.keys.map((k, i) => [k, decodeURIComponent(m[i + 1])])), query: Object.fromEntries(url.searchParams),
+      ip: req.headers.get('cf-connecting-ip') || 'local', body: await readBody(req) };
+    await guardCheck(r.guard, ctx);
+    const out = (await r.handler(ctx)) ?? { ok: true };
+    ok = true;
+    await db.finish(true);                    // save changed rows to the Google Sheet (waits only if real data changed)
+    const headers = new Headers(SEC);
+    for (const c of ctx.cookies) headers.append('Set-Cookie', c);
+    if (out.__raw) {
+      for (const [k, v] of Object.entries(out.headers || {})) headers.set(k, v);
+      return new Response(out.bytes || out.text, { headers });
+    }
+    headers.set('Content-Type', 'application/json; charset=utf-8');
+    return new Response(JSON.stringify(out), { headers });
+  } catch (e) {
+    if (db && !ok) execCtx.waitUntil(db.finish(false).catch(() => {}));   // still record audit rows such as failed sign-ins
+    if (e instanceof HttpError) return json(e.status, { error: e.message, ...e.extra });
+    console.error(e);
+    return json(500, { error: 'Something went wrong on our side' });
+  } finally {
+    if (db) db.close();
+  }
+}

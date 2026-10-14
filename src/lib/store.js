@@ -1,6 +1,6 @@
 // The Google Sheet is the database. This module keeps a fast copy of it:
 //   Google Sheet  <--(Apps Script web app)-->  Worker  --> SQLite (in memory, built from the sheet) --> every query
-// Reads are served from a per-datacentre cached copy and refreshed in the background (stale-while-revalidate).
+// Reads are served from the live copy and refreshed from the sheet in the background (stale-while-revalidate).
 // Writes run against the in-memory copy, then only the changed rows are sent to the sheet under a lock.
 import { TABLES, TABLE_NAMES, ddl, sheetSchema } from './schema.js';
 import { VILLAGES } from './villages.js';
@@ -11,7 +11,6 @@ export const setEngine = s => { SQL = s; };
 export const engine = () => { if (!SQL) throw new Error('SQL engine not initialised'); return SQL; };
 
 const STALE_MS = 8000;                       // refresh from the sheet in the background after this
-const CACHE_KEY = 'https://elc-cache.internal/db-v1';
 
 // ---------- talking to the Apps Script ----------
 export async function callScript(env, payload) {
@@ -49,24 +48,6 @@ export function buildBytes(tables) {
   return bytes;
 }
 
-// ---------- cache ----------
-const cacheReq = () => new Request(CACHE_KEY);
-async function cacheGet() {
-  try {
-    const r = await caches.default.match(cacheReq());
-    if (!r) return null;
-    return { bytes: new Uint8Array(await r.arrayBuffer()), version: Number(r.headers.get('x-version')), stamp: r.headers.get('x-stamp') || '', fetchedAt: Number(r.headers.get('x-fetched')) };
-  } catch { return null; }
-}
-async function cachePut(e) {
-  try { await caches.default.put(cacheReq(), new Response(e.bytes, { headers: { 'x-version': String(e.version), 'x-stamp': String(e.stamp || ''), 'x-fetched': String(e.fetchedAt), 'Cache-Control': 'max-age=86400' } })); } catch {}
-}
-let mem = null;      // fallback when the edge cache isn't available (command-line scripts)
-const hasCache = () => typeof caches !== 'undefined';
-async function cacheVersion() {
-  try { const r = await caches.default.match(cacheReq()); if (!r) return -1; const v = Number(r.headers.get('x-version')); r.body?.cancel(); return v; } catch { return -1; }
-}
-
 async function fetchFresh(env, since) {
   const d = await callScript(env, { action: 'load', since });
   if (d.same) return { same: true, version: d.version, stamp: d.stamp };
@@ -85,38 +66,52 @@ async function fetchFresh(env, since) {
   return { version: d.version, stamp: d.stamp, bytes: buildBytes(d.tables) };
 }
 
-// Returns {bytes, version, fetchedAt}. Never blocks on the sheet unless there is no copy at all.
+// ---------- the working copy ----------
+// One Durable Object owns the live copy, so there is a single writer and no cache races. The copy is kept in memory and
+// saved to the object's own (free) storage so it survives the object being put to sleep. Command-line scripts keep it in memory only.
+let mem = null, backend = null, savedBytes = null;
+export const setBackend = b => { backend = b; };
+async function save(e) {
+  mem = e;
+  if (backend) { await backend.put(e, e.bytes !== savedBytes); savedBytes = e.bytes; }
+}
+async function current() {
+  if (mem) return mem;
+  if (backend) { mem = await backend.get(); savedBytes = mem && mem.bytes; }
+  return mem;
+}
+
+// Returns {bytes, version, stamp, fetchedAt}. Never blocks on the sheet unless there is no copy at all.
 export async function getEntry(env, execCtx) {
-  let e = hasCache() ? await cacheGet() : mem;
+  const e = await current();
   if (!e) {
     const f = await fetchFresh(env);
-    e = { bytes: f.bytes, version: f.version, stamp: f.stamp, fetchedAt: Date.now() };
-    await putEntry(e);
-    return e;
+    const first = { bytes: f.bytes, version: f.version, stamp: f.stamp, fetchedAt: Date.now() };
+    await save(first);
+    return first;
   }
   if (Date.now() - e.fetchedAt > STALE_MS) {
-    const stale = e;
-    const refreshed = { ...stale, fetchedAt: Date.now() };          // claim the refresh so parallel requests don't repeat it
-    mem = refreshed; execCtx.waitUntil(cachePut(refreshed).then(async () => {
+    const claimed = { ...e, fetchedAt: Date.now() };          // claim the refresh so parallel requests don't repeat it
+    mem = claimed;
+    execCtx.waitUntil((async () => {
       try {
-        const f = await fetchFresh(env, stale.stamp);
-        const fresh = f.same ? { ...stale, fetchedAt: Date.now() } : { bytes: f.bytes, version: f.version, stamp: f.stamp, fetchedAt: Date.now() };
-        await putEntry(fresh);
+        const f = await fetchFresh(env, e.stamp);
+        await putEntry(f.same ? { ...e, fetchedAt: Date.now() } : { bytes: f.bytes, version: f.version, stamp: f.stamp, fetchedAt: Date.now() });
       } catch (err) { console.error('background refresh failed', err.message); }
-    }));
-    return refreshed;
+    })());
+    return claimed;
   }
   return e;
 }
 // Never replace a newer copy with an older one.
 export async function putEntry(e) {
-  if (hasCache() && (await cacheVersion()) > e.version) return;
-  mem = e; await cachePut(e);
+  if (mem && mem.version > e.version) return;
+  await save(e);
 }
-// Scheduled keep-warm: make sure a fresh copy exists (so no visitor ever waits for a cold start) and pick up hand-edits.
+// Scheduled keep-warm: check the sheet for changes (also picks up hand-edits) even when nobody is using the site.
 export async function refreshNow(env) {
-  const cur = hasCache() ? await cacheGet() : mem;
-  if (!cur) { await putEntry({ ...(await reloadEntry(env)) }); return 'loaded'; }
+  const cur = await current();
+  if (!cur) { await putEntry(await reloadEntry(env)); return 'loaded'; }
   const f = await fetchFresh(env, cur.stamp);
   if (f.same) { await putEntry({ ...cur, fetchedAt: Date.now() }); return 'unchanged'; }
   await putEntry({ bytes: f.bytes, version: f.version, stamp: f.stamp, fetchedAt: Date.now() });
