@@ -76,7 +76,7 @@ async function pgDashboard(el) {
 // ---------- colleges ----------
 async function pgColleges(el) {
   const list = await api('/api/staff/colleges'); window.__colleges = list;
-  show(el, html`${pageHead('Colleges', `${list.length} Electoral Literacy Club${list.length === 1 ? '' : 's'}.`, html`${isOps() ? html`<button class="btn primary" data-act="addCollege">${icon('plus')} Add college</button>` : ''}<button class="btn secondary" data-act="bulkPass">${icon('key')} Set default for new colleges</button>`, 'Manage')}
+  show(el, html`${pageHead('Colleges', `${list.length} Electoral Literacy Club${list.length === 1 ? '' : 's'}.`, html`${isOps() ? html`<button class="btn primary" data-act="addCollege">${icon('plus')} Add college</button>` : ''}<button class="btn secondary" data-act="bulkPass">${icon('key')} Set default for new colleges</button>${isSuper() ? html`<button class="btn secondary" data-act="resetAll">${icon('refresh')} Reset ALL to default</button>` : ''}`, 'Manage')}
         <div class="card pad0"><div class="filterbar">${searchBox('q', 'Search colleges…')}<label class="f"><span class="sr">Filter</span><select id="cf"><option value="">All colleges</option><option value="nopass">No password yet</option><option value="inactive">Inactive</option></select></label></div>
     ${list.length ? tbl(['College', 'Contact', '#Villages', '#Students', '#Registered', 'Password', ''], list.map(c => html`<tr class="rowq" data-f="${!c.passcode_sent_at ? 'nopass' : ''} ${c.active ? '' : 'inactive'}"><td><b>${c.name}</b>${c.active ? '' : html` ${badge('inactive', 'grey')}`}<div class="small muted">${c.lsgi || ''}${c.address ? ` · ${c.address}` : ''}</div></td>
       <td class="small">${icon('phone')} ${c.phone}<br>${icon('mail')} ${c.email}${c.coordinator ? html`<br>${icon('user')} ${c.coordinator}` : ''}</td><td class="num">${c.stats?.villages ?? 0}</td><td class="num">${c.stats?.volunteers ?? 0}</td><td class="num">${n(c.stats?.registered ?? 0)}</td>
@@ -408,3 +408,5 @@ async function pgOutbox(el) {
 actions.viewMail = el => { const r = window.__outbox.find(x => x.id === Number(el.dataset.id)); modal(html`<h2>${r.subject}</h2><p class="small muted">To ${r.to_addr || '—'} · ${fdt(r.ts)}</p><pre style="white-space:pre-wrap;font-family:inherit;background:var(--bg);padding:14px;border-radius:var(--r-sm);border:1px solid var(--line)">${r.body}</pre><div class="row" style="justify-content:flex-end"><button class="btn secondary" data-act="closeModal">Close</button></div>`, { wide: true }); };
 
 boot();
+
+actions.resetAll = async () => { if (!await confirmBox('Reset EVERY college to the default password? Any password a college set or was given earlier stops working and they are signed out.', 'Reset all', true)) return; const { results } = await api('/api/staff/passcodes/bulk', 'POST', { all: true }); toast(`${results.length} colleges reset to the default password`); refresh(); };

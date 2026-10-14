@@ -100,7 +100,8 @@ route('POST', '/api/staff/colleges/:id/passcode', STAFF, async ctx => {
 });
 route('POST', '/api/staff/passcodes/bulk', STAFF, async ctx => {
   const s = await scopeOf(ctx);
-  const ids = (await ctx.db.all('SELECT id FROM colleges WHERE active=1 AND passcode_sent_at IS NULL')).map(r => r.id).filter(id => !s || s.colleges.has(id));
+  const all = ctx.body.all === true;      // true = reset every active college to the default password
+  const ids = (await ctx.db.all(all ? 'SELECT id FROM colleges WHERE active=1' : 'SELECT id FROM colleges WHERE active=1 AND passcode_sent_at IS NULL')).map(r => r.id).filter(id => !s || s.colleges.has(id));
   const results = [];
   for (const id of ids) results.push(await pushPasscode(ctx, id));
   return { results };
