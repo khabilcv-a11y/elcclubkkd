@@ -3,23 +3,25 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ELC Kozhikode – Electoral Literacy Clubs</title>
-<meta name="description" content="Kozhikode's Electoral Literacy Clubs: youth getting youth onto the voter roll. Live leaderboard and college portal.">
-<meta name="theme-color" content="#140a33">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23c8ff2e'/%3E%3Cpath d='M8 17l5 5 11-12' stroke='%23140a33' stroke-width='4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<title>SWEEP Kozhikode · Electoral Literacy Clubs</title>
+<meta name="description" content="Electoral Literacy Clubs of Kozhikode district: live voter-enrolment progress, village map, leaderboard and college portal.">
+<meta name="theme-color" content="#2b3078">
+<link rel="icon" type="image/webp" href="/img/sweep-dark.webp">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="/style.css">
+<script src="/js/a11y-boot.js"></script>
 </head>
 <body>
-<header class="nav"><div class="wrap">
-  <a class="logo" href="#/"><i>✔</i><span>ELC Kozhikode<small>Electoral Literacy Clubs</small></span></a>
-  <nav class="links" id="navlinks" aria-label="Main"></nav>
-</div></header>
-<main id="app"><div class="loading">Loading…</div></main>
+<a class="skip" href="#main">Skip to main content</a>
+<div id="app"><div class="loading"><div class="spin"></div>Loading…</div></div>
+<script src="/vendor/leaflet/leaflet.js"></script>
 <script src="/js/core.js"></script>
 <script src="/js/home.js"></script>
 <script src="/js/college.js"></script>
+<script src="/js/officer.js"></script>
 <script src="/js/ack.js"></script>
+<script src="/js/boot.js"></script>
 </body>
 </html>
