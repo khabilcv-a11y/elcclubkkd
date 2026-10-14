@@ -81,12 +81,11 @@ async function tDashboard() {
 async function tColleges() {
   const list = await api('/api/staff/colleges');
   show($('#tab'), html`<div class="row between" style="margin-bottom:14px">${searchBox('q', '🔍 Search colleges')}
-    <div class="row">${isOps() ? html`<button class="btn" data-act="addCollege">＋ Add ELC college</button>` : ''}<button class="btn violet" data-act="bulkPass">✉️ Push passcodes to all unsent</button></div></div>
-    ${ME.smtp ? '' : html`<div class="note" style="margin-bottom:14px">📭 Email (SMTP) isn't configured on the server, so passcode emails are saved in the <b>Outbox</b> tab instead of being delivered. See README to switch real email on.</div>`}
+    <div class="row">${isOps() ? html`<button class="btn" data-act="addCollege">＋ Add ELC college</button>` : ''}<button class="btn violet" data-act="bulkPass">🔑 Generate missing passcodes</button></div></div>
     ${list.length ? table(['College', 'Address & contact', 'Coordinator', 'Passcode', 'Last login', '#Registered', ''], list.map(c => html`<tr class="rowq ${c.active ? '' : 'muted'}"><td><b>${c.name}</b>${c.active ? '' : html` <span class="chip grey">inactive</span>`}<div class="small muted">${c.short_name || ''}</div></td>
       <td>${c.address}${c.lsgi ? html`<div class="small muted">${c.lsgi}</div>` : ''}<div class="small">📞 ${c.phone} · ✉️ ${c.email}</div></td><td>${c.coordinator || '—'}</td>
-      <td>${c.passcode_sent_at ? html`<span class="chip ok">sent ${fdt(c.passcode_sent_at)}</span>` : html`<span class="chip warn">not sent</span>`}</td><td>${fdt(c.last_login_at)}</td><td class="num">${n(c.stats?.registered ?? 0)}</td>
-      <td class="act"><div class="row" style="flex-wrap:wrap"><button class="btn sm violet" data-act="pushPass" data-id="${c.id}" title="Generate a new passcode and email it${c.passcode_sent_at ? ' (the old one stops working)' : ''}">🔑 ${c.passcode_sent_at ? 'Reset passcode' : 'Send passcode'}</button><button class="btn sm white" data-act="editCollege" data-id="${c.id}">Edit</button>
+      <td>${c.passcode ? html`<div class="row" style="flex-wrap:nowrap;gap:6px"><code style="font-weight:800;letter-spacing:.06em">${c.passcode}</code><button class="btn sm white" data-act="copyPass" data-id="${c.id}" title="Copy passcode">📋</button><button class="btn sm white" data-act="copyMsg" data-id="${c.id}" title="Copy full login message (for WhatsApp)">💬</button></div>` : c.passcode_sent_at ? html`<span class="chip grey" title="Issued earlier by email; regenerate to see it here">hidden</span>` : html`<span class="chip warn">not generated</span>`}</td><td>${fdt(c.last_login_at)}</td><td class="num">${n(c.stats?.registered ?? 0)}</td>
+      <td class="act"><div class="row" style="flex-wrap:wrap"><button class="btn sm violet" data-act="pushPass" data-id="${c.id}" title="Generate a new passcode${c.passcode_sent_at ? ' (the old one stops working)' : ''}">🔑 ${c.passcode_sent_at ? 'Regenerate' : 'Generate'}</button><button class="btn sm white" data-act="editCollege" data-id="${c.id}">Edit</button>
         ${isOps() ? html`<button class="btn sm white" data-act="toggleCollege" data-id="${c.id}" data-on="${c.active ? 0 : 1}">${c.active ? 'Deactivate' : 'Activate'}</button>` : ''}${isSuper() ? html`<button class="btn sm danger" data-act="delCollege" data-id="${c.id}">🗑</button>` : ''}</div></td></tr>`), 'colleges') : empty('No colleges yet. Add the first ELC college.')}`);
   wireSearch('q', '.rowq'); window.__colleges = list;
 }
@@ -95,7 +94,7 @@ const collegeForm = c => html`<form data-form="college" data-id="${c?.id || ''}"
   <label class="f"><span>Short name (for leaderboard)</span><input type="text" name="short_name" value="${c?.short_name || ''}" maxlength="40"></label></div>
   <label class="f"><span>Address *</span><textarea name="address" required maxlength="300">${c?.address || ''}</textarea></label>
   <div class="formgrid"><label class="f"><span>Contact number *</span><input type="tel" name="phone" value="${c?.phone || ''}" required></label>
-  <label class="f"><span>Email (passcode goes here) *</span><input type="email" name="email" value="${c?.email || ''}" required></label></div>
+  <label class="f"><span>Email *</span><input type="email" name="email" value="${c?.email || ''}" required></label></div>
   <div class="formgrid"><label class="f"><span>ELC coordinator / nodal teacher</span><input type="text" name="coordinator" value="${c?.coordinator || ''}" maxlength="100"></label>
   <label class="f"><span>Located LSGI</span><input type="text" name="lsgi" value="${c?.lsgi || ''}" maxlength="120" placeholder="e.g. Chelannur Grama Panchayath"></label></div>
   <div class="formgrid"><label class="f"><span>Latitude (for distance)</span><input type="text" inputmode="decimal" name="lat" value="${c?.lat ?? ''}" placeholder="11.2588"></label>
@@ -104,8 +103,8 @@ const collegeForm = c => html`<form data-form="college" data-id="${c?.id || ''}"
 actions.addCollege = () => modal(html`<h3>Add ELC college</h3>${collegeForm()}`, { wide: true });
 actions.editCollege = el => modal(html`<h3>Edit college</h3>${collegeForm(window.__colleges.find(c => c.id === Number(el.dataset.id)))}`, { wide: true });
 forms.college = async f => {
-  const id = f.dataset.id; await api(id ? '/api/staff/colleges/' + id : '/api/staff/colleges', id ? 'PUT' : 'POST', fd(f));
-  closeM(f); toast(id ? 'College updated' : 'College added. Now push its passcode 🔑'); refresh();
+  const id = f.dataset.id, r = await api(id ? '/api/staff/colleges/' + id : '/api/staff/colleges', id ? 'PUT' : 'POST', fd(f));
+  closeM(f); toast(id ? 'College updated' : `College added. Passcode: ${r.code} (copy it from the table)`); refresh();
 };
 actions.toggleCollege = async el => {
   const on = el.dataset.on === '1';
@@ -129,22 +128,20 @@ actions.copyCreds = async el => {
 const staffCreds = (name, role, username, pw) => `${SITE}\nStaff login (${ROLE[role] || role})\n\nName: ${name}\nWebsite: ${location.origin}/admin\nUsername: ${String(username).toLowerCase()}\nPassword: ${pw}\n\nPlease change your password after signing in.`;
 const newPassword = () => { const A = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'; let x = ''; for (const b of crypto.getRandomValues(new Uint8Array(12))) x += A[b % A.length]; return x; };
 const collegeCreds = r => `${SITE}\nCollege login\n\nCollege: ${r.college}\nWebsite: ${location.origin}/\nPasscode: ${r.code}\n\nOpen the website, choose your college, tap "College login" and enter the passcode. Keep it private.`;
-function passToast(r) {
-  if (r.code) credsModal(`Passcode for ${r.college}`, collegeCreds(r));
-  if (r.status === 'sent') toast(`Passcode emailed to ${r.email} ✔`);
-  else if (r.status === 'saved') toast(`Passcode saved to Outbox for ${r.college} (SMTP not configured)`);
-  else toast(`Could not email ${r.college}: ${r.error}`, true);
-}
+function passToast(r) { toast(`New passcode for ${r.college}: ${r.code}`); }
+const copyText = async t => { try { await navigator.clipboard.writeText(t); } catch { prompt('Copy this', t); return; } toast('Copied ✔'); };
+actions.copyPass = el => copyText(window.__colleges.find(x => x.id === Number(el.dataset.id)).passcode);
+actions.copyMsg = el => { const c = window.__colleges.find(x => x.id === Number(el.dataset.id)); copyText(collegeCreds({ college: c.name, code: c.passcode })); };
 actions.pushPass = async el => {
   const c = window.__colleges.find(x => x.id === Number(el.dataset.id));
-  if (c.passcode_sent_at && !await confirmBox(`Generate a NEW passcode for ${c.name}? The old one stops working.`, 'Generate & send')) return;
+  if (c.passcode_sent_at && !await confirmBox(`Generate a NEW passcode for ${c.name}? The old one stops working.`, 'Regenerate')) return;
   passToast(await api(`/api/staff/colleges/${c.id}/passcode`, 'POST')); refresh();
 };
 actions.bulkPass = async () => {
-  if (!await confirmBox('Generate and email passcodes to every college that has not received one yet?', 'Push to all')) return;
+  if (!await confirmBox('Generate passcodes for every college that does not have one yet?', 'Generate all')) return;
   const { results } = await api('/api/staff/passcodes/bulk', 'POST');
-  toast(results.length ? `${results.filter(r => r.status !== 'failed').length}/${results.length} passcodes pushed` : 'Everyone already has a passcode'); refresh();
-  if (results.length) credsModal(`${results.length} new passcodes`, results.map(collegeCreds).join('\n\n----------\n\n'));
+  toast(results.length ? `${results.filter(r => r.status !== 'failed').length}/${results.length} passcodes generated` : 'Everyone already has a passcode'); refresh();
+
 };
 
 // ---------- villages ----------
@@ -306,7 +303,7 @@ function staffForm(u) {
     <label class="f"><span>Username *</span><input type="text" name="username" value="${u?.username || ''}" ${u ? 'disabled' : 'required'} autocapitalize="none"></label>
     <label class="f"><span>Email</span><input type="email" name="email" value="${u?.email || ''}"></label>
     <label class="f"><span>Role *</span><select name="role" id="role">${Object.entries(ROLE).map(([k, l]) => html`<option value="${k}" ${u?.role === k ? 'selected' : ''}>${l}</option>`)}</select></label></div>
-    <label class="f"><span>${u ? 'New password (leave blank to keep)' : 'Password * (min 8)'}</span><input type="password" name="password" minlength="8" ${u ? '' : 'required'} autocomplete="new-password"></label>
+    <label class="f"><span>${u ? 'New password (leave blank to keep)' : 'Password * (generated for you; change if you like)'}</span><div class="row" style="flex-wrap:nowrap"><input type="${u ? 'password' : 'text'}" name="password" minlength="8" value="${u ? '' : newPassword()}" ${u ? '' : 'required'} autocomplete="new-password" style="flex:1"><button type="button" class="btn sm white" data-act="genPw" title="Generate another">🔄</button><button type="button" class="btn sm white" data-act="copyPw" title="Copy password">📋</button></div></label>
     ${u ? html`<label class="chk"><input type="checkbox" name="active" ${u.active ? 'checked' : ''}> Account active</label>` : ''}
     <div id="scope"><div class="note">Interns see and manage only these. They can edit details and handle requests/acknowledgements for them, but can't create or delete colleges or villages.</div>
       <div class="formgrid" style="margin-top:10px"><div><b>Colleges</b>${checkList('colleges', window.__cl.map(c => ({ id: c.id, name: c.name })), u?.colleges || [])}</div><div><b>Villages</b>${checkList('villages', window.__vl.map(v => ({ id: v.id, name: `${v.name} (${v.taluk || ''})` })), u?.villages || [])}</div></div></div>${mfoot(u ? 'Save' : 'Create account')}</form>`;
@@ -320,6 +317,8 @@ actions.shareStaff = async el => {
   await api('/api/staff/team/' + u.id, 'PUT', { name: u.name, email: u.email, role: u.role, active: !!u.active, password: pw });
   credsModal(`Login for ${u.name}`, staffCreds(u.name, u.role, u.username, pw)); refresh();
 };
+actions.genPw = el => { const i = $('input[name=password]', el.closest('form')); i.type = 'text'; i.value = newPassword(); };
+actions.copyPw = el => copyText($('input[name=password]', el.closest('form')).value);
 actions.editStaff = el => wireRole(modal(html`<h3>Edit staff</h3>${staffForm(window.__team.find(u => u.id === Number(el.dataset.id)))}`, { wide: true }));
 forms.staff = async f => {
   const id = f.dataset.id, v = fd(f), body = { ...v, active: !id || !!v.active, colleges: $$('input[name=colleges]:checked', f).map(x => Number(x.value)), villages: $$('input[name=villages]:checked', f).map(x => Number(x.value)) };

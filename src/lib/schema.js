@@ -5,7 +5,7 @@ export const TABLES = {
     ['role', 'TEXT', { nn: 1 }], ['pass', 'TEXT', { nn: 1 }], ['active', 'INTEGER', { nn: 1, def: 1 }], ['last_login_at', 'TEXT'], ['created_at', 'TEXT']] },
   colleges: { pk: ['id'], cols: [['id', 'INTEGER'], ['name', 'TEXT', { nn: 1 }], ['short_name', 'TEXT'], ['address', 'TEXT'], ['phone', 'TEXT'], ['email', 'TEXT'], ['coordinator', 'TEXT'],
     ['lat', 'REAL'], ['lng', 'REAL'], ['passcode_hash', 'TEXT'], ['passcode_sent_at', 'TEXT'], ['last_login_at', 'TEXT'], ['active', 'INTEGER', { nn: 1, def: 1 }], ['created_at', 'TEXT'],
-    ['lsgi', 'TEXT']] },
+    ['lsgi', 'TEXT'], ['passcode_plain', 'TEXT']] },
   villages: { pk: ['id'], unique: [['name']], cols: [['id', 'INTEGER'], ['name', 'TEXT', { nn: 1 }], ['taluk', 'TEXT'], ['lat', 'REAL'], ['lng', 'REAL'],
     ['officer_name', 'TEXT'], ['officer_phone', 'TEXT'], ['officer_email', 'TEXT'],
     ['lsgi', 'TEXT'], ['office_address', 'TEXT'], ['office_phone', 'TEXT'], ['officer_id', 'INTEGER', { ref: ['officers', 'SET NULL'] }]] },
