@@ -126,6 +126,8 @@ actions.copyCreds = async el => {
   const t = $('[data-creds]', el.closest('.modal'));
   try { await navigator.clipboard.writeText(t.value); toast('Copied ✔'); } catch { t.select(); document.execCommand('copy'); toast('Copied ✔'); }
 };
+const staffCreds = (name, role, username, pw) => `${SITE}\nStaff login (${ROLE[role] || role})\n\nName: ${name}\nWebsite: ${location.origin}/admin\nUsername: ${String(username).toLowerCase()}\nPassword: ${pw}\n\nPlease change your password after signing in.`;
+const newPassword = () => { const A = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'; let x = ''; for (const b of crypto.getRandomValues(new Uint8Array(12))) x += A[b % A.length]; return x; };
 const collegeCreds = r => `${SITE}\nCollege login\n\nCollege: ${r.college}\nWebsite: ${location.origin}/\nPasscode: ${r.code}\n\nOpen the website, choose your college, tap "College login" and enter the passcode. Keep it private.`;
 function passToast(r) {
   if (r.code) credsModal(`Passcode for ${r.college}`, collegeCreds(r));
@@ -296,7 +298,7 @@ async function tTeam() {
   show($('#tab'), html`<div class="row between" style="margin-bottom:14px"><p class="muted" style="margin:0;max-width:640px"><b>Super admin</b>: everything, including team and logs. <b>Admin</b>: all college, village, allotment, request and report work. <b>Intern</b>: only the colleges and villages you assign to them.</p><button class="btn" data-act="addStaff">＋ Add staff</button></div>
     ${table(['Name', 'Username', 'Role', 'Scope', 'Last sign-in', 'Status', ''], team.map(u => html`<tr><td><b>${u.name}</b><div class="small muted">${u.email || ''}</div></td><td>${u.username}</td><td><span class="chip ${u.role === 'super_admin' ? 'pink' : u.role === 'admin' ? 'violet' : 'warn'}">${ROLE[u.role]}</span></td>
       <td class="small">${u.role === 'intern' ? `${u.colleges.length} colleges · ${u.villages.length} villages` : 'All'}</td><td>${fdt(u.last_login_at)}</td><td>${u.active ? html`<span class="chip ok">active</span>` : html`<span class="chip grey">off</span>`}</td>
-      <td><button class="btn sm white" data-act="editStaff" data-id="${u.id}">Edit</button></td></tr>`))}`);
+      <td><div class="row" style="flex-wrap:wrap"><button class="btn sm white" data-act="editStaff" data-id="${u.id}">Edit</button><button class="btn sm violet" data-act="shareStaff" data-id="${u.id}" title="Set a new password and get a copy-ready login message">🔑 Share login</button></div></td></tr>`))}`);
 }
 const checkList = (name, items, sel) => html`<div style="max-height:190px;overflow:auto;border:2.5px solid var(--ink);border-radius:12px;padding:8px 12px;background:#fff">${items.map(i => html`<label class="chk" style="padding:3px 0"><input type="checkbox" name="${name}" value="${i.id}" ${sel.includes(i.id) ? 'checked' : ''}> ${i.name}</label>`)}</div>`;
 function staffForm(u) {
@@ -311,13 +313,20 @@ function staffForm(u) {
 }
 function wireRole(m) { const r = $('#role', m), sc = $('#scope', m), f = () => sc.classList.toggle('hide', r.value !== 'intern'); r.addEventListener('change', f); f(); }
 actions.addStaff = () => wireRole(modal(html`<h3>Add staff</h3>${staffForm()}`, { wide: true }));
+actions.shareStaff = async el => {
+  const u = window.__team.find(x => x.id === Number(el.dataset.id));
+  if (!await confirmBox(`Set a NEW password for ${u.name}? Their current password stops working and they are signed out.`, 'Reset & show login')) return;
+  const pw = newPassword();
+  await api('/api/staff/team/' + u.id, 'PUT', { name: u.name, email: u.email, role: u.role, active: !!u.active, password: pw });
+  credsModal(`Login for ${u.name}`, staffCreds(u.name, u.role, u.username, pw)); refresh();
+};
 actions.editStaff = el => wireRole(modal(html`<h3>Edit staff</h3>${staffForm(window.__team.find(u => u.id === Number(el.dataset.id)))}`, { wide: true }));
 forms.staff = async f => {
   const id = f.dataset.id, v = fd(f), body = { ...v, active: !id || !!v.active, colleges: $$('input[name=colleges]:checked', f).map(x => Number(x.value)), villages: $$('input[name=villages]:checked', f).map(x => Number(x.value)) };
   const sid = id || (await api('/api/staff/team', 'POST', body)).id;
   if (id || body.role === 'intern') await api('/api/staff/team/' + sid, 'PUT', body);
   closeM(f); toast('Saved ✔'); refresh();
-  if (!id) credsModal(`Login for ${v.name}`, `${SITE}\nStaff login (${ROLE[v.role] || v.role})\n\nName: ${v.name}\nWebsite: ${location.origin}/admin\nUsername: ${String(v.username).toLowerCase()}\nPassword: ${v.password}\n\nPlease change your password after signing in.`);
+  if (!id) credsModal(`Login for ${v.name}`, staffCreds(v.name, v.role, v.username, v.password));
 };
 
 // ---------- activity log ----------
