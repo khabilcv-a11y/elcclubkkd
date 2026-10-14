@@ -84,7 +84,7 @@ async function tColleges() {
     <div class="row">${isOps() ? html`<button class="btn" data-act="addCollege">＋ Add ELC college</button>` : ''}<button class="btn violet" data-act="bulkPass">✉️ Push passcodes to all unsent</button></div></div>
     ${ME.smtp ? '' : html`<div class="note" style="margin-bottom:14px">📭 Email (SMTP) isn't configured on the server, so passcode emails are saved in the <b>Outbox</b> tab instead of being delivered. See README to switch real email on.</div>`}
     ${list.length ? table(['College', 'Address & contact', 'Coordinator', 'Passcode', 'Last login', '#Registered', ''], list.map(c => html`<tr class="rowq ${c.active ? '' : 'muted'}"><td><b>${c.name}</b>${c.active ? '' : html` <span class="chip grey">inactive</span>`}<div class="small muted">${c.short_name || ''}</div></td>
-      <td>${c.address}<div class="small">📞 ${c.phone} · ✉️ ${c.email}</div></td><td>${c.coordinator || '—'}</td>
+      <td>${c.address}${c.lsgi ? html`<div class="small muted">${c.lsgi}</div>` : ''}<div class="small">📞 ${c.phone} · ✉️ ${c.email}</div></td><td>${c.coordinator || '—'}</td>
       <td>${c.passcode_sent_at ? html`<span class="chip ok">sent ${fdt(c.passcode_sent_at)}</span>` : html`<span class="chip warn">not sent</span>`}</td><td>${fdt(c.last_login_at)}</td><td class="num">${n(c.stats?.registered ?? 0)}</td>
       <td><div class="row" style="flex-wrap:nowrap"><button class="btn sm violet" data-act="pushPass" data-id="${c.id}" title="Generate a new passcode and email it">🔑 ${c.passcode_sent_at ? 'Re-send' : 'Push'}</button><button class="btn sm white" data-act="editCollege" data-id="${c.id}">Edit</button>
         ${isOps() ? html`<button class="btn sm white" data-act="toggleCollege" data-id="${c.id}" data-on="${c.active ? 0 : 1}">${c.active ? 'Deactivate' : 'Activate'}</button>` : ''}${isSuper() ? html`<button class="btn sm danger" data-act="delCollege" data-id="${c.id}">🗑</button>` : ''}</div></td></tr>`)) : empty('No colleges yet. Add the first ELC college.')}`);
@@ -96,7 +96,8 @@ const collegeForm = c => html`<form data-form="college" data-id="${c?.id || ''}"
   <label class="f"><span>Address *</span><textarea name="address" required maxlength="300">${c?.address || ''}</textarea></label>
   <div class="formgrid"><label class="f"><span>Contact number *</span><input type="tel" name="phone" value="${c?.phone || ''}" required></label>
   <label class="f"><span>Email (passcode goes here) *</span><input type="email" name="email" value="${c?.email || ''}" required></label></div>
-  <label class="f"><span>ELC coordinator / nodal teacher</span><input type="text" name="coordinator" value="${c?.coordinator || ''}" maxlength="100"></label>
+  <div class="formgrid"><label class="f"><span>ELC coordinator / nodal teacher</span><input type="text" name="coordinator" value="${c?.coordinator || ''}" maxlength="100"></label>
+  <label class="f"><span>Located LSGI</span><input type="text" name="lsgi" value="${c?.lsgi || ''}" maxlength="120" placeholder="e.g. Chelannur Grama Panchayath"></label></div>
   <div class="formgrid"><label class="f"><span>Latitude (for distance)</span><input type="text" inputmode="decimal" name="lat" value="${c?.lat ?? ''}" placeholder="11.2588"></label>
   <label class="f"><span>Longitude</span><input type="text" inputmode="decimal" name="lng" value="${c?.lng ?? ''}" placeholder="75.7804"></label></div>
   <p class="small muted">Tip: right-click the campus on Google Maps and click the coordinates to copy them. Distances shown are straight-line estimates.</p>${mfoot(c ? 'Save changes' : 'Add college')}</form>`;
@@ -136,14 +137,17 @@ async function tVillages() {
   const list = await api('/api/staff/villages');
   window.__villages = list;
   show($('#tab'), html`<div class="row between" style="margin-bottom:14px">${searchBox('q', '🔍 Search villages')}${isOps() ? html`<button class="btn" data-act="addVillage">＋ Add village</button>` : ''}</div>
-    ${list.length ? table(['Village', 'Taluk', 'Village officer', 'Contact', '#Clubs', ''], list.map(v => html`<tr class="rowq"><td><b>${v.name}</b><div class="small muted">${v.lat != null ? `${v.lat}, ${v.lng}` : 'no coordinates'}</div></td><td>${v.taluk || ''}</td>
-      <td>${v.officer_name || html`<span class="muted">not set</span>`}</td><td class="small">${v.officer_phone || ''}<br>${v.officer_email || ''}</td><td class="num">${v.colleges}</td>
+    ${list.length ? table(['Village', 'Taluk / LSGI', 'Village office & officer', 'Contact', '#Clubs', ''], list.map(v => html`<tr class="rowq"><td><b>${v.name}</b><div class="small muted">${v.lat != null ? `${v.lat}, ${v.lng}` : 'no coordinates'}</div></td><td>${v.taluk || ''}<div class="small muted">${v.lsgi || ''}</div></td>
+      <td>${v.office_address ? html`<div class="small">${v.office_address}</div>` : ''}${v.officer_name ? html`<b>${v.officer_name}</b>` : html`<span class="muted small">officer not set</span>`}</td><td class="small">${v.office_phone || ''}${v.officer_phone ? html`<br>${v.officer_phone}` : ''}<br>${v.officer_email || ''}</td><td class="num">${v.colleges}</td>
       <td><div class="row" style="flex-wrap:nowrap"><button class="btn sm white" data-act="editVillage" data-id="${v.id}">Edit</button>${isSuper() ? html`<button class="btn sm danger" data-act="delVillage" data-id="${v.id}">🗑</button>` : ''}</div></td></tr>`)) : empty('No villages in your scope.')}`);
   wireSearch('q', '.rowq');
 }
 const villageForm = v => html`<form data-form="village" data-id="${v?.id || ''}" class="stack"><div class="formgrid">
   <label class="f"><span>Village *</span><input type="text" name="name" value="${v?.name || ''}" required maxlength="80"></label>
   <label class="f"><span>Taluk</span><select name="taluk">${['Kozhikode', 'Koyilandy', 'Vadakara', 'Thamarassery'].map(t => html`<option ${v?.taluk === t ? 'selected' : ''}>${t}</option>`)}</select></label></div>
+  <div class="formgrid"><label class="f"><span>LSGI (Panchayath / Municipality / Corporation)</span><input type="text" name="lsgi" value="${v?.lsgi || ''}" maxlength="120"></label>
+  <label class="f"><span>Village office phone</span><input type="text" name="office_phone" value="${v?.office_phone || ''}" maxlength="80"></label></div>
+  <label class="f"><span>Village office address</span><textarea name="office_address" maxlength="300">${v?.office_address || ''}</textarea></label>
   <div class="formgrid"><label class="f"><span>Latitude</span><input type="text" name="lat" value="${v?.lat ?? ''}"></label><label class="f"><span>Longitude</span><input type="text" name="lng" value="${v?.lng ?? ''}"></label></div>
   <div class="note">Village officer: the acknowledgement link is emailed here when a college submits this village.</div>
   <div class="formgrid"><label class="f"><span>Officer name</span><input type="text" name="officer_name" value="${v?.officer_name || ''}"></label><label class="f"><span>Officer phone</span><input type="tel" name="officer_phone" value="${v?.officer_phone || ''}"></label>
@@ -168,7 +172,7 @@ async function tAllot() {
         <td>${v.allotted ? html`<button class="btn sm danger" data-act="unassignVillage" data-v="${v.id}">Remove</button>` : v.holder ? html`<span class="chip grey">taken</span>` : html`<button class="btn sm" data-act="assign" data-v="${v.id}">＋ Allot</button>`}</td></tr>`)) : empty('No villages in your scope.')}</div></div></div>` : empty('Add a college first.')}</div>
     <div class="row between" style="margin-bottom:10px"><h3 style="font-size:1.4rem;text-transform:uppercase">All allotments</h3>${searchBox('q', '🔍 Filter')}</div>
     ${asg.length ? table(['College', 'College address', 'College contact', 'Village', '#Distance', 'Status', ''], asg.map(a => html`<tr class="rowq"><td><b>${a.college}</b></td><td class="small">${a.college_address}</td><td class="small">📞 ${a.college_phone}<br>✉️ ${a.college_email}${a.coordinator ? html`<br>👤 ${a.coordinator}` : ''}</td>
-      <td><b>${a.village}</b><div class="small muted">${a.taluk || ''}</div></td><td class="num">${km(a.distance_km)}</td><td>${statusChip(a.ack_status)}</td>
+      <td><b>${a.village}</b><div class="small muted">${a.taluk || ''}</div></td><td class="num">${km(a.distance_km)}${a.distance_note ? html`<div class="small muted">${a.distance_note}</div>` : a.distance_road ? html`<div class="small muted">by road</div>` : ''}</td><td>${statusChip(a.ack_status)}</td>
       <td><button class="btn sm danger" data-act="unassign" data-id="${a.id}">Remove</button></td></tr>`)) : empty('Nothing allotted yet.')}`);
   const s = $('#ac'); if (s) s.addEventListener('change', () => { allotCollege = Number(s.value); tAllot(); });
   wireSearch('q', '.rowq');

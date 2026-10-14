@@ -37,8 +37,8 @@ route('GET', '/api/college/overview', 'college', async ctx => {
   const { db, college: c } = ctx;
   const [days, asg, stats, requests, cert] = await Promise.all([
     daysWithVolunteers(db, c.id),
-    db.all(`SELECT a.id,a.village_id,a.ack_status,a.query_note,a.ack_name,a.ack_designation,a.ack_at,a.submitted_at,
-      v.name village_name,v.taluk,v.lat,v.lng,v.officer_name,v.officer_phone,v.officer_email
+    db.all(`SELECT a.id,a.village_id,a.ack_status,a.query_note,a.ack_name,a.ack_designation,a.ack_at,a.submitted_at,a.distance_km road_km,a.distance_note,
+      v.name village_name,v.taluk,v.lat,v.lng,v.officer_name,v.officer_phone,v.officer_email,v.lsgi,v.office_address,v.office_phone
       FROM assignments a JOIN villages v ON v.id=a.village_id WHERE a.college_id=? ORDER BY a.id`, c.id),
     collegeStats(db),
     db.all(`SELECT r.id,r.status,r.reason,r.admin_note,r.created_at,r.decided_at,r.assignment_id,
@@ -47,11 +47,11 @@ route('GET', '/api/college/overview', 'college', async ctx => {
       WHERE r.college_id=? ORDER BY r.id DESC`, c.id),
     db.get('SELECT number,issued_at FROM certificates WHERE college_id=?', c.id)]);
   const assignments = asg.map(a => {
-    const out = { ...a, distance_km: haversine(c.lat, c.lng, a.lat, a.lng), totals: reportFrom(days, a.village_id).totals, locked: LOCKED.has(a.ack_status) };
+    const out = { ...a, distance_km: a.road_km ?? haversine(c.lat, c.lng, a.lat, a.lng), distance_road: a.road_km != null, totals: reportFrom(days, a.village_id).totals, locked: LOCKED.has(a.ack_status) };
     delete out.lat; delete out.lng; return out;
   });
   return {
-    college: { id: c.id, name: c.name, short_name: c.short_name, address: c.address, phone: c.phone, email: c.email, coordinator: c.coordinator },
+    college: { id: c.id, name: c.name, short_name: c.short_name, address: c.address, phone: c.phone, email: c.email, coordinator: c.coordinator, lsgi: c.lsgi },
     stats: stats.find(s => s.id === c.id), assignments, requests, days, today: todayStr(), certificate: cert || null,
     photos_enabled: driveConfigured(ctx.env),
   };

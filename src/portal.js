@@ -26,11 +26,11 @@ export class Portal {
         for (let i = 0; i < m.n; i++) { const p = await st.get('db' + i); if (!p) return null; parts.push(p); len += p.length; }
         const bytes = new Uint8Array(len); let o = 0;
         for (const p of parts) { bytes.set(p, o); o += p.length; }
-        return { bytes, version: m.version, stamp: m.stamp, fetchedAt: m.fetchedAt };
+        return { bytes, version: m.version, stamp: m.stamp, fetchedAt: m.fetchedAt, schema: m.schema };
       },
       async put(e, withBytes) {
         const old = await st.get('meta'), n = Math.ceil(e.bytes.length / CHUNK);
-        const rec = { meta: { n, version: e.version, stamp: e.stamp, fetchedAt: e.fetchedAt } };
+        const rec = { meta: { n, version: e.version, stamp: e.stamp, fetchedAt: e.fetchedAt, schema: e.schema } };
         if (withBytes || !old || old.n !== n) for (let i = 0; i < n; i++) rec['db' + i] = e.bytes.slice(i * CHUNK, (i + 1) * CHUNK);
         await st.put(rec);
         if (old && old.n > n) await st.delete(Array.from({ length: old.n - n }, (_, i) => 'db' + (n + i)));

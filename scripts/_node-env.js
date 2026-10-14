@@ -6,7 +6,7 @@ import { setEngine } from '../src/lib/store.js';
 import { openDb } from '../src/lib/db.js';
 
 export function loadEnv() {
-  const env = { ...process.env };
+  const env = { ...process.env, SKIP_SETUP: '1' };       // scripts assume the sheet is already prepared (run "npm run migrate" after a schema change)
   const f = path.resolve(import.meta.dirname, '..', '.dev.vars');
   if (fs.existsSync(f)) for (const line of fs.readFileSync(f, 'utf8').split(/\r?\n/)) {
     const m = line.match(/^\s*([A-Z_]+)\s*=\s*(.*)$/);

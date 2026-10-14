@@ -40,29 +40,29 @@ function collegeBody(b) {
   const o = {
     name: reqStr(b.name, 'College name', 160), short_name: str(b.short_name, 40), address: reqStr(b.address, 'Address', 300),
     phone: reqStr(b.phone, 'Contact number', 30), email: emailOk(b.email, 'College email'), coordinator: str(b.coordinator, 100),
-    lat: num(b.lat), lng: num(b.lng),
+    lat: num(b.lat), lng: num(b.lng), lsgi: str(b.lsgi, 120),
   };
   if (o.lat != null && (o.lat < 8 || o.lat > 13 || o.lng == null)) throw bad('Latitude/longitude look wrong for Kerala');
   return o;
 }
 route('GET', '/api/staff/colleges', STAFF, async ctx => {
   const s = await scopeOf(ctx);
-  const [stats, rows] = await Promise.all([collegeStats(ctx.db), ctx.db.all('SELECT id,name,short_name,address,phone,email,coordinator,lat,lng,passcode_sent_at,last_login_at,active FROM colleges ORDER BY name')]);
+  const [stats, rows] = await Promise.all([collegeStats(ctx.db), ctx.db.all('SELECT id,name,short_name,address,phone,email,coordinator,lat,lng,lsgi,passcode_sent_at,last_login_at,active FROM colleges ORDER BY name')]);
   const m = new Map(stats.map(c => [c.id, c]));
   return rows.filter(c => !s || s.colleges.has(c.id)).map(c => ({ ...c, stats: m.get(c.id) || null }));
 });
 route('POST', '/api/staff/colleges', OPS, async ctx => {
   const o = collegeBody(ctx.body);
-  const id = await ctx.db.insert('INSERT INTO colleges(name,short_name,address,phone,email,coordinator,lat,lng,created_at) VALUES (?,?,?,?,?,?,?,?,?)',
-    o.name, o.short_name, o.address, o.phone, o.email, o.coordinator, o.lat, o.lng, nowIso());
+  const id = await ctx.db.insert('INSERT INTO colleges(name,short_name,address,phone,email,coordinator,lat,lng,lsgi,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
+    o.name, o.short_name, o.address, o.phone, o.email, o.coordinator, o.lat, o.lng, o.lsgi, nowIso());
   await slog(ctx, 'college_add', o.name);
   return { ok: true, id };
 });
 route('PUT', '/api/staff/colleges/:id', STAFF, async ctx => {
   await assertCollege(ctx, ctx.params.id);
   const o = collegeBody(ctx.body);
-  await ctx.db.run('UPDATE colleges SET name=?,short_name=?,address=?,phone=?,email=?,coordinator=?,lat=?,lng=? WHERE id=?',
-    o.name, o.short_name, o.address, o.phone, o.email, o.coordinator, o.lat, o.lng, Number(ctx.params.id));
+  await ctx.db.run('UPDATE colleges SET name=?,short_name=?,address=?,phone=?,email=?,coordinator=?,lat=?,lng=?,lsgi=? WHERE id=?',
+    o.name, o.short_name, o.address, o.phone, o.email, o.coordinator, o.lat, o.lng, o.lsgi, Number(ctx.params.id));
   await slog(ctx, 'college_edit', o.name);
   return { ok: true };
 });
@@ -117,14 +117,15 @@ route('GET', '/api/staff/villages', STAFF, async ctx => {
 });
 function villageBody(b) {
   const o = { name: reqStr(b.name, 'Village name', 80), taluk: str(b.taluk, 60), lat: num(b.lat), lng: num(b.lng),
-    officer_name: str(b.officer_name, 100), officer_phone: str(b.officer_phone, 30), officer_email: str(b.officer_email, 120).toLowerCase() };
+    officer_name: str(b.officer_name, 100), officer_phone: str(b.officer_phone, 30), officer_email: str(b.officer_email, 120).toLowerCase(),
+    lsgi: str(b.lsgi, 120), office_address: str(b.office_address, 300), office_phone: str(b.office_phone, 80) };
   if (o.officer_email) emailOk(o.officer_email, 'Officer email');
   return o;
 }
 route('POST', '/api/staff/villages', OPS, async ctx => {
   const o = villageBody(ctx.body);
   try {
-    const id = await ctx.db.insert('INSERT INTO villages(name,taluk,lat,lng,officer_name,officer_phone,officer_email) VALUES (?,?,?,?,?,?,?)', o.name, o.taluk, o.lat, o.lng, o.officer_name, o.officer_phone, o.officer_email);
+    const id = await ctx.db.insert('INSERT INTO villages(name,taluk,lat,lng,officer_name,officer_phone,officer_email,lsgi,office_address,office_phone) VALUES (?,?,?,?,?,?,?,?,?,?)', o.name, o.taluk, o.lat, o.lng, o.officer_name, o.officer_phone, o.officer_email, o.lsgi, o.office_address, o.office_phone);
     await slog(ctx, 'village_add', o.name);
     return { ok: true, id };
   } catch (e) { if (isDup(e)) throw bad('A village with that name already exists'); throw e; }
@@ -133,7 +134,7 @@ route('PUT', '/api/staff/villages/:id', STAFF, async ctx => {
   await assertVillage(ctx, ctx.params.id);
   const o = villageBody(ctx.body);
   try {
-    await ctx.db.run('UPDATE villages SET name=?,taluk=?,lat=?,lng=?,officer_name=?,officer_phone=?,officer_email=? WHERE id=?', o.name, o.taluk, o.lat, o.lng, o.officer_name, o.officer_phone, o.officer_email, Number(ctx.params.id));
+    await ctx.db.run('UPDATE villages SET name=?,taluk=?,lat=?,lng=?,officer_name=?,officer_phone=?,officer_email=?,lsgi=?,office_address=?,office_phone=? WHERE id=?', o.name, o.taluk, o.lat, o.lng, o.officer_name, o.officer_phone, o.officer_email, o.lsgi, o.office_address, o.office_phone, Number(ctx.params.id));
   } catch (e) { if (isDup(e)) throw bad('A village with that name already exists'); throw e; }
   await slog(ctx, 'village_edit', o.name);
   return { ok: true };
@@ -151,12 +152,12 @@ route('DELETE', '/api/staff/villages/:id', SUPER, async ctx => {
 // ---------- assignments ----------
 route('GET', '/api/staff/assignments', STAFF, async ctx => {
   const s = await scopeOf(ctx);
-  const rows = await ctx.db.all(`SELECT a.id,a.college_id,a.village_id,a.ack_status,a.created_at,
+  const rows = await ctx.db.all(`SELECT a.id,a.college_id,a.village_id,a.ack_status,a.created_at,a.distance_km road_km,a.distance_note,c.lsgi college_lsgi,v.lsgi village_lsgi,v.office_address,v.office_phone,
       c.name college,c.address college_address,c.phone college_phone,c.email college_email,c.coordinator,c.lat clat,c.lng clng,
       v.name village,v.taluk,v.lat vlat,v.lng vlng
       FROM assignments a JOIN colleges c ON c.id=a.college_id JOIN villages v ON v.id=a.village_id ORDER BY c.name,a.id`);
   return rows.filter(a => !s || (s.colleges.has(a.college_id) && s.villages.has(a.village_id)))
-    .map(a => { const d = haversine(a.clat, a.clng, a.vlat, a.vlng); delete a.clat; delete a.clng; delete a.vlat; delete a.vlng; return { ...a, distance_km: d }; });
+    .map(a => { const d = a.road_km ?? haversine(a.clat, a.clng, a.vlat, a.vlng); delete a.clat; delete a.clng; delete a.vlat; delete a.vlng; return { ...a, distance_km: d, distance_road: a.road_km != null }; });
 });
 route('GET', '/api/staff/colleges/:id/villages', STAFF, async ctx => {
   const id = Number(ctx.params.id);

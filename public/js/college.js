@@ -58,7 +58,8 @@ async function tabVillages() {
   const pendingFor = new Set(COL.requests.filter(r => r.status === 'pending').map(r => r.assignment_id));
   show($('#tab'), html`
     <div class="grid g2">${COL.assignments.length ? COL.assignments.map(a => html`<div class="card vcard"><div class="row between"><h4>🏡 ${a.village_name}</h4>${statusChip(a.ack_status)}</div>
-      <dl class="kv"><dt>Taluk</dt><dd>${a.taluk || '—'}</dd><dt>Distance</dt><dd>${km(a.distance_km)} from campus (approx.)</dd>
+      <dl class="kv"><dt>Taluk</dt><dd>${a.taluk || '—'}</dd><dt>Distance</dt><dd>${km(a.distance_km)} ${a.distance_road ? 'by road' : 'from campus (approx.)'}${a.distance_note ? ` (${a.distance_note})` : ''}</dd>
+        <dt>LSGI</dt><dd>${a.lsgi || '—'}</dd><dt>Village office</dt><dd>${a.office_address || '—'}${a.office_phone ? ` · 📞 ${a.office_phone}` : ''}</dd>
         <dt>Village officer</dt><dd>${a.officer_name || 'Not on record yet'}</dd><dt>Officer contact</dt><dd>${[a.officer_phone, a.officer_email].filter(Boolean).join(' · ') || '—'}</dd>
         <dt>Progress</dt><dd>${a.totals.days} days · ${a.totals.attended} volunteer-days · ${n(a.totals.addressed)} addressed · <b>${n(a.totals.registered)} registered</b></dd></dl>
       ${a.query_note ? html`<div class="note">✏️ Officer feedback: ${a.query_note}</div>` : ''}

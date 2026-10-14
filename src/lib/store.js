@@ -2,7 +2,7 @@
 //   Google Sheet  <--(Apps Script web app)-->  Worker  --> SQLite (in memory, built from the sheet) --> every query
 // Reads are served from the live copy and refreshed from the sheet in the background (stale-while-revalidate).
 // Writes run against the in-memory copy, then only the changed rows are sent to the sheet under a lock.
-import { TABLES, TABLE_NAMES, ddl, sheetSchema } from './schema.js';
+import { TABLES, TABLE_NAMES, ddl, sheetSchema, SCHEMA_VER } from './schema.js';
 import { VILLAGES } from './villages.js';
 import { hashSecret, HttpError } from './util.js';
 
@@ -48,17 +48,22 @@ export function buildBytes(tables) {
   return bytes;
 }
 
-async function fetchFresh(env, since) {
+// seed rows are written with the current table width, so adding columns later never breaks first-run setup
+const pad = (t, row) => row.concat(Array(Math.max(0, TABLES[t].cols.length - row.length)).fill(null));
+
+async function fetchFresh(env, since, prepareSheet) {
+  // a new deployment may have new tables/columns: (re)create the tabs and headings first (safe to repeat; existing data is untouched)
+  if (prepareSheet) await callScript(env, { action: 'setup', schema: sheetSchema() });
   const d = await callScript(env, { action: 'load', since });
   if (d.same) return { same: true, version: d.version, stamp: d.stamp };
   if (!d.init) {                         // brand-new sheet: create tabs, load villages and the first super admin
     await callScript(env, { action: 'setup', schema: sheetSchema() });
     const ops = [];
     const t0 = Date.now() * 1000;
-    VILLAGES.forEach((v, i) => ops.push({ t: 'villages', op: 'i', pk: [t0 + i], row: [t0 + i, v[0], v[1], v[2], v[3], null, null, null] }));
+    VILLAGES.forEach((v, i) => ops.push({ t: 'villages', op: 'i', pk: [t0 + i], row: pad('villages', [t0 + i, v[0], v[1], v[2], v[3]]) }));
     if (env.ADMIN_PASSWORD) {
       const id = t0 + 999;
-      ops.push({ t: 'admins', op: 'i', pk: [id], row: [id, 'superadmin', 'Super Admin', null, 'super_admin', await hashSecret(env.ADMIN_PASSWORD), 1, null, new Date().toISOString()] });
+      ops.push({ t: 'admins', op: 'i', pk: [id], row: pad('admins', [id, 'superadmin', 'Super Admin', null, 'super_admin', await hashSecret(env.ADMIN_PASSWORD), 1, null, new Date().toISOString()]) });
     }
     try { await callScript(env, { action: 'apply', ops }); } catch (e) { if (e.extra?.code !== 'conflict') throw e; }   // another instance seeded first
     return fetchFresh(env, undefined);
@@ -72,23 +77,28 @@ async function fetchFresh(env, since) {
 let mem = null, backend = null, savedBytes = null;
 export const setBackend = b => { backend = b; };
 async function save(e) {
+  e = { ...e, schema: SCHEMA_VER };
   mem = e;
   if (backend) { await backend.put(e, e.bytes !== savedBytes); savedBytes = e.bytes; }
 }
 async function current() {
-  if (mem) return mem;
-  if (backend) { mem = await backend.get(); savedBytes = mem && mem.bytes; }
+  if (!mem && backend) { mem = await backend.get(); savedBytes = mem && mem.bytes; }
+  if (mem && mem.schema !== SCHEMA_VER) { mem = null; savedBytes = null; }      // saved by an older version of the portal: rebuild
   return mem;
 }
+let loading = null;   // only one first-time load at a time, however many requests arrive together
 
 // Returns {bytes, version, stamp, fetchedAt}. Never blocks on the sheet unless there is no copy at all.
 export async function getEntry(env, execCtx) {
   const e = await current();
   if (!e) {
-    const f = await fetchFresh(env);
-    const first = { bytes: f.bytes, version: f.version, stamp: f.stamp, fetchedAt: Date.now() };
-    await save(first);
-    return first;
+    loading ||= (async () => {
+      const f = await fetchFresh(env, undefined, !env.SKIP_SETUP);
+      const first = { bytes: f.bytes, version: f.version, stamp: f.stamp, fetchedAt: Date.now() };
+      await save(first);
+      return first;
+    })().finally(() => { loading = null; });
+    return loading;
   }
   if (Date.now() - e.fetchedAt > STALE_MS) {
     const claimed = { ...e, fetchedAt: Date.now() };          // claim the refresh so parallel requests don't repeat it
