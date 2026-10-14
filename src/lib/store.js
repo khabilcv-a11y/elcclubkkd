@@ -13,7 +13,18 @@ export const engine = () => { if (!SQL) throw new Error('SQL engine not initiali
 const STALE_MS = 8000;                       // refresh from the sheet in the background after this
 
 // ---------- talking to the Apps Script ----------
+// If the sheet's saved table list is older than this version of the portal (e.g. an older deployment set it up last), repair it and retry once.
 export async function callScript(env, payload) {
+  try { return await callScriptOnce(env, payload); }
+  catch (e) {
+    if (payload.action === 'apply' && /Unknown table|Missing tab|Not set up/.test(e.message || '')) {
+      await callScriptOnce(env, { action: 'setup', schema: sheetSchema() });
+      return callScriptOnce(env, payload);
+    }
+    throw e;
+  }
+}
+async function callScriptOnce(env, payload) {
   if (!env.SCRIPT_URL || !env.SCRIPT_SECRET) throw new HttpError(503, 'The Google Sheet database is not connected yet (SCRIPT_URL / SCRIPT_SECRET missing).');
   let r;
   try { r = await fetch(env.SCRIPT_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ secret: env.SCRIPT_SECRET, ...payload }), redirect: 'follow' }); }

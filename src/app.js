@@ -2,6 +2,7 @@
 import { openDb, log } from './lib/db.js';
 import { routes, route, guardCheck, COOKIE, setCookie, sessionUser, issueSession, whoIs } from './lib/router.js';
 import { HttpError, verifySecret, normPasscode } from './lib/util.js';
+import { hashSecret } from './lib/util.js';
 import { publicBoard } from './lib/stats.js';
 import './routes/college.js';
 import './routes/admin.js';
@@ -30,15 +31,26 @@ route('POST', '/api/auth/college', null, async ctx => {
   const id = Number(ctx.body.college_id), key = `c:${ctx.ip}:${id}`;
   await ctx.throttle(key);
   const c = await ctx.db.get('SELECT * FROM colleges WHERE id=? AND active=1', id);
-  if (!c || !c.passcode_hash || !(await verifySecret(normPasscode(ctx.body.passcode), c.passcode_hash))) {
-    await log(ctx.db, 'college', c ? c.name : `id:${id}`, null, 'login_failed', 'Wrong passcode or passcode not issued', ctx.ip);
-    throw new HttpError(401, 'That passcode did not work. Check the email your coordinator received.');
+  const typed = String(ctx.body.passcode || '');
+  if (!c || !c.passcode_hash || !((await verifySecret(typed, c.passcode_hash)) || (await verifySecret(normPasscode(typed), c.passcode_hash)))) {
+    await log(ctx.db, 'college', c ? c.name : `id:${id}`, null, 'login_failed', 'Wrong password or none set', ctx.ip);
+    throw new HttpError(401, 'That password did not work. The starting password is shared by the district office; ask them to reset it if needed.');
   }
   await ctx.clearThrottle(key);
   await ctx.db.run('UPDATE colleges SET last_login_at=? WHERE id=?', new Date().toISOString(), c.id);
   await log(ctx.db, 'college', c.name, null, 'login', 'College signed in', ctx.ip);
   await issueSession(ctx, 'college', c, 12);
   ctx.db.lazy = true;                       // don't make the user wait for the "last login" write
+  return { ok: true };
+});
+route('POST', '/api/college/password', 'college', async ctx => {
+  const cur = String(ctx.body.current || ''), next = String(ctx.body.password || '');
+  if (next.length < 8) throw new HttpError(400, 'Choose a password of at least 8 characters');
+  if (!((await verifySecret(cur, ctx.college.passcode_hash)) || (await verifySecret(normPasscode(cur), ctx.college.passcode_hash)))) throw new HttpError(400, 'Your current password is not correct');
+  const h = await hashSecret(next, 20000);
+  await ctx.db.run('UPDATE colleges SET passcode_hash=?,passcode_plain=NULL,passcode_sent_at=? WHERE id=?', h, new Date().toISOString(), ctx.college.id);
+  await log(ctx.db, 'college', ctx.college.name, null, 'password_change', 'College changed its own password', ctx.ip);
+  await issueSession(ctx, 'college', { ...ctx.college, passcode_hash: h }, 12);
   return { ok: true };
 });
 route('POST', '/api/auth/college/logout', null, async ctx => {

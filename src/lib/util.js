@@ -59,6 +59,7 @@ export function newPasscode() {
   for (const b of crypto.getRandomValues(new Uint8Array(8))) s += ALPHA[b % ALPHA.length];
   return `${s.slice(0, 4)}-${s.slice(4)}`;
 }
+export const DEFAULT_PASSWORD = 'Nk@12345';   // every college starts with this; staff can reset to it, colleges can change their own
 export const normPasscode = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 export const token = (n = 24) => {
   const b = crypto.getRandomValues(new Uint8Array(n));

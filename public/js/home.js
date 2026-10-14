@@ -208,8 +208,8 @@ async function renderLogin(role = 'college') {
     } else {
       const list = await api('/api/public/colleges');
       show($('#lc'), html`<form data-form="loginCollege" class="stack-s"><label class="f"><span>Your college</span><select name="college_id" required><option value="">Select your college…</option>${list.map(c => html`<option value="${c.id}">${c.name}</option>`)}</select></label>
-        <label class="f"><span>Passcode</span><input name="passcode" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="e.g. K7M2-9XQP" required style="letter-spacing:.08em;font-weight:600;text-transform:uppercase"></label><div data-err></div>
-        <button class="btn primary lg" type="submit" style="width:100%">Sign in</button><p class="hint center">The passcode is emailed to your college's registered address by the district office.</p></form>`);
+        <label class="f"><span>Password</span><input name="passcode" type="password" autocomplete="current-password" required></label><div data-err></div>
+        <button class="btn primary lg" type="submit" style="width:100%">Sign in</button><p class="hint center">First time? Use the starting password shared by the district office, then change it from your workspace.</p></form>`);
     }
   } catch (e) { show($('#lc'), html`<div class="alert err">${e.message}</div>`); }
 }

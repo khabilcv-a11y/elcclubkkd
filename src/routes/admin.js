@@ -5,7 +5,7 @@ import { collegeStats } from '../lib/stats.js';
 import { driveConfigured } from '../lib/drive.js';
 import { daysWithVolunteers, reportFrom, LOCKED, villageReport, photoResponse } from './college.js';
 import { studentSummary } from './reports.js';
-import { HttpError, bad, haversine, hashSecret, verifySecret, newPasscode, nowIso, str, reqStr, num, emailOk, csv, isDup } from '../lib/util.js';
+import { HttpError, bad, haversine, hashSecret, verifySecret, DEFAULT_PASSWORD, nowIso, str, reqStr, num, emailOk, csv, isDup } from '../lib/util.js';
 
 const STAFF = 'staff';
 const OPS = ['super_admin', 'admin'];
@@ -90,10 +90,9 @@ route('DELETE', '/api/staff/colleges/:id', SUPER, async ctx => {
 async function pushPasscode(ctx, id) {
   const c = await ctx.db.get('SELECT name FROM colleges WHERE id=?', id);
   if (!c) throw new HttpError(404, 'College not found');
-  const code = newPasscode();
-  await ctx.db.run('UPDATE colleges SET passcode_hash=?,passcode_plain=?,passcode_sent_at=? WHERE id=?', await hashSecret(code.replace('-', ''), 20000), code, nowIso(), id);
-  await slog(ctx, 'passcode_generate', c.name);
-  return { college: c.name, code };
+  await ctx.db.run('UPDATE colleges SET passcode_hash=?,passcode_plain=?,passcode_sent_at=? WHERE id=?', await hashSecret(DEFAULT_PASSWORD, 20000), DEFAULT_PASSWORD, nowIso(), id);
+  await slog(ctx, 'password_reset', c.name);
+  return { college: c.name, code: DEFAULT_PASSWORD };
 }
 route('POST', '/api/staff/colleges/:id/passcode', STAFF, async ctx => {
   await assertCollege(ctx, ctx.params.id);
