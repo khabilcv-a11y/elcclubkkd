@@ -113,6 +113,15 @@ export async function putEntry(e) {
   if (hasCache() && (await cacheVersion()) > e.version) return;
   mem = e; await cachePut(e);
 }
+// Scheduled keep-warm: make sure a fresh copy exists (so no visitor ever waits for a cold start) and pick up hand-edits.
+export async function refreshNow(env) {
+  const cur = hasCache() ? await cacheGet() : mem;
+  if (!cur) { await putEntry({ ...(await reloadEntry(env)) }); return 'loaded'; }
+  const f = await fetchFresh(env, cur.stamp);
+  if (f.same) { await putEntry({ ...cur, fetchedAt: Date.now() }); return 'unchanged'; }
+  await putEntry({ bytes: f.bytes, version: f.version, stamp: f.stamp, fetchedAt: Date.now() });
+  return 'updated';
+}
 // Used after a write that raced with someone else's: take a fresh copy straight from the sheet.
 export async function reloadEntry(env) {
   const f = await fetchFresh(env);

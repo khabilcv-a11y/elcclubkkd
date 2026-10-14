@@ -1,7 +1,7 @@
 import initSqlJs from 'sql.js/dist/sql-wasm.js';
 import wasm from 'sql.js/dist/sql-wasm.wasm';
 import { openDb, log } from './lib/db.js';
-import { setEngine } from './lib/store.js';
+import { setEngine, refreshNow } from './lib/store.js';
 import { routes, route, guardCheck, COOKIE, setCookie, sessionUser, issueSession } from './lib/router.js';
 import { HttpError, verifySecret, normPasscode } from './lib/util.js';
 import { publicBoard } from './lib/stats.js';
@@ -89,6 +89,10 @@ async function readBody(req) {
 const json = (status, body) => Response.json(body, { status, headers: SEC });
 
 export default {
+  async scheduled(event, env, execCtx) {
+    await initEngine();
+    execCtx.waitUntil(refreshNow(env).then(r => console.log('keep-warm:', r)).catch(e => console.error('keep-warm failed', e.message)));
+  },
   async fetch(req, env, execCtx) {
     const url = new URL(req.url);
     if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(req);

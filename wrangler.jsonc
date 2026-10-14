@@ -2,6 +2,7 @@
   "name": "elc-kozhikode",
   "main": "src/index.js",
   "compatibility_date": "2025-09-01",
+  "triggers": { "crons": ["*/5 * * * *"] },
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
