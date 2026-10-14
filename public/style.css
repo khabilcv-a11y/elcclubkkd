@@ -151,6 +151,9 @@ th{background:var(--ink);color:#fff;text-align:left;padding:10px 12px;font-size:
 td{padding:10px 12px;border-top:2px solid #e6e1f7;vertical-align:top}
 tr:hover td{background:#faf8ff}
 td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+table.colleges td{overflow-wrap:anywhere}
+table.colleges th:last-child,table.colleges td.act{position:sticky;right:0;min-width:150px;max-width:190px;box-shadow:-6px 0 8px -6px rgba(20,10,51,.25)}
+table.colleges td.act{background:#fff}table.colleges tr:hover td.act{background:#faf8ff}
 
 /* ---- app shell (college + admin) ---- */
 .app{padding:26px 0 70px}
