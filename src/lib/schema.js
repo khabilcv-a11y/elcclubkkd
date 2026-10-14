@@ -16,7 +16,7 @@ export const TABLES = {
   // a village can be held by only ONE college
   assignments: { pk: ['id'], unique: [['village_id']], cols: [['id', 'INTEGER'], ['college_id', 'INTEGER', { nn: 1, ref: ['colleges', 'CASCADE'] }], ['village_id', 'INTEGER', { nn: 1, ref: ['villages', 'RESTRICT'] }],
     ['ack_status', 'TEXT', { nn: 1, def: "'none'" }], ['ack_token', 'TEXT'], ['submitted_at', 'TEXT'], ['ack_name', 'TEXT'], ['ack_designation', 'TEXT'], ['ack_remarks', 'TEXT'], ['ack_at', 'TEXT'],
-    ['query_note', 'TEXT'], ['created_at', 'TEXT'], ['distance_km', 'REAL'], ['distance_note', 'TEXT']] },
+    ['query_note', 'TEXT'], ['created_at', 'TEXT'], ['distance_km', 'REAL'], ['distance_note', 'TEXT'], ['cert_no', 'TEXT']] },
   change_requests: { pk: ['id'], cols: [['id', 'INTEGER'], ['college_id', 'INTEGER', { nn: 1, ref: ['colleges', 'CASCADE'] }], ['assignment_id', 'INTEGER', { ref: ['assignments', 'SET NULL'] }],
     ['to_village_id', 'INTEGER', { nn: 1, ref: ['villages', 'CASCADE'] }], ['reason', 'TEXT'], ['status', 'TEXT', { nn: 1, def: "'pending'" }], ['admin_note', 'TEXT'], ['decided_by', 'TEXT'],
     ['created_at', 'TEXT'], ['decided_at', 'TEXT']] },

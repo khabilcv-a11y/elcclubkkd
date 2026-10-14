@@ -37,7 +37,7 @@ async function pgHome(el) {
     { done: total > 0 && done === total, t: 'Mark attendance daily', s: total ? `${done} of ${total} village-days recorded` : '', go: 'log' },
     { done: V > 0 && c.assignments.every(a => a.ack_status === 'acknowledged'), t: 'Village officer certifies', s: `${c.assignments.filter(a => a.ack_status === 'acknowledged').length} of ${V} certified`, go: 'villages' }];
   show(el, html`${pageHead(`Welcome, ${c.college.short_name || c.college.name}`, `${V} village${V === 1 ? '' : 's'} allotted. Each needs 2 students on every one of 15 field days.`, html`<a class="btn primary" href="#/me/log">${icon('clipboard')} Open today's log</a>`, 'College workspace')}
-    ${c.certificate ? html`<div class="alert ok" style="margin-bottom:16px">${icon('certificate')}<div><b>Certificate issued.</b> No. ${c.certificate.number} was issued on ${fdt(c.certificate.issued_at)}. Please collect it from the District Election Office.</div></div>` : ''}
+    ${c.assignments.some(a => a.ack_status === 'acknowledged') ? html`<div class="alert ok" style="margin-bottom:16px">${icon('certificate')}<div><b>Student certificates are ready</b> for ${c.assignments.filter(a => a.ack_status === 'acknowledged').map(a => a.village_name).join(', ')}. Open <a href="#/me/villages">My villages</a> to view and print them.</div></div>` : ''}
     ${!V ? html`<div class="alert warn" style="margin-bottom:16px">${icon('clock')}<div><b>No villages allotted yet.</b> The district office will allot your villages soon. You can already add your students.</div></div>` : ''}
     <div class="steps" style="margin-bottom:18px">${steps.map((x, i) => html`<a class="step ${x.done ? 'done' : ''}" href="#/me/${x.go}" style="text-decoration:none;color:inherit"><span class="n">${x.done ? icon('check') : i + 1}</span><div><b>${x.t}</b><small>${x.s}</small></div></a>`)}</div>
     ${past.length || todoToday.length ? html`<div class="alert warn" style="margin-bottom:16px">${icon('alert')}<div><b>${todoToday.length ? `${todoToday.length} village${todoToday.length > 1 ? 's' : ''} to record today. ` : ''}${past.length ? `${past.length} earlier village-day${past.length > 1 ? 's are' : ' is'} missing attendance.` : ''}</b> <a href="#/me/log">Open the daily log</a></div></div>` : ''}
@@ -283,7 +283,7 @@ async function pgVillages(el) {
         <div style="margin:14px 0 6px" class="row between small"><span class="muted">${mk} of 15 days recorded · ${dd.length - unst} of ${dd.length || 15} staffed</span><b>${Math.round(mk * 100 / 15)}%</b></div>${progress(Math.round(mk * 100 / 15), 'green')}
         <div class="small muted" style="margin-top:10px">${n(a.totals.registered)} registered · ${n(a.totals.addressed)} reached</div>
         ${a.query_note ? html`<div class="alert warn" style="margin-top:12px">${icon('alert')}<div><b>Officer asked for a correction:</b> ${a.query_note}</div></div>` : ''}
-        ${a.ack_status === 'acknowledged' ? html`<div class="alert ok" style="margin-top:12px">${icon('certificate')}<div>Certified by <b>${a.ack_name}</b>${a.ack_designation ? `, ${a.ack_designation}` : ''} on ${fdt(a.ack_at)}</div></div>` : ''}
+        ${a.ack_status === 'acknowledged' ? html`<div class="alert ok" style="margin-top:12px">${icon('certificate')}<div>Participation certified by <b>${a.ack_name}</b>${a.ack_designation ? `, ${a.ack_designation}` : ''} on ${fdt(a.ack_at)}. Your students are eligible for certificates.</div></div><div class="row" style="margin-top:10px"><button class="btn green" data-act="collCerts" data-v="${a.village_id}">${icon('certificate')} Student certificates</button></div>` : ''}
         <div class="row" style="margin-top:14px"><button class="btn primary" data-act="submitVillage" data-v="${a.village_id}" ${a.locked || why ? 'disabled' : ''}>${icon('shield')} ${a.ack_status === 'submitted' ? 'Sent to officer' : 'Send for certification'}</button>
           <button class="btn secondary" data-act="reqChange" data-a="${a.id}" ${a.locked || pendingFor.has(a.id) ? 'disabled' : ''}>Request a different village</button></div>
         ${why && !a.locked ? html`<p class="hint">${why}.</p>` : ''}</div>`; })}</div>` : empty('No villages allotted yet', '', 'map-pin')}
@@ -292,13 +292,14 @@ async function pgVillages(el) {
       <td>${r.status === 'pending' ? html`<button class="btn sm danger" data-act="cancelReq" data-id="${r.id}">Withdraw</button>` : ''}</td></tr>`)}</tbody></table></div>` : html`<p class="muted">No requests. If a village is unsuitable, you can ask for another.</p>`}</div>`);
 }
 actions.reqChange = el => {
-  const aid = el.dataset.a, free = (window.__VL || []).filter(v => !v.mine && !v.taken);
+  const aid = el.dataset.a, all = (window.__VL || []).filter(v => !v.mine);
   modal(html`<h2>${aid ? 'Request a different village' : 'Ask for an extra village'}</h2><form data-form="reqChange" class="stack-s">
     ${aid ? html`<input type="hidden" name="assignment_id" value="${aid}"><p>Swapping out <b>${COL.assignments.find(a => String(a.id) === String(aid)).village_name}</b>.</p>` : ''}
-    <label class="f"><span>Preferred village</span><select name="to_village_id" required><option value="">Choose a free village…</option>${free.map(v => html`<option value="${v.id}">${v.name} · ${v.taluk || ''}${v.distance_km != null ? ' · ' + v.distance_km + ' km' : ''}</option>`)}</select><span class="hint">Only villages that no other college holds are listed.</span></label>
+    <label class="f"><span>Preferred village</span><select name="to_village_id" required><option value="">Choose a village…</option>${all.map(v => html`<option value="${v.id}" ${v.taken ? 'disabled' : ''}>${v.name} · ${v.taluk || ''}${v.distance_km != null ? ' · ' + v.distance_km + ' km away' : ''}${v.taken ? ' (held by another college)' : ''}</option>`)}</select><span class="hint">${all.some(v => v.distance_km != null) ? 'All villages, nearest to your college first. Villages already held by another college can\'t be chosen.' : 'All villages. Villages already held by another college can\'t be chosen.'}</span></label>
     <label class="f"><span>Reason</span><textarea name="reason" required maxlength="500" placeholder="e.g. 38 km away, no direct bus for our students"></textarea></label><div data-err></div>
     <div class="row" style="justify-content:flex-end"><button type="button" class="btn secondary" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">Send request</button></div></form>`);
 };
+actions.collCerts = async el => showCertificates(await api('/api/college/certificates/' + el.dataset.v));
 forms.reqChange = async f => { await api('/api/college/requests', 'POST', fd(f)); f.closest('.overlay').close(); toast('Request sent to the district office'); reloadCol(); };
 actions.cancelReq = async el => { await api('/api/college/requests/' + el.dataset.id, 'DELETE'); toast('Request withdrawn'); reloadCol(); };
 actions.submitVillage = async el => {

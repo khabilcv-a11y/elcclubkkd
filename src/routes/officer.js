@@ -1,7 +1,7 @@
 // Village officer panel: see which students are working in the officer's villages, verify attendance, review reports, certify.
 import { route } from '../lib/router.js';
 import { log } from '../lib/db.js';
-import { daysWithVolunteers, reportFrom, photoResponse } from './college.js';
+import { daysWithVolunteers, reportFrom, photoResponse, studentTally, nextCertNo, certData } from './college.js';
 import { HttpError, bad, todayStr, nowIso, str, reqStr, int } from '../lib/util.js';
 
 const olog = (ctx, action, detail) => log(ctx.db, 'officer', ctx.officer.name, null, action, detail, ctx.ip);
@@ -76,11 +76,23 @@ async function ownVillage(ctx, vid) {
 
 route('GET', '/api/officer/village/:id', 'officer', async ctx => {
   const v = await ownVillage(ctx, ctx.params.id);
-  const a = await ctx.db.get('SELECT a.*,c.name college,c.phone college_phone,c.coordinator FROM assignments a JOIN colleges c ON c.id=a.college_id WHERE a.village_id=?', v.id);
-  if (!a) return { village: v, college: null, days: [], totals: { days: 0, attended: 0, absent: 0, addressed: 0, registered: 0 } };
+  const a = await ctx.db.get('SELECT a.*,c.name college,c.address college_address,c.phone college_phone,c.email college_email,c.coordinator,c.lsgi college_lsgi FROM assignments a JOIN colleges c ON c.id=a.college_id WHERE a.village_id=?', v.id);
+  const vil = { id: v.id, name: v.name, taluk: v.taluk, lsgi: v.lsgi, office_address: v.office_address, office_phone: v.office_phone };
+  if (!a) return { village: vil, college: null, days: [], students: [], totals: { days: 0, attended: 0, absent: 0, addressed: 0, registered: 0 } };
   const { days, totals } = reportFrom(await daysWithVolunteers(ctx.db, a.college_id), v.id);
-  return { village: { id: v.id, name: v.name, lsgi: v.lsgi, office_address: v.office_address, office_phone: v.office_phone }, college: a.college, college_phone: a.college_phone, coordinator: a.coordinator,
-    status: a.ack_status, query_note: a.query_note, assignment_id: a.id, totals, days: days.map(d => ({ id: d.id, date: d.date, media: d.media, volunteers: d.volunteers.filter(x => x.name) })) };
+  const dates = days.map(d => d.date).sort(), named = days.flatMap(d => d.volunteers.filter(x => x.name));
+  return { village: vil, college: a.college, college_phone: a.college_phone, college_email: a.college_email, college_address: a.college_address, college_lsgi: a.college_lsgi, coordinator: a.coordinator,
+    distance_km: a.distance_km, status: a.ack_status, query_note: a.query_note, assignment_id: a.id, cert_no: a.cert_no, submitted_at: a.submitted_at, ack_at: a.ack_at, ack_remarks: a.ack_remarks,
+    period: { from: dates[0] || null, to: dates.at(-1) || null }, totals, students: studentTally(days),
+    checks: { confirmed: named.filter(x => x.verified === 'yes').length, disputed: named.filter(x => x.verified === 'no').length, waiting: named.filter(x => x.attended != null && !x.verified).length },
+    days: days.map(d => ({ id: d.id, date: d.date, notes: d.notes, media: d.media, volunteers: d.volunteers.filter(x => x.name) })) };
+});
+
+route('GET', '/api/officer/certificates/:aid', 'officer', async ctx => {
+  const a = await ctx.db.get('SELECT a.village_id FROM assignments a JOIN villages v ON v.id=a.village_id WHERE a.id=? AND v.officer_id=?', Number(ctx.params.aid), ctx.officer.id);
+  const d = a && await certData(ctx.db, Number(ctx.params.aid));
+  if (!d) throw new HttpError(404, 'Certificates are available once you have certified the village');
+  return d;
 });
 
 // the final step: certify the college's data for this village (or send it back for correction)
@@ -98,8 +110,8 @@ route('POST', '/api/officer/certify', 'officer', async ctx => {
   const rows = reportFrom(await daysWithVolunteers(db, a.college_id), a.village_id);
   const disputed = rows.days.flatMap(d => d.volunteers).filter(x => x.verified === 'no').length;
   if (disputed) throw bad(`${disputed} attendance entr${disputed > 1 ? 'ies are' : 'y is'} marked as incorrect. Send the village back for correction instead, or verify them again.`);
-  await db.run("UPDATE assignments SET ack_status='acknowledged',ack_name=?,ack_designation=?,ack_remarks=?,ack_at=?,query_note=NULL WHERE id=?",
-    o.name, str(o.designation, 100) || str(b.designation, 100) || 'Village Officer', str(b.remarks, 500), nowIso(), a.id);
+  await db.run("UPDATE assignments SET ack_status='acknowledged',cert_no=?,ack_name=?,ack_designation=?,ack_remarks=?,ack_at=?,query_note=NULL WHERE id=?",
+    await nextCertNo(db), o.name, str(o.designation, 100) || str(b.designation, 100) || 'Village Officer', str(b.remarks, 500), nowIso(), a.id);
   await olog(ctx, 'certify', `${a.village} / ${a.college}`);
   return { ok: true };
 });

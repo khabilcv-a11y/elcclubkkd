@@ -5,6 +5,7 @@ import { collegeStats } from '../lib/stats.js';
 import { driveConfigured } from '../lib/drive.js';
 import { daysWithVolunteers, reportFrom, LOCKED, villageReport, photoResponse } from './college.js';
 import { studentSummary } from './reports.js';
+import { certData, nextCertNo } from './college.js';
 import { HttpError, bad, haversine, hashSecret, verifySecret, DEFAULT_PASSWORD, nowIso, str, reqStr, num, emailOk, csv, isDup } from '../lib/util.js';
 
 const STAFF = 'staff';
@@ -270,48 +271,36 @@ route('POST', '/api/staff/acks/:id/override', STAFF, async ctx => {
   if (mode === 'acknowledge') {
     if (a.ack_status === 'none') throw bad('The college has not submitted this village yet');
     const name = reqStr(ctx.body.officer_name, 'Officer name', 100);
-    await ctx.db.run("UPDATE assignments SET ack_status='acknowledged',ack_name=?,ack_designation=?,ack_remarks=?,ack_at=? WHERE id=?",
-      name, str(ctx.body.designation, 100), `Recorded by ${ctx.user.username} on behalf of officer. ${str(ctx.body.remarks, 300)}`, nowIso(), a.id);
+    await ctx.db.run("UPDATE assignments SET ack_status='acknowledged',cert_no=COALESCE(cert_no,?),ack_name=?,ack_designation=?,ack_remarks=?,ack_at=? WHERE id=?",
+      await nextCertNo(ctx.db), name, str(ctx.body.designation, 100), `Recorded by ${ctx.user.username} on behalf of officer. ${str(ctx.body.remarks, 300)}`, nowIso(), a.id);
     await slog(ctx, 'ack_on_behalf', `${a.village} / ${a.college} by ${name}`);
   } else if (mode === 'unlock') {
     await ctx.db.run("UPDATE assignments SET ack_status='none',ack_token=NULL,query_note=? WHERE id=?", str(ctx.body.note, 300) || 'Reopened by admin for corrections', a.id);
-    await ctx.db.run('DELETE FROM certificates WHERE college_id=?', a.college_id);
+    await ctx.db.run('UPDATE assignments SET cert_no=NULL WHERE id=?', a.id);
     await slog(ctx, 'ack_unlock', `${a.village} / ${a.college}`);
   } else throw bad('Unknown action');
   return { ok: true };
 });
 
-// ---------- certificates (collector issues) ----------
-const certReady = async db => (await collegeStats(db)).filter(c => c.villages > 0 && c.villages_ack === c.villages && c.vdays_attended > 0);
+// ---------- certificates: a village's students are eligible as soon as its village officer has certified it ----------
 route('GET', '/api/staff/certificates', STAFF, async ctx => {
   const s = await scopeOf(ctx);
-  const issued = new Map((await ctx.db.all('SELECT * FROM certificates')).map(r => [r.college_id, r]));
-  const readyAll = await certReady(ctx.db);
-  const ready = readyAll.filter(c => !s || s.colleges.has(c.id)).map(c => ({ ...c, certificate: issued.get(c.id) || null }));
-  const readyIds = new Set(readyAll.map(r => r.id));
-  const waiting = (await collegeStats(ctx.db)).filter(c => !readyIds.has(c.id) && (!s || s.colleges.has(c.id)))
-    .map(c => ({ id: c.id, name: c.name, villages: c.villages, villages_ack: c.villages_ack, villages_submitted: c.villages_submitted }));
-  return { ready, waiting };
-});
-route('POST', '/api/staff/certificates/:id/issue', SUPER, async ctx => {
-  const id = Number(ctx.params.id);
-  if (!(await certReady(ctx.db)).some(c => c.id === id)) throw bad('Every village must be acknowledged before certificates can be issued');
-  if (await ctx.db.get('SELECT 1 x FROM certificates WHERE college_id=?', id)) throw bad('Already issued');
-  const n = (await ctx.db.get('SELECT COUNT(*) n FROM certificates')).n + 1;
-  const number = `ELC/KKD/${new Date().getFullYear()}/${String(n).padStart(4, '0')}`;
-  await ctx.db.run('INSERT INTO certificates(college_id,number,issued_at,issued_by) VALUES (?,?,?,?)', id, number, nowIso(), ctx.user.username);
-  await slog(ctx, 'certificate_issue', `${number} → college #${id}`);
-  return { ok: true, number };
+  const rows = await ctx.db.all(`SELECT a.id,a.cert_no,a.ack_name,a.ack_designation,a.ack_at,a.college_id,a.village_id,c.name college,v.name village,v.taluk
+    FROM assignments a JOIN colleges c ON c.id=a.college_id JOIN villages v ON v.id=a.village_id WHERE a.ack_status='acknowledged' ORDER BY a.ack_at DESC`);
+  const out = [];
+  for (const r of rows.filter(r => !s || (s.colleges.has(r.college_id) && s.villages.has(r.village_id)))) {
+    const d = await certData(ctx.db, r.id);
+    out.push({ id: r.id, cert_no: r.cert_no, college: r.college, village: r.village, taluk: r.taluk, officer: r.ack_name, designation: r.ack_designation, certified_at: r.ack_at, students: d ? d.students.length : 0 });
+  }
+  return { certified: out };
 });
 route('GET', '/api/staff/certificates/:id', STAFF, async ctx => {
-  const id = Number(ctx.params.id);
-  await assertCollege(ctx, id);
-  const [c, stats, cert, vols, villages] = await Promise.all([
-    ctx.db.get('SELECT id,name,address FROM colleges WHERE id=?', id), collegeStats(ctx.db), ctx.db.get('SELECT * FROM certificates WHERE college_id=?', id),
-    studentSummary(ctx, id),
-    ctx.db.all(`SELECT v.name,v.taluk,a.ack_name,a.ack_designation,a.ack_at FROM assignments a JOIN villages v ON v.id=a.village_id WHERE a.college_id=? ORDER BY v.name`, id)]);
-  if (!c || !cert) throw new HttpError(404, 'No certificate has been issued for this college yet');
-  return { college: c, stats: stats.find(x => x.id === id), certificate: cert, volunteers: vols.map(v => ({ name: v.student, days_attended: v.present, addressed: v.addressed, registered: v.registered })), villages };
+  const a = await ctx.db.get('SELECT college_id,village_id FROM assignments WHERE id=?', Number(ctx.params.id));
+  if (!a) throw new HttpError(404, 'Not found');
+  await assertCollege(ctx, a.college_id); await assertVillage(ctx, a.village_id);
+  const d = await certData(ctx.db, Number(ctx.params.id));
+  if (!d) throw new HttpError(404, 'The village officer has not certified this village yet');
+  return d;
 });
 
 // ---------- logs, outbox, staff ----------

@@ -30,15 +30,46 @@ export function reportFrom(days, villageId) {
   }
   return { days: ds, totals: t };
 }
+// What each student did in one village: only entries the officer has not disputed count.
+export function studentTally(days) {
+  const m = new Map();
+  for (const d of days) for (const v of d.volunteers) {
+    if (!v.name) continue;
+    const key = v.contact || v.name, s = m.get(key) || { name: v.name, contact: v.contact, days_assigned: 0, days_attended: 0, absent: 0, addressed: 0, registered: 0, disputed: 0 };
+    s.days_assigned++;
+    if (v.verified === 'no') s.disputed++;
+    else if (v.attended === 1) { s.days_attended++; s.addressed += v.addressed; s.registered += v.registered; }
+    else if (v.attended === 0) s.absent++;
+    m.set(key, s);
+  }
+  return [...m.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+// Next certificate number, e.g. ELC/KKD/2026/0007 (one per certified village; its students are numbered -01, -02 ...)
+export async function nextCertNo(db) {
+  const used = (await db.all('SELECT cert_no FROM assignments WHERE cert_no IS NOT NULL')).map(r => Number(String(r.cert_no).split('/').pop())).filter(Number.isFinite);
+  return `ELC/KKD/${new Date().getFullYear()}/${String(Math.max(0, ...used) + 1).padStart(4, '0')}`;
+}
+// Everything needed to print the student certificates of one certified village (null until the village officer has certified it).
+export async function certData(db, assignmentId) {
+  const a = await db.get(`SELECT a.*,v.name village,v.taluk,v.lsgi,c.name college,c.address college_address,c.coordinator,c.phone college_phone FROM assignments a JOIN villages v ON v.id=a.village_id JOIN colleges c ON c.id=a.college_id WHERE a.id=?`, Number(assignmentId));
+  if (!a || a.ack_status !== 'acknowledged') return null;
+  const { days, totals } = reportFrom(await daysWithVolunteers(db, a.college_id), a.village_id);
+  const dates = days.map(d => d.date).sort();
+  const certNo = a.cert_no || `ELC/KKD/${new Date(a.ack_at || Date.now()).getFullYear()}/${String(a.id).slice(-4)}`;   // villages certified before numbers existed
+  const students = studentTally(days).filter(s => s.days_attended >= 1).map((s, i) => ({ ...s, no: `${certNo}-${String(i + 1).padStart(2, '0')}` }));
+  return { assignment_id: a.id, college: a.college, college_address: a.college_address, coordinator: a.coordinator, village: a.village, taluk: a.taluk, lsgi: a.lsgi,
+    officer: { name: a.ack_name, designation: a.ack_designation, certified_at: a.ack_at, remarks: a.ack_remarks }, cert_no: certNo,
+    period: { from: dates[0] || null, to: dates.at(-1) || null, days: days.length }, totals, students };
+}
 export async function villageReport(db, collegeId, villageId) { return reportFrom(await daysWithVolunteers(db, collegeId), villageId); }
 
 route('GET', '/api/college/me', 'college', ctx => ({ id: ctx.college.id, name: ctx.college.name }));
 
 route('GET', '/api/college/overview', 'college', async ctx => {
   const { db, college: c } = ctx;
-  const [days, asg, stats, requests, cert, pool] = await Promise.all([
+  const [days, asg, stats, requests, pool] = await Promise.all([
     daysWithVolunteers(db, c.id),
-    db.all(`SELECT a.id,a.village_id,a.ack_status,a.query_note,a.ack_name,a.ack_designation,a.ack_at,a.submitted_at,a.distance_km road_km,a.distance_note,
+    db.all(`SELECT a.id,a.village_id,a.cert_no,a.ack_status,a.query_note,a.ack_name,a.ack_designation,a.ack_at,a.submitted_at,a.distance_km road_km,a.distance_note,
       v.name village_name,v.taluk,v.lat,v.lng,v.officer_name,v.officer_phone,v.officer_email,v.lsgi,v.office_address,v.office_phone
       FROM assignments a JOIN villages v ON v.id=a.village_id WHERE a.college_id=? ORDER BY a.id`, c.id),
     collegeStats(db),
@@ -46,7 +77,6 @@ route('GET', '/api/college/overview', 'college', async ctx => {
       tv.name to_village, fv.name from_village FROM change_requests r JOIN villages tv ON tv.id=r.to_village_id
       LEFT JOIN assignments a ON a.id=r.assignment_id LEFT JOIN villages fv ON fv.id=a.village_id
       WHERE r.college_id=? ORDER BY r.id DESC`, c.id),
-    db.get('SELECT number,issued_at FROM certificates WHERE college_id=?', c.id),
     db.all('SELECT id,name,contact,active FROM pool WHERE college_id=? ORDER BY name', c.id)]);
   const assignments = asg.map(a => {
     const out = { ...a, distance_km: a.road_km ?? haversine(c.lat, c.lng, a.lat, a.lng), distance_road: a.road_km != null, totals: reportFrom(days, a.village_id).totals, locked: LOCKED.has(a.ack_status),
@@ -55,7 +85,7 @@ route('GET', '/api/college/overview', 'college', async ctx => {
   });
   return {
     college: { id: c.id, name: c.name, short_name: c.short_name, address: c.address, phone: c.phone, email: c.email, coordinator: c.coordinator, lsgi: c.lsgi },
-    stats: stats.find(s => s.id === c.id), assignments, requests, days, pool, today: todayStr(), certificate: cert || null,
+    stats: stats.find(s => s.id === c.id), assignments, requests, days, pool, today: todayStr(),
     photos_enabled: driveConfigured(ctx.env),
   };
 });
@@ -68,6 +98,14 @@ route('GET', '/api/college/villages', 'college', async ctx => {
   const owner = new Map(held.map(r => [r.id, r.cid]));
   return vs.map(v => ({ id: v.id, name: v.name, taluk: v.taluk, distance_km: haversine(c.lat, c.lng, v.lat, v.lng), mine: owner.get(v.id) === c.id, taken: owner.has(v.id) && owner.get(v.id) !== c.id }))
     .sort((a, b) => (a.distance_km ?? 1e9) - (b.distance_km ?? 1e9));
+});
+
+// printable certificates for a village the officer has certified
+route('GET', '/api/college/certificates/:vid', 'college', async ctx => {
+  const a = await ctx.db.get('SELECT id FROM assignments WHERE college_id=? AND village_id=?', ctx.college.id, Number(ctx.params.vid));
+  const d = a && await certData(ctx.db, a.id);
+  if (!d) throw new HttpError(404, 'Certificates are available once the village officer has certified this village');
+  return d;
 });
 
 route('POST', '/api/college/requests', 'college', async ctx => {

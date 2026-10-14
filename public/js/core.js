@@ -237,6 +237,21 @@ function initA11y() {
 document.addEventListener('DOMContentLoaded', () => { applyA11y(); initA11y(); });
 if (document.readyState !== 'loading') { applyA11y(); initA11y(); }
 
+// Student certificates for one certified village (data from /certificates/...): preview in a dialog, print them all at once
+function showCertificates(d) {
+  const head = html`<div class="lg"><img src="${LOGO.district}" alt=""><img src="${LOGO.sweepDark}" alt=""></div>`;
+  const year = d.officer.certified_at ? new Date(d.officer.certified_at).getFullYear() : new Date().getFullYear();
+  const span = d.period.from ? `${new Date(d.period.from + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })} to ${new Date(d.period.to + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}` : '';
+  if (!d.students.length) return modal(html`<h2>Student certificates</h2><p>No student has an attended, undisputed field day in ${d.village}, so there are no certificates to print.</p><div class="row" style="justify-content:flex-end"><button class="btn primary" data-act="closeModal">OK</button></div>`);
+  modal(html`<h2 class="noprint">Student certificates: ${d.village}</h2><p class="small muted noprint" style="margin-bottom:10px">${d.students.length} eligible student${d.students.length > 1 ? 's' : ''}, certified by ${d.officer.name || 'the village officer'} (${d.cert_no}). Each student gets one page.</p>
+    <div class="row noprint" style="justify-content:flex-end;margin-bottom:12px"><button class="btn primary" data-act="doPrint">${icon('printer')} Print all (${d.students.length} page${d.students.length > 1 ? 's' : ''})</button><button class="btn secondary" data-act="closeModal">Close</button></div>
+    ${d.students.map(s => html`<div class="cert" style="margin-top:20px">${head}<div style="letter-spacing:.3em;font-size:.8rem">DISTRICT ELECTION OFFICE · KOZHIKODE</div><h1>Certificate of Participation</h1><p>This is to certify that</p><div class="nm">${s.name}</div>
+      <p>of <b>${d.college}</b> took part in the Electoral Literacy Club voter-awareness and enrolment drive in <b>${d.village}</b> village for <b>${s.days_attended}</b> field day${s.days_attended > 1 ? 's' : ''}${span ? `, between ${span}` : ''}, reaching <b>${n(s.addressed)}</b> people and helping <b>${n(s.registered)}</b> citizens register as voters.</p>
+      <p class="small">Participation certified by the Village Officer, ${d.village}. Certificate No. ${s.no} · ${year}</p>
+      <div class="sig"><div>${d.officer.name || 'Village Officer'}<br><small>${d.officer.designation || 'Village Officer'}, ${d.village}</small></div><div>District Collector &amp; District Election Officer</div></div></div>`)}`, { wide: true });
+}
+actions.doPrint = () => { document.body.classList.add('pc'); window.print(); setTimeout(() => document.body.classList.remove('pc'), 500); };
+
 // ---------- logos + the workspace frame used by the college, officer and staff consoles ----------
 const LOGO = { nvlb: '/img/nvlb.png', sweepDark: '/img/sweep-dark.webp', sweepWhite: '/img/sweep-white.webp', district: '/img/district.png' };
 // nav = [{ group: 'Title', items: [{ id, label, icon, count }] }]; base = '#/me' etc.
