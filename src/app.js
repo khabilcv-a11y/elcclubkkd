@@ -83,7 +83,7 @@ route('POST', '/api/auth/staff/logout', null, async ctx => {
 });
 
 // ---------- one request ----------
-const SEC = { 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'same-origin', 'Cache-Control': 'no-store' };
+const SEC = { 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'strict-origin-when-cross-origin', 'Cache-Control': 'no-store' };
 
 async function readBody(req) {
   if (req.method === 'GET' || req.method === 'HEAD') return {};

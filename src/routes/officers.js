@@ -26,6 +26,19 @@ route('GET', '/api/staff/officers', 'staff', async ctx => {
   return os.map(o => ({ ...o, villages: vs.filter(v => v.officer_id === o.id).map(v => ({ id: v.id, name: v.name })) }))
     .filter(o => !s || o.villages.some(v => s.villages.has(v.id)));
 });
+// Creates a placeholder officer ("Village Officer, <village>") for every village that has none; names and details are edited later.
+route('POST', '/api/staff/officers/seed', OPS, async ctx => {
+  const vs = await ctx.db.all('SELECT id,name,office_phone FROM villages WHERE officer_id IS NULL ORDER BY name');
+  const now = nowIso();
+  for (const v of vs) {
+    const mobile = (String(v.office_phone || '').match(/\b[6-9]\d{9}\b/) || [])[0] || String(v.office_phone || '').trim() || null;
+    const name = 'Village Officer, ' + v.name;
+    const id = await ctx.db.insert('INSERT INTO officers(name,designation,phone,email,active,created_at) VALUES (?,?,?,?,1,?)', name, 'Village Officer', mobile, null, now);
+    await ctx.db.run('UPDATE villages SET officer_id=?,officer_name=?,officer_phone=? WHERE id=?', id, name, mobile, v.id);
+  }
+  await slog(ctx, 'officer_seed', vs.length + ' village officers created');
+  return { ok: true, created: vs.length };
+});
 route('POST', '/api/staff/officers', OPS, async ctx => {
   const o = body(ctx.body);
   const id = await ctx.db.insert('INSERT INTO officers(name,designation,phone,email,active,created_at) VALUES (?,?,?,?,1,?)', o.name, o.designation, o.phone, o.email, nowIso());

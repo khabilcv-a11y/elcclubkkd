@@ -168,11 +168,11 @@ actions.unassignVillage = async el => { const a = (await api('/api/staff/assignm
 // ---------- officers ----------
 async function pgOfficers(el) {
   const [list, vs] = await Promise.all([api('/api/staff/officers'), api('/api/staff/villages')]); window.__officers = list; window.__allVillages = vs;
-  show(el, html`${pageHead('Village officers', 'Officers verify attendance in their villages and certify the colleges\' data. Certificates are issued on their certification.', html`<button class="btn primary" data-act="addOfficer">${icon('plus')} Add officer</button>`, 'Manage')}
+  show(el, html`${pageHead('Village officers', 'Officers verify attendance in their villages and certify the colleges\' data. Certificates are issued on their certification.', html`<button class="btn secondary" data-act="seedOfficers">${icon('users')} Create one for every village</button><button class="btn primary" data-act="addOfficer">${icon('plus')} Add officer</button>`, 'Manage')}
     ${list.length ? html`<div class="card pad0">${tbl(['Officer', 'Contact', 'Villages', 'Passcode', ''], list.map(o => html`<tr><td><b>${o.name}</b>${o.active ? '' : html` ${badge('inactive', 'grey')}`}<div class="small muted">${o.designation || ''}</div></td><td class="small">${o.phone ? html`${icon('phone')} ${o.phone}<br>` : ''}${o.email ? html`${icon('mail')} ${o.email}` : html`<span class="muted">no email</span>`}</td>
       <td><div class="pillrow">${o.villages.length ? o.villages.map(v => badge(v.name)) : html`<span class="muted small">none</span>`}</div></td><td>${o.passcode_sent_at ? html`${badge('Sent', 'ok')}<div class="xs muted">${fdt(o.passcode_sent_at)}</div>` : badge('Not sent', 'warn')}${o.last_login_at ? html`<div class="xs muted">Last sign-in ${ago(o.last_login_at)}</div>` : ''}</td>
       <td><div class="row gap-s nowrap">${rowBtn('officerPass', o.passcode_sent_at ? 'Resend' : 'Send passcode', 'key', `data-id="${o.id}"`, 'primary')}${rowBtn('editOfficer', 'Edit', 'edit', `data-id="${o.id}"`)}${rowBtn('toggleOfficer', o.active ? 'Deactivate' : 'Activate', 'lock', `data-id="${o.id}" data-on="${o.active ? 0 : 1}"`, 'ghost')}${isSuper() ? rowBtn('delOfficer', '', 'trash', `data-id="${o.id}" aria-label="Delete ${esc(o.name)}"`, 'danger') : ''}</div></td></tr>`))}</div>`
-      : empty('No village officers yet', 'Add each village officer, assign their villages, then send them a passcode. Until then, officers can certify through the link emailed when a college submits a village.', 'landmark')}`);
+      : empty('No village officers yet', 'Use "Create one for every village" to start with a placeholder officer per village, then edit names and contacts as they become known. Until then, officers can certify through the link emailed when a college submits a village.', 'landmark')}`);
 }
 const officerForm = o => {
   const mine = new Set((o?.villages || []).map(v => v.id));
@@ -350,7 +350,45 @@ forms.repApply = async f => { REP.filters = Object.fromEntries(Object.entries(fd
 actions.repClear = () => { REP.filters = {}; pgReports($('#pg')); };
 actions.repSort = el => { const k = el.dataset.k; REP.dir = REP.sort === k && REP.dir === 'asc' ? 'desc' : 'asc'; REP.sort = k; loadReport(); };
 actions.repCsv = () => { const a = document.createElement('a'); a.href = `/api/staff/reports/${REP.type}?${repQuery({ format: 'csv' })}`; document.body.append(a); a.click(); a.remove(); };
-actions.repPrint = () => window.print();
+actions.seedOfficers = async () => { if (!await confirmBox('Create a placeholder village officer for every village that has none? You can rename them later.', 'Create')) return; const r = await api('/api/staff/officers/seed', 'POST'); toast(`${r.created} village officers created`); refresh(); };
+
+// A4 print-out: header with logos, applied filters, table with repeating headings, footer with page numbers
+const FLABEL = { college: 'College', taluk: 'Taluk', village: 'Village', lsgi: 'LSGI', from: 'From', to: 'To', attendance: 'Attendance', verified: 'Officer check', ack: 'Certification', status: 'Status', q: 'Search' };
+const VALUE_LABEL = { present: 'Present', absent: 'Absent', not_marked: 'Not marked', yes: 'Verified', no: 'Disputed', pending: 'Not verified', acknowledged: 'Certified', submitted: 'Awaiting officer', none: 'In progress', open: 'Open', in_progress: 'In progress', resolved: 'Resolved' };
+function filterSummary() {
+  return Object.entries(REP.filters).filter(([, v]) => v).map(([k, v]) => {
+    let val = VALUE_LABEL[v] || v;
+    if (k === 'college') val = OPTS.colleges.find(c => String(c.id) === String(v))?.name || v;
+    if (k === 'village') val = OPTS.villages.find(x => String(x.id) === String(v))?.name || v;
+    if (/^\d{4}-\d\d-\d\d$/.test(v)) val = v.split('-').reverse().join('-');
+    return [FLABEL[k] || k, val];
+  });
+}
+actions.repPrint = () => {
+  const r = window.__rep; if (!r) return;
+  const cols = r.cols.filter(c => REP.cols.includes(c.key)), fl = filterSummary(), now = new Date();
+  const stamp = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ', ' + now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  const by = SU?.user?.name || SU?.user?.username || 'Staff';
+  const sorted = REP.sort ? (r.cols.find(c => c.key === REP.sort)?.label || '') + (REP.dir === 'desc' ? ' (descending)' : ' (ascending)') : '';
+  let doc = document.getElementById('printdoc'); if (doc) doc.remove();
+  doc = document.createElement('div'); doc.id = 'printdoc'; doc.className = 'printdoc';
+  doc.innerHTML = html`<table class="pd"><thead><tr><td colspan="${cols.length}">
+      <div class="pd-head"><div class="pd-logos"><img src="/img/district.png" alt=""><img src="/img/sweep-dark.webp" alt=""></div>
+        <div class="pd-title"><div class="pd-org">District Administration, Kozhikode · SWEEP</div><h1>Electoral Literacy Clubs: ${r.title}</h1></div></div>
+      <div class="pd-meta"><div><b>Filters applied:</b> ${fl.length ? fl.map(([k, v]) => html`<span class="pd-chip">${k}: <b>${v}</b></span>`) : 'None (all records)'}</div>
+        <div><b>Records:</b> ${n(r.total)}${r.total > r.rows.length ? ` (first ${n(r.rows.length)} shown)` : ''}${sorted ? html` &nbsp;·&nbsp; <b>Sorted by:</b> ${sorted}` : ''} &nbsp;·&nbsp; <b>Generated:</b> ${stamp} by ${by}</div></div>
+    </td></tr><tr class="pd-th">${cols.map(c => html`<th class="${c.num ? 'num' : ''}">${c.label}</th>`)}</tr></thead>
+    <tbody>${r.rows.map((row, i) => html`<tr>${cols.map(c => html`<td class="${c.num ? 'num' : ''}">${row[c.key] ?? ''}</td>`)}</tr>`)}</tbody></table>
+    <div class="pd-foot">ELC Kozhikode portal · ${r.title} · ${stamp} · Confidential: for official use</div>`.s;
+  document.body.append(doc);
+  const pg = document.createElement('style'); pg.id = 'printpage';
+  pg.textContent = '@page{size:A4 ' + (cols.length > 6 ? 'landscape' : 'portrait') + ';margin:14mm 12mm 16mm;@bottom-right{content:"Page " counter(page) " of " counter(pages);font:9pt Inter,Arial,sans-serif;color:#555}@bottom-left{content:"ELC Kozhikode · ' + r.title.replace(/["\\]/g, '') + '";font:9pt Inter,Arial,sans-serif;color:#555}}';
+  document.head.append(pg);
+  document.body.classList.add('pr');
+  const done = () => { document.body.classList.remove('pr'); doc.remove(); pg.remove(); window.removeEventListener('afterprint', done); };
+  window.addEventListener('afterprint', done);
+  setTimeout(() => window.print(), 150);
+};
 
 // ---------- team ----------
 async function pgTeam(el) {

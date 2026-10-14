@@ -319,6 +319,28 @@ html.a-nomotion *,html.a-nomotion *::before,html.a-nomotion *::after{animation:n
 .page-in{animation:fade .25s ease}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}.rv{opacity:1;transform:none}}
 
+/* ---------- report print-out ---------- */
+.printdoc{display:none}
+@media print{
+  body.pr>*:not(.printdoc){display:none!important}
+  body.pr{background:#fff;color:#111}
+  body.pr .printdoc{display:block;font-family:Inter,Arial,sans-serif;font-size:9pt;color:#111}
+  .pd{width:100%;border-collapse:collapse}
+  .pd thead{display:table-header-group}
+  .pd tr{break-inside:avoid}
+  .pd>thead>tr:first-child>td{padding:0 0 8px;border:0}
+  .pd-head{display:flex;align-items:center;gap:14px;border-bottom:2.5px solid #2b3078;padding-bottom:8px}
+  .pd-logos{display:flex;gap:12px;align-items:center}.pd-logos img{height:38px;width:auto}
+  .pd-org{font-size:8.5pt;color:#555;text-transform:uppercase;letter-spacing:.06em}
+  .pd-title h1{font-size:15pt;margin:2px 0 0;color:#2b3078;letter-spacing:-.01em}
+  .pd-meta{margin:8px 0 2px;font-size:8.5pt;line-height:1.7;color:#333}
+  .pd-chip{display:inline-block;border:1px solid #c9cde6;background:#f1f3fb;border-radius:10px;padding:0 7px;margin:0 4px 0 0}
+  .pd .pd-th th{background:#2b3078!important;color:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;text-align:left;font-size:8pt;padding:6px 7px;border:1px solid #2b3078;text-transform:uppercase;letter-spacing:.03em}
+  .pd tbody td{padding:5px 7px;border:1px solid #d5d8e8;vertical-align:top;font-size:8.5pt}
+  .pd tbody tr:nth-child(even) td{background:#f6f7fc!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .pd .num{text-align:right;font-variant-numeric:tabular-nums}
+  .pd-foot{margin-top:10px;padding-top:6px;border-top:1px solid #c9cde6;font-size:8pt;color:#666;text-align:center}
+}
 /* ---------- certificates & print ---------- */
 .cert{background:#fff;color:#1b1340;border:10px double #2b3078;padding:40px 46px;text-align:center;font-family:Georgia,'Times New Roman',serif;max-width:900px;margin:0 auto;page-break-after:always}
 .cert .lg{display:flex;justify-content:center;gap:28px;align-items:center;margin-bottom:10px}.cert .lg img{height:64px}
