@@ -10,3 +10,4 @@ data/
 .dev.vars
 .wrangler/
 .dev.vars*
+apps-script/*.local.gs
