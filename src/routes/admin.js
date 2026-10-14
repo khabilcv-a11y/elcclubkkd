@@ -49,7 +49,7 @@ function collegeBody(b) {
 }
 route('GET', '/api/staff/colleges', STAFF, async ctx => {
   const s = await scopeOf(ctx);
-  const [stats, rows] = await Promise.all([collegeStats(ctx.db), ctx.db.all('SELECT id,name,short_name,address,phone,email,coordinator,lat,lng,lsgi,passcode_sent_at,last_login_at,active FROM colleges ORDER BY name')]);
+  const [stats, rows] = await Promise.all([collegeStats(ctx.db), ctx.db.all('SELECT id,name,short_name,address,phone,email,coordinator,lat,lng,lsgi,passcode_sent_at,passcode_plain AS passcode,last_login_at,active FROM colleges ORDER BY name')]);
   const m = new Map(stats.map(c => [c.id, c]));
   return rows.filter(c => !s || s.colleges.has(c.id)).map(c => ({ ...c, stats: m.get(c.id) || null }));
 });
@@ -58,7 +58,8 @@ route('POST', '/api/staff/colleges', OPS, async ctx => {
   const id = await ctx.db.insert('INSERT INTO colleges(name,short_name,address,phone,email,coordinator,lat,lng,lsgi,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
     o.name, o.short_name, o.address, o.phone, o.email, o.coordinator, o.lat, o.lng, o.lsgi, nowIso());
   await slog(ctx, 'college_add', o.name);
-  return { ok: true, id };
+  const { code } = await pushPasscode(ctx, id);
+  return { ok: true, id, code };
 });
 route('PUT', '/api/staff/colleges/:id', STAFF, async ctx => {
   await assertCollege(ctx, ctx.params.id);
@@ -85,18 +86,14 @@ route('DELETE', '/api/staff/colleges/:id', SUPER, async ctx => {
   return { ok: true };
 });
 
+// Passcodes are generated here and handed over by staff (WhatsApp / phone), never emailed.
 async function pushPasscode(ctx, id) {
-  const c = await ctx.db.get('SELECT * FROM colleges WHERE id=?', id);
+  const c = await ctx.db.get('SELECT name FROM colleges WHERE id=?', id);
   if (!c) throw new HttpError(404, 'College not found');
   const code = newPasscode();
-  await ctx.db.run('UPDATE colleges SET passcode_hash=?,passcode_sent_at=? WHERE id=?', await hashSecret(code.replace('-', ''), 20000), nowIso(), id);
-  const r = await sendMail(ctx.db, ctx.env, c.email, 'Your ELC Kozhikode portal passcode',
-    `Hello ${c.coordinator || 'Coordinator'},\n\nYour Electoral Literacy Club portal access for ${c.name} is ready.\n\n` +
-    `  Passcode: ${code}\n  Sign in: ${base(ctx)}/\n\nChoose your college on the home page, tap "College login" and enter the passcode. ` +
-    `Keep it private - anyone with it can edit your college's schedule. A new passcode replaces this one.\n\nELC Kozhikode`);
-  if (r.status === 'failed') await ctx.db.run('UPDATE colleges SET passcode_sent_at=NULL WHERE id=?', id);
-  await slog(ctx, 'passcode_push', `${c.name} → ${c.email} (${r.status})`);
-  return { college: c.name, email: c.email, status: r.status, error: r.error };
+  await ctx.db.run('UPDATE colleges SET passcode_hash=?,passcode_plain=?,passcode_sent_at=? WHERE id=?', await hashSecret(code.replace('-', ''), 20000), code, nowIso(), id);
+  await slog(ctx, 'passcode_generate', c.name);
+  return { college: c.name, code };
 }
 route('POST', '/api/staff/colleges/:id/passcode', STAFF, async ctx => {
   await assertCollege(ctx, ctx.params.id);
