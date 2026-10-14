@@ -100,12 +100,12 @@ async function pgSchedule(el) {
   if (!COL.assignments.some(a => a.village_id === SCHEDVILLAGE)) SCHEDVILLAGE = (open[0] || COL.assignments[0]).village_id;
   const a = villageOf(SCHEDVILLAGE), days = COL.days.filter(d => d.village_id === SCHEDVILLAGE).sort((x, y) => x.date.localeCompare(y.date));
   show(el, html`${pageHead('Schedule', `15 field days for each village, 2 students a day. ${days.length ? fdate(days[0].date) + ' to ' + fdate(days.at(-1).date) : ''}`,
-      html`${without.length ? html`<button class="btn secondary" data-act="schedNew">${icon('plus')} Schedule ${without.length} new village${without.length > 1 ? 's' : ''}</button>` : ''}<button class="btn primary" data-act="rebuild">${icon('refresh')} Rebuild shifts</button>`, 'Daily work')}
+      html`${without.length ? html`<button class="btn secondary" data-act="schedNew">${icon('plus')} Schedule ${without.length} new village${without.length > 1 ? 's' : ''}</button>` : ''}<button class="btn secondary" data-act="addDay" data-v="${SCHEDVILLAGE}">${icon('plus')} Add a day</button><button class="btn secondary" data-act="moveAll" data-v="${SCHEDVILLAGE}">${icon('calendar')} Move all dates</button><button class="btn primary" data-act="rebuild">${icon('refresh')} Rebuild shifts</button>`, 'Daily work')}
     <div class="tabs" role="tablist" aria-label="Village" style="margin-bottom:14px">${COL.assignments.map(x => html`<button class="tab" role="tab" aria-selected="${x.village_id === SCHEDVILLAGE}" data-act="schedTab" data-id="${x.village_id}">${x.village_name}${x.locked ? html` ${icon('lock')}` : ''}</button>`)}</div>
     ${a.locked ? html`<div class="alert info" style="margin-bottom:12px">${icon('lock')}<div>This village is with the village officer for certification, so the schedule is locked.</div></div>` : ''}
     <div class="row between" style="margin-bottom:10px"><div class="small muted">${days.filter(staffed).length} of ${days.length} days staffed · ${days.filter(marked).length} recorded</div>${days.some(d => !staffed(d)) ? badge('Some days need students', 'warn') : badge('All days staffed', 'ok')}</div>
     ${days.length ? html`<div class="card pad0"><div class="tablewrap"><table><caption class="sr">Schedule for ${a.village_name}</caption><thead><tr><th>Day</th><th>Date</th><th>Students on shift</th><th>Attendance</th><th></th></tr></thead><tbody>
-      ${days.map((d, i) => { const vs = d.volunteers.filter(v => v.name); return html`<tr><td class="tnum"><b>${i + 1}</b></td><td>${fdate(d.date)}${d.date === COL.today ? html` ${badge('Today', 'saffron')}` : ''}</td>
+      ${days.map((d, i) => { const vs = d.volunteers.filter(v => v.name); return html`<tr><td class="tnum"><b>${i + 1}</b></td><td>${fdate(d.date)}${d.date === COL.today ? html` ${badge('Today', 'saffron')}` : ''}${d.notes ? html`<div class="small muted">${d.notes}</div>` : ''}</td>
         <td>${vs.length ? html`<div class="pillrow">${vs.map(v => badge(v.name, vs.length < 2 ? 'warn' : ''))}</div>` : html`<span class="badge danger">Nobody assigned</span>`}</td>
         <td>${marked(d) ? html`<div class="pillrow">${vs.map(v => v.attended === 1 ? badge('Present', 'ok') : v.attended === 0 ? badge('Absent', 'danger') : badge('—', 'grey'))}</div>` : d.date > COL.today ? html`<span class="muted small">Upcoming</span>` : badge('Not recorded', 'warn')}</td>
         <td class="right">${a.locked ? '' : html`<button class="btn sm secondary" data-act="swap" data-id="${d.id}">${icon('edit')} Change</button>`}</td></tr>`; })}</tbody></table></div></div>` : empty('This village has no schedule yet')}`);
@@ -126,20 +126,50 @@ actions.rebuild = () => modal(html`<h2>Rebuild the shifts</h2><p class="muted sm
   <div class="row" style="justify-content:flex-end"><button type="button" class="btn secondary" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">Rebuild</button></div></form>`);
 forms.rebuild = async f => { const r = await api('/api/college/roster', 'POST', { shift_len: Number(fd(f).shift_len) }); f.closest('.overlay').close(); toast(`Shifts rebuilt: ${r.roster.staffed} days staffed`); reloadCol(); };
 actions.swap = el => {
-  const d = COL.days.find(x => x.id === Number(el.dataset.id)), cur = d.volunteers.filter(v => v.name);
-  if (marked(d)) return modal(html`<h2>${fdate(d.date)}</h2><p>Attendance is already recorded for this day, so the students can't be swapped. Use the <a href="#/me/log" data-act="closeModal">Daily log</a> to correct the numbers.</p><div class="row" style="justify-content:flex-end"><button class="btn primary" data-act="closeModal">OK</button></div>`);
+  const d = COL.days.find(x => x.id === Number(el.dataset.id)), cur = d.volunteers.filter(v => v.name), done = marked(d);
   const busyToday = new Set(COL.days.filter(x => x.date === d.date && x.id !== d.id).flatMap(x => x.volunteers.map(v => v.contact)));
-  const opt = sel => html`<option value="">— nobody —</option>${COL.pool.filter(p => p.active).map(p => html`<option value="${p.contact}" ${sel === p.contact ? 'selected' : ''} ${busyToday.has(p.contact) ? 'disabled' : ''}>${p.name}${busyToday.has(p.contact) ? ' (in another village today)' : ''}</option>`)}`;
-  modal(html`<h2>Students for ${villageOf(d.village_id).village_name}, ${fdate(d.date)}</h2><form data-form="swap" data-id="${d.id}" class="stack-s">
-    <label class="f"><span>Student 1</span><select name="s0">${opt(cur[0]?.contact)}</select></label><label class="f"><span>Student 2</span><select name="s1">${opt(cur[1]?.contact)}</select></label>
-    <label class="f"><span>Extra student (optional)</span><select name="s2">${opt(cur[2]?.contact)}</select></label><div data-err></div>
-    <div class="row" style="justify-content:flex-end"><button type="button" class="btn secondary" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">Save</button></div></form>`);
+  const opt = sel => html`<option value="">— nobody —</option>${COL.pool.filter(p => p.active || p.contact === sel).map(p => html`<option value="${p.contact}" ${sel === p.contact ? 'selected' : ''} ${busyToday.has(p.contact) ? 'disabled' : ''}>${p.name}${busyToday.has(p.contact) ? ' (in another village that day)' : ''}</option>`)}`;
+  modal(html`<h2>Edit field day</h2><form data-form="swap" data-id="${d.id}" class="stack-s">
+    <div class="formgrid"><label class="f"><span>Date</span><input type="date" name="date" value="${d.date}" required></label>
+    <label class="f"><span>Village</span><select name="village_id">${COL.assignments.filter(x => !x.locked).map(x => html`<option value="${x.village_id}" ${x.village_id === d.village_id ? 'selected' : ''}>${x.village_name}</option>`)}</select></label></div>
+    ${done ? html`<div class="alert info">${icon('lock')}<div>Attendance is already recorded for this day, so its students can't be changed. You can still change the date or add a remark.</div></div>` : html`<label class="f"><span>Student 1</span><select name="s0">${opt(cur[0]?.contact)}</select></label><label class="f"><span>Student 2</span><select name="s1">${opt(cur[1]?.contact)}</select></label>
+    <label class="f"><span>Extra student (optional)</span><select name="s2">${opt(cur[2]?.contact)}</select></label>`}
+    <label class="f"><span>Remarks (optional)</span><input type="text" name="notes" maxlength="300" value="${d.notes || ''}" placeholder="e.g. Ward 4 door-to-door, meet at the village office at 9 am"></label><div data-err></div>
+    <div class="row between"><button type="button" class="btn danger" data-act="delDay" data-id="${d.id}">${icon('trash')} Remove this day</button><div class="row"><button type="button" class="btn secondary" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">Save</button></div></div></form>`);
 };
 forms.swap = async f => {
-  const v = fd(f), chosen = [v.s0, v.s1, v.s2].filter(Boolean);
-  if (new Set(chosen).size !== chosen.length) throw new Error('Pick different students for each place');
-  const volunteers = chosen.map(c => { const p = COL.pool.find(x => x.contact === c); return { name: p.name, contact: p.contact, attended: null }; });
-  await api(`/api/college/days/${f.dataset.id}/volunteers`, 'PUT', { volunteers }); f.closest('.overlay').close(); toast('Students updated'); reloadCol();
+  const d = COL.days.find(x => x.id === Number(f.dataset.id)), v = fd(f);
+  if (!marked(d)) {
+    const chosen = [v.s0, v.s1, v.s2].filter(Boolean);
+    if (new Set(chosen).size !== chosen.length) throw new Error('Pick different students for each place');
+    const volunteers = chosen.map(c => { const p = COL.pool.find(x => x.contact === c); return { name: p.name, contact: p.contact, attended: null }; });
+    await api(`/api/college/days/${d.id}/volunteers`, 'PUT', { volunteers });
+  }
+  await api('/api/college/days/' + d.id, 'PATCH', { date: v.date, village_id: Number(v.village_id), notes: v.notes || '' });
+  f.closest('.overlay').close(); toast('Field day updated'); reloadCol();
+};
+actions.delDay = async el => {
+  const d = COL.days.find(x => x.id === Number(el.dataset.id));
+  if (!await confirmBox(marked(d) ? 'This day has attendance recorded. Remove it and its records permanently?' : 'Remove this field day from the schedule?', 'Remove', true)) return;
+  await api('/api/college/days/' + d.id, 'DELETE'); $('.overlay')?.close(); toast('Day removed'); reloadCol();
+};
+actions.addDay = el => {
+  const vid = Number(el.dataset.v), days = COL.days.filter(d => d.village_id === vid).sort((x, y) => x.date.localeCompare(y.date));
+  modal(html`<h2>Add a field day</h2><form data-form="addDay" data-v="${vid}" class="stack-s"><label class="f"><span>Date</span><input type="date" name="date" value="${addDays(days.at(-1)?.date || COL.today, 1)}" required></label>
+    <p class="hint">The previous day's students are copied when they are free on that date. You can change them afterwards.</p><div data-err></div>
+    <div class="row" style="justify-content:flex-end"><button type="button" class="btn secondary" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">Add day</button></div></form>`);
+};
+forms.addDay = async f => { await api('/api/college/days', 'POST', { village_id: Number(f.dataset.v), date: fd(f).date }); f.closest('.overlay').close(); toast('Day added'); reloadCol(); };
+actions.moveAll = el => {
+  const vid = Number(el.dataset.v), days = COL.days.filter(d => d.village_id === vid).sort((x, y) => x.date.localeCompare(y.date));
+  modal(html`<h2>Move the whole schedule</h2><form data-form="moveAll" data-v="${vid}" class="stack-s"><label class="f"><span>New first field day</span><input type="date" name="start" value="${days[0]?.date || COL.today}" required></label>
+    <p class="hint">Every day of ${villageOf(vid).village_name} moves by the same number of days, keeping the gaps. Days with attendance already recorded stay where they are.</p><div data-err></div>
+    <div class="row" style="justify-content:flex-end"><button type="button" class="btn secondary" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">Move</button></div></form>`);
+};
+forms.moveAll = async f => {
+  const r = await api('/api/college/schedule/shift', 'POST', { village_id: Number(f.dataset.v), start: fd(f).start });
+  f.closest('.overlay').close(); toast(r.moved ? `${r.moved} days moved` : 'Nothing to move'); reloadCol();
+  if (r.clashes?.length) modal(html`<h2>Check the students</h2><p>On ${r.clashes.length} moved day${r.clashes.length > 1 ? 's' : ''} a student is also working in another village. Open those days and change a student.</p><div class="row" style="justify-content:flex-end"><button class="btn primary" data-act="closeModal">OK</button></div>`);
 };
 
 // ---------- Daily log ----------

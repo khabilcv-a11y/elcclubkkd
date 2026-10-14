@@ -208,6 +208,13 @@ route('POST', '/api/college/roster', 'college', async ctx => {
   return { ok: true, roster };
 });
 
+// students of day `dayId` who already work another day of this college on `date`
+async function clashOn(db, collegeId, dayId, date) {
+  const mine = (await db.all('SELECT contact FROM volunteers WHERE day_id=? AND name<>\'\'', dayId)).map(r => r.contact);
+  if (!mine.length) return [];
+  const busy = await db.all('SELECT x.name,x.contact FROM volunteers x JOIN days d ON d.id=x.day_id WHERE d.college_id=? AND d.date=? AND d.id<>? AND x.name<>\'\'', collegeId, date, dayId);
+  return busy.filter(b => mine.includes(b.contact)).map(b => b.name);
+}
 async function ownDay(ctx, id) {
   const d = await ctx.db.get('SELECT * FROM days WHERE id=? AND college_id=?', Number(id), ctx.college.id);
   if (!d) throw new HttpError(404, 'Day not found');
@@ -228,8 +235,12 @@ route('POST', '/api/college/days', 'college', async ctx => {
   const vid = Number(b.village_id);
   const id = await db.insert('INSERT INTO days(college_id,village_id,date,created_at) VALUES (?,?,?,?)', c.id, vid, b.date, nowIso());
   const last = await db.get('SELECT id FROM days WHERE college_id=? AND village_id=? AND id<>? ORDER BY date DESC,id DESC LIMIT 1', c.id, vid, id);
-  if (last) for (const v of await db.all('SELECT slot,name,contact FROM volunteers WHERE day_id=? ORDER BY slot', last.id))
-    await db.run('INSERT INTO volunteers(day_id,slot,name,contact) VALUES (?,?,?,?)', id, v.slot, v.name, v.contact);
+  if (await db.get('SELECT 1 x FROM days WHERE college_id=? AND village_id=? AND date=? AND id<>?', c.id, vid, b.date, id)) { await db.run('DELETE FROM days WHERE id=?', id); throw bad('That village already has a field day on that date'); }
+  if (last) {
+    const busy = new Set((await db.all('SELECT x.contact FROM volunteers x JOIN days d ON d.id=x.day_id WHERE d.college_id=? AND d.date=? AND d.id<>?', c.id, b.date, id)).map(r => r.contact));
+    for (const v of await db.all('SELECT slot,name,contact FROM volunteers WHERE day_id=? ORDER BY slot', last.id))
+      if (!busy.has(v.contact)) await db.run('INSERT INTO volunteers(day_id,slot,name,contact) VALUES (?,?,?,?)', id, v.slot, v.name, v.contact);
+  }
   await clog(ctx, 'day_add', b.date);
   return { ok: true, id };
 });
@@ -240,8 +251,41 @@ route('PATCH', '/api/college/days/:id', 'college', async ctx => {
   if (!isDate(date)) throw bad('Choose a valid date');
   let vid = d.village_id;
   if (b.village_id != null && Number(b.village_id) !== d.village_id) { await ownAssignedVillage(ctx, b.village_id); vid = Number(b.village_id); }
+  if (date !== d.date || vid !== d.village_id) {
+    if (await ctx.db.get('SELECT 1 x FROM days WHERE college_id=? AND village_id=? AND date=? AND id<>?', ctx.college.id, vid, date, d.id)) throw bad('That village already has a field day on that date');
+    const clash = await clashOn(ctx.db, ctx.college.id, d.id, date);
+    if (clash.length) throw bad(`${clash.join(', ')} already work in another village on that date. Change the students first, or pick another date.`);
+  }
   await ctx.db.run('UPDATE days SET date=?,village_id=?,notes=? WHERE id=?', date, vid, str(b.notes ?? d.notes, 300), d.id);
+  await clog(ctx, 'day_edit', `${d.date} -> ${date}`);
   return { ok: true };
+});
+
+// Move a village's whole schedule so it starts on a new date (days that already have attendance stay where they are).
+route('POST', '/api/college/schedule/shift', 'college', async ctx => {
+  const b = ctx.body;
+  if (!isDate(b.start)) throw bad('Choose the new first day');
+  await ownAssignedVillage(ctx, b.village_id);
+  const days = await ctx.db.all('SELECT id,date FROM days WHERE college_id=? AND village_id=? ORDER BY date,id', ctx.college.id, Number(b.village_id));
+  if (!days.length) throw bad('This village has no days to move');
+  const delta = Math.round((Date.parse(b.start + 'T00:00:00Z') - Date.parse(days[0].date + 'T00:00:00Z')) / 864e5);
+  if (!delta) return { ok: true, moved: 0 };
+  const shift = d => new Date(Date.parse(d + 'T00:00:00Z') + delta * 864e5).toISOString().slice(0, 10);
+  const movable = [];
+  for (const d of days) { const rec = await ctx.db.get('SELECT COUNT(*) n FROM volunteers WHERE day_id=? AND attended IS NOT NULL', d.id); if (!rec.n) movable.push(d); }
+  const targets = new Set(days.filter(d => !movable.includes(d)).map(d => d.date));
+  for (const d of movable) {
+    const nd = shift(d.date);
+    if (targets.has(nd)) throw bad(`${nd} already has a recorded day in this village. Choose another start date.`);
+    targets.add(nd);
+  }
+  await ctx.db.tx(async tx => {
+    for (const d of movable) await tx.run('UPDATE days SET date=? WHERE id=?', shift(d.date), d.id);
+  });
+  const clashes = [];
+  for (const d of movable) { const c = await clashOn(ctx.db, ctx.college.id, d.id, shift(d.date)); if (c.length) clashes.push(shift(d.date)); }
+  await clog(ctx, 'schedule_shift', `village ${b.village_id}: ${delta > 0 ? '+' : ''}${delta} days`);
+  return { ok: true, moved: movable.length, clashes };
 });
 
 route('DELETE', '/api/college/days/:id', 'college', async ctx => {

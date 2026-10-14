@@ -66,7 +66,7 @@ async function renderHome() {
   <section class="section" id="leaderboard"><div class="wrap"><div class="section-head"><div><h2>Leaderboard</h2><p>Points for every voter enrolled, person reached, volunteer-day worked and village certified.</p></div><a class="btn secondary" href="#/board">Full display board ${icon('arrow-right')}</a></div>
     <div id="podium"></div><div class="board" id="lb"></div></div></section>
 
-  <section class="section" id="colleges"><div class="wrap"><div class="section-head"><div><h2>Participating colleges <span class="badge">${t.colleges}</span></h2><p>Every Electoral Literacy Club on the programme.</p></div><label class="f" style="margin:0;min-width:240px"><span class="sr">Search colleges</span><input type="search" id="cq" placeholder="Search colleges…"></label></div><div class="collegegrid" id="cg"></div></div></section>
+  <section class="section" id="colleges"><div class="wrap"><div class="section-head"><div><h2>Participating colleges <span class="badge">${t.colleges}</span></h2><p>Every Electoral Literacy Club on the programme.</p></div><label class="f" style="margin:0;min-width:240px"><span class="sr">Search colleges</span><input type="search" id="cq" placeholder="Search colleges…"></label></div><div class="collegegrid" id="cg"></div><div class="pager" id="cgpager"></div></div></section>
 
   <section class="section"><div class="wrap grid g2">
     <div><div class="section-head"><div><h2>Live activity</h2></div></div><div class="card rv"><ul class="feed" id="feed"></ul></div></div>
@@ -155,11 +155,19 @@ function paintVillageList() {
 actions.flyto = el => { const m = MAPMARK.get(Number(el.dataset.id)); if (m && MAP) { MAP.flyTo(m.getLatLng(), 12); m.openPopup(); $('#map').scrollIntoView({ block: 'center', behavior: reduced() ? 'auto' : 'smooth' }); } };
 document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('.vrow')) { e.preventDefault(); e.target.click(); } });
 
-function paintColleges() {
+const CG_PAGE = 12; let cgPage = 0;
+function paintColleges(keepPage) {
+  keepPage = keepPage === true;
   const q = ($('#cq')?.value || '').toLowerCase();
+  if (!keepPage) cgPage = 0;
   const cs = [...BOARD.colleges].sort((a, b) => a.name.localeCompare(b.name)).filter(c => !q || c.name.toLowerCase().includes(q));
-  show($('#cg'), cs.length ? html`${cs.map(c => html`<div class="cg rv"><span class="lt">${initials(c.short_name)}</span><div class="grow"><b>${c.name}</b><small>${c.villages} village${c.villages === 1 ? '' : 's'} · ${n(c.registered)} enrolled</small></div></div>`)}` : empty('No college matches', '', 'search'));
+  const pages = Math.max(1, Math.ceil(cs.length / CG_PAGE)); cgPage = Math.min(cgPage, pages - 1);
+  const shown = cs.slice(cgPage * CG_PAGE, cgPage * CG_PAGE + CG_PAGE);
+  show($('#cg'), cs.length ? html`${shown.map(c => html`<div class="cg rv"><span class="lt">${initials(c.short_name)}</span><div class="grow"><b>${c.name}</b><small>${c.villages} village${c.villages === 1 ? '' : 's'} · ${n(c.registered)} enrolled</small></div></div>`)}` : empty('No college matches', '', 'search'));
+  show($('#cgpager'), pages > 1 ? html`<button class="btn secondary sm" data-act="cgPrev" ${cgPage === 0 ? 'disabled' : ''}>${icon('arrow-left')} Previous</button><span class="small muted" aria-live="polite">Colleges ${cgPage * CG_PAGE + 1}–${Math.min(cs.length, cgPage * CG_PAGE + CG_PAGE)} of ${cs.length} · page ${cgPage + 1} of ${pages}</span><button class="btn secondary sm" data-act="cgNext" ${cgPage >= pages - 1 ? 'disabled' : ''}>Next ${icon('arrow-right')}</button>` : '');
 }
+actions.cgPrev = () => { cgPage--; paintColleges(true); $('#colleges')?.scrollIntoView({ block: 'start', behavior: reduced() ? 'auto' : 'smooth' }); };
+actions.cgNext = () => { cgPage++; paintColleges(true); $('#colleges')?.scrollIntoView({ block: 'start', behavior: reduced() ? 'auto' : 'smooth' }); };
 
 // ---------- display board ----------
 let boardTimer = null;
