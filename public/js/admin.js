@@ -116,7 +116,19 @@ actions.delCollege = async el => {
   if (!await confirmBox('Permanently delete this college and ALL its schedule, attendance and allotments? This cannot be undone. (Use Deactivate to keep the data.)', 'Delete forever')) return;
   await api('/api/staff/colleges/' + el.dataset.id, 'DELETE'); toast('College deleted'); refresh();
 };
+const SITE = 'ELC Kozhikode portal';
+function credsModal(title, text) {
+  modal(html`<h3>${title}</h3><p class="small muted">Copy and share these details privately. The password / passcode can't be viewed again later (you can reset it any time).</p>
+    <textarea readonly rows="8" style="width:100%;font-family:monospace" data-creds>${text}</textarea>
+    <div class="row" style="justify-content:flex-end;margin-top:14px"><button type="button" class="btn white" data-act="closeModal">Close</button><button type="button" class="btn" data-act="copyCreds">📋 Copy to clipboard</button></div>`);
+}
+actions.copyCreds = async el => {
+  const t = $('[data-creds]', el.closest('.modal'));
+  try { await navigator.clipboard.writeText(t.value); toast('Copied ✔'); } catch { t.select(); document.execCommand('copy'); toast('Copied ✔'); }
+};
+const collegeCreds = r => `${SITE}\nCollege login\n\nCollege: ${r.college}\nWebsite: ${location.origin}/\nPasscode: ${r.code}\n\nOpen the website, choose your college, tap "College login" and enter the passcode. Keep it private.`;
 function passToast(r) {
+  if (r.code) credsModal(`Passcode for ${r.college}`, collegeCreds(r));
   if (r.status === 'sent') toast(`Passcode emailed to ${r.email} ✔`);
   else if (r.status === 'saved') toast(`Passcode saved to Outbox for ${r.college} (SMTP not configured)`);
   else toast(`Could not email ${r.college}: ${r.error}`, true);
@@ -130,6 +142,7 @@ actions.bulkPass = async () => {
   if (!await confirmBox('Generate and email passcodes to every college that has not received one yet?', 'Push to all')) return;
   const { results } = await api('/api/staff/passcodes/bulk', 'POST');
   toast(results.length ? `${results.filter(r => r.status !== 'failed').length}/${results.length} passcodes pushed` : 'Everyone already has a passcode'); refresh();
+  if (results.length) credsModal(`${results.length} new passcodes`, results.map(collegeCreds).join('\n\n----------\n\n'));
 };
 
 // ---------- villages ----------
@@ -304,6 +317,7 @@ forms.staff = async f => {
   const sid = id || (await api('/api/staff/team', 'POST', body)).id;
   if (id || body.role === 'intern') await api('/api/staff/team/' + sid, 'PUT', body);
   closeM(f); toast('Saved ✔'); refresh();
+  if (!id) credsModal(`Login for ${v.name}`, `${SITE}\nStaff login (${ROLE[v.role] || v.role})\n\nName: ${v.name}\nWebsite: ${location.origin}/admin\nUsername: ${String(v.username).toLowerCase()}\nPassword: ${v.password}\n\nPlease change your password after signing in.`);
 };
 
 // ---------- activity log ----------

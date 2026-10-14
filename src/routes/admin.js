@@ -94,7 +94,7 @@ async function pushPasscode(ctx, id) {
     `Keep it private - anyone with it can edit your college's schedule. A new passcode replaces this one.\n\nELC Kozhikode`);
   if (r.status === 'failed') await ctx.db.run('UPDATE colleges SET passcode_sent_at=NULL WHERE id=?', id);
   await slog(ctx, 'passcode_push', `${c.name} → ${c.email} (${r.status})`);
-  return { college: c.name, email: c.email, status: r.status, error: r.error };
+  return { college: c.name, email: c.email, status: r.status, error: r.error, code };
 }
 route('POST', '/api/staff/colleges/:id/passcode', STAFF, async ctx => {
   await assertCollege(ctx, ctx.params.id);
