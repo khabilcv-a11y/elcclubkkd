@@ -133,7 +133,7 @@ function wireMap() {
   if (typeof L === 'undefined') { el.innerHTML = '<div class="loading">The map could not be loaded. The village list on the right still works.</div>'; return; }
   if (MAP) { MAP.remove(); MAP = null; }
   MAP = L.map(el, { scrollWheelZoom: false, zoomControl: true }).setView([11.45, 75.85], 9);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '© OpenStreetMap contributors' }).addTo(MAP);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, referrerPolicy: 'strict-origin-when-cross-origin', attribution: '© OpenStreetMap contributors' }).addTo(MAP);
   MAPMARK = new Map(); const pts = [];
   for (const v of BOARD.villages) {
     if (v.lat == null || v.lng == null) continue;
