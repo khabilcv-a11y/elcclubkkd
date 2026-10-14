@@ -1,4 +1,5 @@
 import { HttpError } from './util.js';
+import { signSession, readSession, fingerprint } from './session.js';
 
 export const routes = [];
 // guard: null (public) | 'college' | 'staff' | [roles...]
@@ -20,16 +21,19 @@ export function parseCookies(req) {
 }
 
 export async function sessionUser(ctx, kind) {
-  const tok = parseCookies(ctx.req)[COOKIE[kind]];
-  if (!tok) return null;
-  const s = await ctx.db.get('SELECT * FROM sessions WHERE token=? AND role=?', tok, kind);
-  if (!s || s.expires < Date.now()) return null;
+  const p = await readSession(ctx.env, parseCookies(ctx.req)[COOKIE[kind]]);
+  if (!p || p.k !== kind) return null;
   if (kind === 'college') {
-    const c = await ctx.db.get('SELECT * FROM colleges WHERE id=? AND active=1', s.subject_id);
-    return c ? { ...c, _token: tok } : null;
+    const c = await ctx.db.get('SELECT * FROM colleges WHERE id=? AND active=1', p.id);
+    return c && c.passcode_hash && fingerprint(c.passcode_hash) === p.v ? c : null;
   }
-  const a = await ctx.db.get('SELECT id,username,name,email,role,active FROM admins WHERE id=?', s.subject_id);
-  return a && a.active ? { ...a, _token: tok } : null;
+  const a = await ctx.db.get('SELECT id,username,name,email,role,active,pass FROM admins WHERE id=?', p.id);
+  if (!a || !a.active || fingerprint(a.pass) !== p.v) return null;
+  delete a.pass; return a;
+}
+export async function issueSession(ctx, kind, subject, hours) {
+  const v = fingerprint(kind === 'college' ? subject.passcode_hash : subject.pass);
+  setCookie(ctx, COOKIE[kind], await signSession(ctx.env, { k: kind, id: subject.id, v, hours }), hours * 3600);
 }
 
 export async function guardCheck(guard, ctx) {

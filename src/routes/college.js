@@ -59,12 +59,11 @@ route('GET', '/api/college/overview', 'college', async ctx => {
 
 route('GET', '/api/college/villages', 'college', async ctx => {
   const c = ctx.college;
-  const [mine, counts, vs] = await Promise.all([
-    ctx.db.all('SELECT village_id id FROM assignments WHERE college_id=?', c.id),
-    ctx.db.all('SELECT village_id id,COUNT(*) n FROM assignments GROUP BY village_id'),
+  const [held, vs] = await Promise.all([
+    ctx.db.all('SELECT village_id id,college_id cid FROM assignments'),
     ctx.db.all('SELECT id,name,taluk,lat,lng FROM villages ORDER BY name')]);
-  const m = new Set(mine.map(r => r.id)), cnt = new Map(counts.map(r => [r.id, r.n]));
-  return vs.map(v => ({ id: v.id, name: v.name, taluk: v.taluk, distance_km: haversine(c.lat, c.lng, v.lat, v.lng), mine: m.has(v.id), colleges: cnt.get(v.id) || 0 }))
+  const owner = new Map(held.map(r => [r.id, r.cid]));
+  return vs.map(v => ({ id: v.id, name: v.name, taluk: v.taluk, distance_km: haversine(c.lat, c.lng, v.lat, v.lng), mine: owner.get(v.id) === c.id, taken: owner.has(v.id) && owner.get(v.id) !== c.id }))
     .sort((a, b) => (a.distance_km ?? 1e9) - (b.distance_km ?? 1e9));
 });
 
@@ -73,7 +72,9 @@ route('POST', '/api/college/requests', 'college', async ctx => {
   const to = Number(b.to_village_id);
   const village = await db.get('SELECT * FROM villages WHERE id=?', to);
   if (!village) throw bad('Choose a village from the list');
-  if (await db.get('SELECT 1 x FROM assignments WHERE college_id=? AND village_id=?', c.id, to)) throw bad('That village is already allotted to you');
+  const holder = await db.get('SELECT college_id FROM assignments WHERE village_id=?', to);
+  if (holder && holder.college_id === c.id) throw bad('That village is already allotted to you');
+  if (holder) throw bad('Sorry, that village is already taken by another college. Please pick a free one.');
   let aid = null;
   if (b.assignment_id) {
     const a = await db.get('SELECT * FROM assignments WHERE id=? AND college_id=?', Number(b.assignment_id), c.id);
@@ -156,7 +157,8 @@ route('POST', '/api/college/days', 'college', async ctx => {
   const vid = Number(b.village_id);
   const id = await db.insert('INSERT INTO days(college_id,village_id,date,created_at) VALUES (?,?,?,?)', c.id, vid, b.date, nowIso());
   const last = await db.get('SELECT id FROM days WHERE college_id=? AND village_id=? AND id<>? ORDER BY date DESC,id DESC LIMIT 1', c.id, vid, id);
-  if (last) await db.run('INSERT INTO volunteers(day_id,slot,name,contact) SELECT ?::int,slot,name,contact FROM volunteers WHERE day_id=? ORDER BY slot', id, last.id);
+  if (last) for (const v of await db.all('SELECT slot,name,contact FROM volunteers WHERE day_id=? ORDER BY slot', last.id))
+    await db.run('INSERT INTO volunteers(day_id,slot,name,contact) VALUES (?,?,?,?)', id, v.slot, v.name, v.contact);
   await clog(ctx, 'day_add', b.date);
   return { ok: true, id };
 });

@@ -78,7 +78,7 @@ actions.reqChange = el => {
     ${aid ? html`<input type="hidden" name="assignment_id" value="${aid}">` : html`<div class="note">This asks for an <b>additional</b> village. To swap an existing one, use “Request a different village” on its card.</div>`}
     ${aid ? html`<p>Swapping out <b>${COL.assignments.find(a => String(a.id) === String(aid))?.village_name}</b></p>` : ''}
     <label class="f"><span>Preferred village (nearest first)</span><select name="to_village_id" required><option value="">Choose…</option>
-      ${VLIST.filter(v => !v.mine).map(v => html`<option value="${v.id}">${v.name} · ${v.taluk || ''} · ${km(v.distance_km)}${v.colleges ? ` · ${v.colleges} club(s) already` : ''}</option>`)}</select></label>
+      ${VLIST.filter(v => !v.mine && !v.taken).map(v => html`<option value="${v.id}">${v.name} · ${v.taluk || ''} · ${km(v.distance_km)}</option>`)}</select><span class="small muted">Only free villages are listed. Villages already allotted to another college can't be chosen.</span></label>
     <label class="f"><span>Why?</span><textarea name="reason" required maxlength="500" placeholder="e.g. 38 km away, no direct bus for our volunteers"></textarea></label>
     <div data-err></div><div class="row" style="justify-content:flex-end"><button type="button" class="btn white" data-act="closeModal">Cancel</button><button class="btn pink" type="submit">Send request</button></div></form>`);
 };

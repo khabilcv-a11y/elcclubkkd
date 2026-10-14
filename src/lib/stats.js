@@ -4,12 +4,12 @@ export const SCORE_FORMULA = { registered: 10, addressed: 2, attended: 5, verifi
 export async function collegeStats(db) {
   const [colleges, asgR, dysR, volR] = await Promise.all([
     db.all('SELECT id,name,short_name,address FROM colleges WHERE active=1'),
-    db.all(`SELECT college_id id, COUNT(*) villages, COALESCE(SUM((ack_status='acknowledged')::int),0) ack,
-      COALESCE(SUM((ack_status='submitted')::int),0) submitted FROM assignments GROUP BY college_id`),
+    db.all(`SELECT college_id id, COUNT(*) villages, COALESCE(SUM((ack_status='acknowledged')),0) ack,
+      COALESCE(SUM((ack_status='submitted')),0) submitted FROM assignments GROUP BY college_id`),
     db.all(`SELECT d.college_id id, COUNT(*) planned,
-      COALESCE(SUM((EXISTS(SELECT 1 FROM volunteers v WHERE v.day_id=d.id AND v.attended=1))::int),0) done FROM days d GROUP BY d.college_id`),
+      COALESCE(SUM((EXISTS(SELECT 1 FROM volunteers v WHERE v.day_id=d.id AND v.attended=1))),0) done FROM days d GROUP BY d.college_id`),
     db.all(`SELECT d.college_id id,
-      COALESCE(SUM((v.attended=1)::int),0) attended, COALESCE(SUM((v.attended=0)::int),0) absent,
+      COALESCE(SUM((v.attended=1)),0) attended, COALESCE(SUM((v.attended=0)),0) absent,
       COALESCE(SUM(CASE WHEN v.attended=1 THEN v.addressed END),0) addressed,
       COALESCE(SUM(CASE WHEN v.attended=1 THEN v.registered END),0) registered,
       COALESCE(SUM(CASE WHEN v.attended=1 AND a.ack_status='acknowledged' THEN v.registered END),0) verified_registered,

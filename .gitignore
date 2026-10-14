@@ -9,3 +9,4 @@ data/
 *.log
 .dev.vars
 .wrangler/
+.dev.vars*

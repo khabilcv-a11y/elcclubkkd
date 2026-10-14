@@ -20,7 +20,13 @@ const fdt = s => s ? new Date(s).toLocaleString('en-IN', { day: 'numeric', month
 const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const addDays = (iso, k) => { const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + k); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
+let inflight = 0;
+const busy = d => { inflight += d; document.body.classList.toggle('busy', inflight > 0); };
 async function api(path, method = 'GET', body) {
+  busy(1);
+  try { return await apiCall(path, method, body); } finally { busy(-1); }
+}
+async function apiCall(path, method, body) {
   const r = await fetch(path, { method, headers: body ? { 'Content-Type': 'application/json' } : (method === 'GET' ? {} : { 'Content-Type': 'application/json' }),
     body: body ? JSON.stringify(body) : (method === 'GET' ? undefined : '{}'), credentials: 'same-origin' });
   if (!r.ok) {

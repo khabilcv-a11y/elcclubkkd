@@ -22,7 +22,7 @@ async function boot() {
 }
 function renderNav() {
   show($('#navlinks'), ME ? html`<span class="pill-role">${ROLE[ME.user.role]}</span><span class="small" style="opacity:.85">${ME.user.name}</span>
-    <button class="btn sm white" data-act="pw">🔑</button><button class="btn sm white" data-act="logout">Sign out</button>` : '');
+    ${ME.user.role === 'super_admin' && ME.sheet_url ? html`<a class="btn sm white" href="${ME.sheet_url}" target="_blank" rel="noopener">📗 Sheet</a>` : ''}<button class="btn sm white" data-act="pw">🔑</button><button class="btn sm white" data-act="logout">Sign out</button>` : '');
 }
 async function route() {
   renderNav();
@@ -164,8 +164,8 @@ async function tAllot() {
   show($('#tab'), html`<div class="card" style="margin-bottom:22px"><h3>Allot villages</h3>
     ${colleges.length ? html`<div class="grid g2"><div class="stack"><label class="f"><span>College</span><select id="ac">${colleges.map(c => html`<option value="${c.id}" ${c.id === allotCollege ? 'selected' : ''}>${c.name}</option>`)}</select></label>
       <div class="note"><b>${sel.name}</b><br>${sel.address}<br>📞 ${sel.phone} · ✉️ ${sel.email}<br>👤 ${sel.coordinator || '—'}<br>${sel.lat == null ? '⚠️ No coordinates, so distances can\'t be shown. Edit the college to add them.' : `📍 ${sel.lat}, ${sel.lng}`}</div></div>
-      <div><b>Villages nearest first</b> <span class="small muted">(straight-line km)</span><div style="max-height:360px;overflow:auto;margin-top:8px;border:3px solid var(--ink);border-radius:12px">${vs.length ? table(['Village', '#km', ''], vs.map(v => html`<tr><td><b>${v.name}</b><div class="small muted">${v.taluk || ''}${v.others ? ` · ${v.others} other club(s)` : ''}</div></td><td class="num">${v.distance_km ?? '—'}</td>
-        <td>${v.allotted ? html`<button class="btn sm danger" data-act="unassignVillage" data-v="${v.id}">Remove</button>` : html`<button class="btn sm" data-act="assign" data-v="${v.id}">＋ Allot</button>`}</td></tr>`)) : empty('No villages in your scope.')}</div></div></div>` : empty('Add a college first.')}</div>
+      <div><b>Villages nearest first</b> <span class="small muted">(straight-line km)</span><div style="max-height:360px;overflow:auto;margin-top:8px;border:3px solid var(--ink);border-radius:12px">${vs.length ? table(['Village', '#km', ''], vs.map(v => html`<tr><td><b>${v.name}</b><div class="small muted">${v.taluk || ''}${v.holder ? html` · <b>held by ${v.holder}</b>` : ''}</div></td><td class="num">${v.distance_km ?? '—'}</td>
+        <td>${v.allotted ? html`<button class="btn sm danger" data-act="unassignVillage" data-v="${v.id}">Remove</button>` : v.holder ? html`<span class="chip grey">taken</span>` : html`<button class="btn sm" data-act="assign" data-v="${v.id}">＋ Allot</button>`}</td></tr>`)) : empty('No villages in your scope.')}</div></div></div>` : empty('Add a college first.')}</div>
     <div class="row between" style="margin-bottom:10px"><h3 style="font-size:1.4rem;text-transform:uppercase">All allotments</h3>${searchBox('q', '🔍 Filter')}</div>
     ${asg.length ? table(['College', 'College address', 'College contact', 'Village', '#Distance', 'Status', ''], asg.map(a => html`<tr class="rowq"><td><b>${a.college}</b></td><td class="small">${a.college_address}</td><td class="small">📞 ${a.college_phone}<br>✉️ ${a.college_email}${a.coordinator ? html`<br>👤 ${a.coordinator}` : ''}</td>
       <td><b>${a.village}</b><div class="small muted">${a.taluk || ''}</div></td><td class="num">${km(a.distance_km)}</td><td>${statusChip(a.ack_status)}</td>

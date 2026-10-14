@@ -1,4 +1,4 @@
-import { route, scopeOf, assertCollege, assertVillage } from '../lib/router.js';
+import { route, scopeOf, assertCollege, assertVillage, issueSession } from '../lib/router.js';
 import { log } from '../lib/db.js';
 import { sendMail, mailConfigured } from '../lib/mailer.js';
 import { collegeStats } from '../lib/stats.js';
@@ -15,7 +15,7 @@ const inList = ids => ids.length ? ids.map(() => '?').join(',') : 'NULL';
 
 route('GET', '/api/staff/me', STAFF, async ctx => {
   const s = await scopeOf(ctx);
-  return { user: ctx.user, scope: s && { colleges: [...s.colleges], villages: [...s.villages] }, smtp: mailConfigured(ctx.env), drive: driveConfigured(ctx.env) };
+  return { user: ctx.user, scope: s && { colleges: [...s.colleges], villages: [...s.villages] }, smtp: mailConfigured(ctx.env), drive: driveConfigured(ctx.env), sheet_url: ctx.env.SHEET_URL || null };
 });
 
 // ---------- dashboard ----------
@@ -71,7 +71,6 @@ route('POST', '/api/staff/colleges/:id/active', OPS, async ctx => {
   const c = await ctx.db.get('SELECT name FROM colleges WHERE id=?', id);
   if (!c) throw new HttpError(404, 'College not found');
   await ctx.db.run('UPDATE colleges SET active=? WHERE id=?', on, id);
-  if (!on) await ctx.db.run("DELETE FROM sessions WHERE role='college' AND subject_id=?", id);
   await slog(ctx, on ? 'college_activate' : 'college_deactivate', c.name);
   return { ok: true };
 });
@@ -165,11 +164,11 @@ route('GET', '/api/staff/colleges/:id/villages', STAFF, async ctx => {
   const s = await scopeOf(ctx);
   const c = await ctx.db.get('SELECT lat,lng FROM colleges WHERE id=?', id);
   if (!c) throw new HttpError(404, 'College not found');
-  const [mine, cnt, vs] = await Promise.all([ctx.db.all('SELECT village_id id FROM assignments WHERE college_id=?', id),
-    ctx.db.all('SELECT village_id id,COUNT(*) n FROM assignments GROUP BY village_id'), ctx.db.all('SELECT id,name,taluk,lat,lng FROM villages')]);
-  const m = new Set(mine.map(r => r.id)), k = new Map(cnt.map(r => [r.id, r.n]));
+  const [held, vs] = await Promise.all([ctx.db.all('SELECT a.village_id id,a.college_id cid,c.name holder FROM assignments a JOIN colleges c ON c.id=a.college_id'),
+    ctx.db.all('SELECT id,name,taluk,lat,lng FROM villages')]);
+  const owner = new Map(held.map(r => [r.id, r]));
   return vs.filter(v => !s || s.villages.has(v.id))
-    .map(v => ({ id: v.id, name: v.name, taluk: v.taluk, distance_km: haversine(c.lat, c.lng, v.lat, v.lng), allotted: m.has(v.id), others: (k.get(v.id) || 0) - (m.has(v.id) ? 1 : 0) }))
+    .map(v => { const o = owner.get(v.id); return { id: v.id, name: v.name, taluk: v.taluk, distance_km: haversine(c.lat, c.lng, v.lat, v.lng), allotted: !!o && o.cid === id, holder: o && o.cid !== id ? o.holder : null }; })
     .sort((a, b) => (a.distance_km ?? 1e9) - (b.distance_km ?? 1e9));
 });
 route('POST', '/api/staff/assignments', STAFF, async ctx => {
@@ -177,8 +176,10 @@ route('POST', '/api/staff/assignments', STAFF, async ctx => {
   await assertCollege(ctx, cid); await assertVillage(ctx, vid);
   const [c, v] = await Promise.all([ctx.db.get('SELECT name FROM colleges WHERE id=?', cid), ctx.db.get('SELECT name FROM villages WHERE id=?', vid)]);
   if (!c || !v) throw bad('Pick a college and a village');
+  const held = await ctx.db.get('SELECT c.name FROM assignments a JOIN colleges c ON c.id=a.college_id WHERE a.village_id=?', vid);
+  if (held) throw bad(`${v.name} is already allotted to ${held.name}. Remove that allotment first.`);
   try { await ctx.db.run('INSERT INTO assignments(college_id,village_id,created_at) VALUES (?,?,?)', cid, vid, nowIso()); }
-  catch (e) { if (isDup(e)) throw bad('That village is already allotted to this college'); throw e; }
+  catch (e) { if (isDup(e)) throw bad('That village was just taken by another college. Refresh and pick another.'); throw e; }
   await slog(ctx, 'assign', `${v.name} → ${c.name}`);
   return { ok: true };
 });
@@ -216,7 +217,7 @@ route('POST', '/api/staff/requests/:id/decide', STAFF, async ctx => {
     await assertVillage(ctx, r.to_village_id);
     await ctx.db.tx(async tx => {
       const a = r.assignment_id ? await tx.get('SELECT * FROM assignments WHERE id=?', r.assignment_id) : null;
-      if (await tx.get('SELECT 1 x FROM assignments WHERE college_id=? AND village_id=?', r.college_id, r.to_village_id)) throw bad('College already has that village');
+      if (await tx.get('SELECT 1 x FROM assignments WHERE village_id=?', r.to_village_id)) throw bad('That village is already allotted (to this or another college), so this request cannot be approved. Reject it or free the village first.');
       if (a) {
         if (LOCKED.has(a.ack_status)) throw bad('The current village is already with the officer for acknowledgement');
         await tx.run("UPDATE assignments SET village_id=?,ack_status='none',ack_token=NULL WHERE id=?", r.to_village_id, a.id);
@@ -293,7 +294,7 @@ async function reportData(db, type, s) {
     cols: [['college', 'College'], ['name', 'Volunteer'], ['contact', 'Contact'], ['days_assigned', 'Days assigned'], ['days_attended', 'Days attended'], ['days_absent', 'Days absent'],
       ['addressed', 'People addressed'], ['registered', 'Registered']],
     rows: (await db.all(`SELECT college_id,college,name,contact,days_assigned,days_attended,days_absent,addressed,registered FROM (
-      SELECT d.college_id, MIN(c.name) college, MIN(v.name) name, v.contact, COUNT(*) days_assigned, COALESCE(SUM((v.attended=1)::int),0) days_attended, COALESCE(SUM((v.attended=0)::int),0) days_absent,
+      SELECT d.college_id, MIN(c.name) college, MIN(v.name) name, v.contact, COUNT(*) days_assigned, COALESCE(SUM((v.attended=1)),0) days_attended, COALESCE(SUM((v.attended=0)),0) days_absent,
       COALESCE(SUM(CASE WHEN v.attended=1 THEN v.addressed END),0) addressed, COALESCE(SUM(CASE WHEN v.attended=1 THEN v.registered END),0) registered
       FROM volunteers v JOIN days d ON d.id=v.day_id JOIN colleges c ON c.id=d.college_id WHERE v.name<>''
       GROUP BY d.college_id, lower(trim(v.name)), v.contact) t ORDER BY college, name`)).filter(r => okC(r.college_id)) };
@@ -397,7 +398,6 @@ route('PUT', '/api/staff/team/:id', SUPER, async ctx => {
   await ctx.db.tx(async tx => {
     await tx.run('UPDATE admins SET name=?,email=?,role=?,active=? WHERE id=?', str(b.name, 100) || a.name, str(b.email, 120), role, active, id);
     if (newPass) await tx.run('UPDATE admins SET pass=? WHERE id=?', newPass, id);
-    if (!active || newPass) await tx.run("DELETE FROM sessions WHERE role='staff' AND subject_id=?", id);
     if (Array.isArray(b.colleges)) {
       await tx.run('DELETE FROM intern_colleges WHERE admin_id=?', id);
       for (const c of b.colleges) await tx.run('INSERT INTO intern_colleges VALUES (?,?) ON CONFLICT DO NOTHING', id, Number(c));
@@ -413,8 +413,9 @@ route('PUT', '/api/staff/team/:id', SUPER, async ctx => {
 route('POST', '/api/staff/password', STAFF, async ctx => {
   const a = await ctx.db.get('SELECT pass FROM admins WHERE id=?', ctx.user.id);
   if (!(await verifySecret(String(ctx.body.current || ''), a.pass))) throw bad('Current password is incorrect');
-  await ctx.db.run('UPDATE admins SET pass=? WHERE id=?', await hashSecret(checkPw(ctx.body.next)), ctx.user.id);
-  await ctx.db.run("DELETE FROM sessions WHERE role='staff' AND subject_id=? AND token<>?", ctx.user.id, ctx.user._token);
+  const newHash = await hashSecret(checkPw(ctx.body.next));
+  await ctx.db.run('UPDATE admins SET pass=? WHERE id=?', newHash, ctx.user.id);
+  await issueSession(ctx, 'staff', { id: ctx.user.id, pass: newHash }, 8);   // keep this browser signed in; other sessions end
   await slog(ctx, 'password_change', null);
   return { ok: true };
 });

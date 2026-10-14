@@ -104,5 +104,5 @@ export function csv(rows, cols) {
   return '﻿' + [cols.map(c => cell(c.label)).join(','),
     ...rows.map(r => cols.map(c => cell(r[c.key])).join(','))].join('\r\n');
 }
-// unique-violation from Postgres
-export const isDup = e => e && e.code === '23505';
+// unique-violation (local SQLite or the sheet's lock-protected check)
+export const isDup = e => !!e && (/UNIQUE constraint failed/i.test(e.message || '') || e.extra?.code === 'conflict');

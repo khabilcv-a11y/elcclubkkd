@@ -221,3 +221,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .photogrid figure{margin:0;position:relative;border:3px solid var(--ink);border-radius:12px;overflow:hidden;aspect-ratio:1;background:#e6e1f7}
 .photogrid img{width:100%;height:100%;object-fit:cover;display:block}
 .photogrid .x{position:absolute;top:4px;right:4px;border:2px solid var(--ink);background:var(--pink);color:#fff;border-radius:50%;width:28px;height:28px;cursor:pointer;font-weight:800}
+
+/* thin progress bar while the portal is talking to the server (saves can take a second or two) */
+body::before{content:"";position:fixed;left:0;top:0;height:4px;width:0;background:linear-gradient(90deg,var(--pink),var(--lime),var(--cyan));z-index:200;opacity:0;transition:opacity .2s}
+body.busy::before{opacity:1;width:92%;transition:width 6s cubic-bezier(.1,.8,.2,1),opacity .1s}
