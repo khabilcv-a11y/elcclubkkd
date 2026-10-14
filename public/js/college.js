@@ -314,3 +314,10 @@ actions.csvDays = () => {
   const rows = []; COL.days.slice().sort((a, b) => a.date.localeCompare(b.date)).forEach(d => d.volunteers.filter(v => v.name).forEach(v => rows.push([d.date, villageOf(d.village_id).village_name, v.name, v.contact, v.attended === 1 ? 'Present' : v.attended === 0 ? 'Absent' : 'Not recorded', v.attended === 1 ? v.addressed : '', v.attended === 1 ? v.registered : ''])));
   download(`${(COL.college.short_name || 'college').replace(/\W+/g, '-')}-daily-log.csv`, toCsv(['Date', 'Village', 'Student', 'Mobile', 'Attendance', 'People reached', 'Registered'], rows));
 };
+
+// ---------- change own password ----------
+actions.changePw = () => modal(html`<h2>Change password</h2><form data-form="changePw" class="stack-s">
+  <label class="f"><span>Current password</span><input type="password" name="current" autocomplete="current-password" required></label>
+  <label class="f"><span>New password (at least 8 characters)</span><input type="password" name="password" minlength="8" autocomplete="new-password" required></label>
+  <div data-err></div><div class="row" style="justify-content:flex-end;margin-top:14px"><button type="button" class="btn secondary" data-act="closeModal">Cancel</button><button class="btn primary">Save password</button></div></form>`);
+forms.changePw = async f => { await api('/api/college/password', 'POST', fd(f)); f.closest('.overlay').close(); toast('Password changed'); };
