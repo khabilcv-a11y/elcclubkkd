@@ -320,6 +320,17 @@ html.a-nomotion *,html.a-nomotion *::before,html.a-nomotion *::after{animation:n
 .page-in{animation:fade .25s ease}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}.rv{opacity:1;transform:none}}
 
+/* ---------- guided tour ---------- */
+.tour{position:fixed;inset:0;z-index:300}
+.tour.dim{background:rgba(10,14,40,.62)}
+.tour-spot{position:fixed;border-radius:10px;box-shadow:0 0 0 9999px rgba(10,14,40,.62),0 0 0 3px var(--saffron);pointer-events:none;transition:left .25s,top .25s,width .25s,height .25s}
+.tour-card{position:fixed;background:#fff;color:var(--ink);border-radius:var(--r-lg);padding:20px 20px 16px;box-shadow:var(--shadow-lg)}
+.tour-card h2{font-size:1.15rem;margin:2px 0 6px}.tour-card p{color:var(--muted);font-size:.93rem;line-height:1.55}
+.tour-count{font-size:.72rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--saffron)}
+.tour-dots{display:flex;gap:5px;margin:14px 0}.tour-dots i{width:7px;height:7px;border-radius:50%;background:#d9dcec}.tour-dots i.on{background:var(--brand);width:18px;border-radius:99px}
+.tour-btns{display:flex;gap:8px;align-items:center}
+@media(prefers-reduced-motion:reduce){.tour-spot{transition:none}}
+@media print{.tour{display:none!important}}
 /* ---------- report print-out ---------- */
 .printdoc{display:none}
 @media print{

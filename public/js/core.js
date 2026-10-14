@@ -241,10 +241,12 @@ if (document.readyState !== 'loading') { applyA11y(); initA11y(); }
 const LOGO = { nvlb: '/img/nvlb.png', sweepDark: '/img/sweep-dark.webp', sweepWhite: '/img/sweep-white.webp', district: '/img/district.png' };
 // nav = [{ group: 'Title', items: [{ id, label, icon, count }] }]; base = '#/me' etc.
 function consoleShell({ product, who, role, nav, active, base, content, extra = '' }) {
+  const tkind = base === '#/me' ? 'college' : base === '#/officer' ? 'officer' : 'staff';
+  if (typeof maybeTour === 'function') maybeTour(tkind, who, role);
   const items = g => g.items.map(i => html`<a class="nav" href="${base}/${i.id}" ${i.id === active ? 'aria-current="page"' : ''}>${icon(i.icon)}<span>${i.label}</span>${i.count ? html`<span class="count" aria-label="${i.count} new">${i.count}</span>` : ''}</a>`);
-  return html`<header class="topbar"><div class="wrap"><a class="brand" href="${base}/${nav[0].items[0].id}"><img src="${LOGO.district}" alt="District Administration Kozhikode" style="height:36px"><span class="sep"></span><img src="${LOGO.sweepDark}" alt="SWEEP Kozhikode" style="height:32px"><span class="sep"></span><span><b>${product}</b><small>Electoral Literacy Clubs</small></span></a><span class="spacer"></span>${extra}
+  return html`<header class="topbar" data-tour-kind="${tkind}" data-tour-who="${who}" data-tour-role="${role}"><div class="wrap"><a class="brand" href="${base}/${nav[0].items[0].id}"><img src="${LOGO.district}" alt="District Administration Kozhikode" style="height:36px"><span class="sep"></span><img src="${LOGO.sweepDark}" alt="SWEEP Kozhikode" style="height:32px"><span class="sep"></span><span><b>${product}</b><small>Electoral Literacy Clubs</small></span></a><span class="spacer"></span>${extra}
       <span class="userchip"><span class="avatar" aria-hidden="true">${initials(who)}</span><span class="who"><b>${who}</b><br><small class="muted">${role}</small></span></span>
-      ${typeof ME !== 'undefined' && ME.kind === 'college' ? html`<button class="btn secondary sm" data-act="changePw">${icon('key')}<span>Password</span></button>` : ''}
+      <button class="btn secondary sm" data-act="tour">${icon('help')}<span>Tour</span></button>${typeof ME !== 'undefined' && ME.kind === 'college' ? html`<button class="btn secondary sm" data-act="changePw">${icon('key')}<span>Password</span></button>` : ''}
       <button class="btn secondary sm" data-act="signout">${icon('logout')}<span>Sign out</span></button></div></header>
     <div class="shell"><nav class="side" aria-label="Workspace">${nav.map(g => html`${g.group ? html`<h4>${g.group}</h4>` : ''}${items(g)}`)}</nav>
     <main id="main" class="main page-in" tabindex="-1">${content}</main></div>`;
