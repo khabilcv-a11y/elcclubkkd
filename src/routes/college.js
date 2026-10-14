@@ -3,7 +3,8 @@ import { log } from '../lib/db.js';
 import { sendMail } from '../lib/mailer.js';
 import { collegeStats } from '../lib/stats.js';
 import { driveUpload, driveGet, driveDelete, driveConfigured } from '../lib/drive.js';
-import { HttpError, bad, haversine, isDate, dateRange, todayStr, nowIso, str, reqStr, int, phone, token } from '../lib/util.js';
+import { HttpError, bad, haversine, isDate, todayStr, nowIso, str, reqStr, int, phone, token, isDup } from '../lib/util.js';
+import { workingDates, planRoster } from '../lib/roster.js';
 
 export const LOCKED = new Set(['submitted', 'acknowledged']);
 const clog = (ctx, action, detail) => log(ctx.db, 'college', ctx.college.name, null, action, detail, ctx.ip);
@@ -35,7 +36,7 @@ route('GET', '/api/college/me', 'college', ctx => ({ id: ctx.college.id, name: c
 
 route('GET', '/api/college/overview', 'college', async ctx => {
   const { db, college: c } = ctx;
-  const [days, asg, stats, requests, cert] = await Promise.all([
+  const [days, asg, stats, requests, cert, pool] = await Promise.all([
     daysWithVolunteers(db, c.id),
     db.all(`SELECT a.id,a.village_id,a.ack_status,a.query_note,a.ack_name,a.ack_designation,a.ack_at,a.submitted_at,a.distance_km road_km,a.distance_note,
       v.name village_name,v.taluk,v.lat,v.lng,v.officer_name,v.officer_phone,v.officer_email,v.lsgi,v.office_address,v.office_phone
@@ -45,14 +46,16 @@ route('GET', '/api/college/overview', 'college', async ctx => {
       tv.name to_village, fv.name from_village FROM change_requests r JOIN villages tv ON tv.id=r.to_village_id
       LEFT JOIN assignments a ON a.id=r.assignment_id LEFT JOIN villages fv ON fv.id=a.village_id
       WHERE r.college_id=? ORDER BY r.id DESC`, c.id),
-    db.get('SELECT number,issued_at FROM certificates WHERE college_id=?', c.id)]);
+    db.get('SELECT number,issued_at FROM certificates WHERE college_id=?', c.id),
+    db.all('SELECT id,name,contact,active FROM pool WHERE college_id=? ORDER BY name', c.id)]);
   const assignments = asg.map(a => {
-    const out = { ...a, distance_km: a.road_km ?? haversine(c.lat, c.lng, a.lat, a.lng), distance_road: a.road_km != null, totals: reportFrom(days, a.village_id).totals, locked: LOCKED.has(a.ack_status) };
+    const out = { ...a, distance_km: a.road_km ?? haversine(c.lat, c.lng, a.lat, a.lng), distance_road: a.road_km != null, totals: reportFrom(days, a.village_id).totals, locked: LOCKED.has(a.ack_status),
+      coverage: (ds => ({ days: ds.length, staffed: ds.filter(d => d.volunteers.filter(v => v.name).length >= 2).length }))(days.filter(d => d.village_id === a.village_id)) };
     delete out.lat; delete out.lng; return out;
   });
   return {
     college: { id: c.id, name: c.name, short_name: c.short_name, address: c.address, phone: c.phone, email: c.email, coordinator: c.coordinator, lsgi: c.lsgi },
-    stats: stats.find(s => s.id === c.id), assignments, requests, days, today: todayStr(), certificate: cert || null,
+    stats: stats.find(s => s.id === c.id), assignments, requests, days, pool, today: todayStr(), certificate: cert || null,
     photos_enabled: driveConfigured(ctx.env),
   };
 });
@@ -95,46 +98,114 @@ route('DELETE', '/api/college/requests/:id', 'college', async ctx => {
   return { ok: true };
 });
 
-// ----- schedule -----
-function cleanPair(list) {
-  const out = [];
-  for (const v of Array.isArray(list) ? list.slice(0, 4) : []) {
-    const name = str(v.name, 80), contact = str(v.contact, 20);
-    if (!name && !contact) continue;
-    if (!name) throw bad('Volunteer name is required alongside the contact number');
-    out.push({ name, contact: phone(contact, `Contact number for ${name}`) });
-  }
-  return out;
+// ----- student pool -----
+const POOL_MAX = 200;
+// "Name, 98765 43210" / "Name - +91 98765 43210" / "Name 9876543210": the mobile number is the last group of digits on the line
+function parsePoolLine(line) {
+  const m = line.trim().match(/^(.*?)[\s,;:|\t-]*(\+?\d[\d\s-]{8,17}\d)\s*$/);
+  if (!m || !m[1].replace(/[^A-Za-zഀ-ൿ]/g, '')) return null;
+  try { return { name: m[1].replace(/\s+/g, ' ').replace(/[,;:|\t-]+$/, '').trim().slice(0, 80), contact: phone(m[2].replace(/[\s-]/g, '')) }; } catch { return null; }
 }
+route('GET', '/api/college/pool', 'college', ctx => ctx.db.all('SELECT id,name,contact,active FROM pool WHERE college_id=? ORDER BY name', ctx.college.id));
+
+route('POST', '/api/college/pool', 'college', async ctx => {
+  const { db, college: c, body: b } = ctx;
+  const existing = await db.all('SELECT contact FROM pool WHERE college_id=?', c.id);
+  const have = new Set(existing.map(r => r.contact));
+  const items = [], errors = [];
+  if (b.bulk) String(b.bulk).split(/\r?\n/).forEach((line, i) => { if (!line.trim()) return; const p = parsePoolLine(line); p ? items.push(p) : errors.push(`Line ${i + 1}: "${line.trim().slice(0, 40)}" needs a name and a 10-digit mobile number`); });
+  else { const name = reqStr(b.name, 'Student name', 80); items.push({ name, contact: phone(b.contact, `Mobile number for ${name}`) }); }
+  if (existing.length + items.length > POOL_MAX) throw bad(`A college can keep up to ${POOL_MAX} students in its list`);
+  let added = 0, dup = 0;
+  for (const p of items) {
+    if (have.has(p.contact)) { dup++; continue; }
+    have.add(p.contact);
+    await db.run('INSERT INTO pool(college_id,name,contact,active,created_at) VALUES (?,?,?,1,?)', c.id, p.name, p.contact, nowIso()); added++;
+  }
+  if (!b.bulk && dup) throw bad('A student with that mobile number is already in your list');
+  await clog(ctx, 'pool_add', `${added} student(s)`);
+  return { ok: true, added, duplicates: dup, errors };
+});
+
+route('PUT', '/api/college/pool/:id', 'college', async ctx => {
+  const row = await ctx.db.get('SELECT * FROM pool WHERE id=? AND college_id=?', Number(ctx.params.id), ctx.college.id);
+  if (!row) throw new HttpError(404, 'Student not found');
+  const name = reqStr(ctx.body.name ?? row.name, 'Student name', 80), contact = phone(ctx.body.contact ?? row.contact, 'Mobile number');
+  try { await ctx.db.run('UPDATE pool SET name=?,contact=?,active=? WHERE id=?', name, contact, ctx.body.active === false || ctx.body.active === 0 ? 0 : 1, row.id); }
+  catch (e) { if (isDup(e)) throw bad('Another student in your list already has that mobile number'); throw e; }
+  return { ok: true };
+});
+route('DELETE', '/api/college/pool/:id', 'college', async ctx => {
+  const r = await ctx.db.run('DELETE FROM pool WHERE id=? AND college_id=?', Number(ctx.params.id), ctx.college.id);
+  if (!r.changes) throw new HttpError(404, 'Student not found');
+  return { ok: true };
+});
+
+// ----- schedule: every village needs 15 days, 2 students a day -----
+export const LOCKED_SET = LOCKED;
 async function lockedVillages(db, collegeId) {
   return new Set((await db.all('SELECT village_id id,ack_status s FROM assignments WHERE college_id=?', collegeId)).filter(a => LOCKED.has(a.s)).map(a => a.id));
+}
+async function openVillages(db, collegeId) {
+  const locked = await lockedVillages(db, collegeId);
+  return (await db.all('SELECT village_id id FROM assignments WHERE college_id=? ORDER BY id', collegeId)).map(r => r.id).filter(id => !locked.has(id));
+}
+
+// give the days of every open village their two students, from the pool, in shifts. Days that already have attendance recorded are never touched.
+async function applyRoster(db, collegeId, shiftLen) {
+  const villages = await openVillages(db, collegeId);
+  const pool = await db.all('SELECT id,name,contact FROM pool WHERE college_id=? AND active=1 ORDER BY id', collegeId);
+  const withDays = [];
+  for (const vid of villages) {
+    const days = await db.all('SELECT id dayId,date FROM days WHERE college_id=? AND village_id=? ORDER BY date,id', collegeId, vid);
+    if (days.length) withDays.push({ villageId: vid, days });
+  }
+  if (!withDays.length) return { staffed: 0, warnings: [], need: 0, pool: pool.length };
+  const { plan, warnings, needTotal } = planRoster(pool, withDays, shiftLen);
+  let staffed = 0;
+  await db.tx(async tx => {
+    for (const p of plan) {
+      const rec = await tx.get('SELECT COUNT(*) n FROM volunteers WHERE day_id=? AND attended IS NOT NULL', p.dayId);
+      if (rec.n) continue;
+      await tx.run('DELETE FROM volunteers WHERE day_id=?', p.dayId);
+      for (const [slot, st] of p.students.entries()) await tx.run('INSERT INTO volunteers(day_id,slot,name,contact) VALUES (?,?,?,?)', p.dayId, slot, st.name, st.contact);
+      if (p.students.length >= 2) staffed++;
+    }
+  });
+  return { staffed, warnings, need: needTotal, pool: pool.length };
 }
 
 route('POST', '/api/college/schedule', 'college', async ctx => {
   const { db, college: c, body: b } = ctx;
-  if (!isDate(b.start) || !isDate(b.end) || b.end < b.start) throw bad('Choose a valid from and to date');
-  const dates = dateRange(b.start, b.end, !!b.skip_sundays);
-  if (!dates.length) throw bad('No days fall in that range');
-  if (dates.length > 45) throw bad('Please keep the schedule within 45 days');
-  const per = int(b.per_village || 3, 'Days per village', { min: 1, max: 15 });
-  const locked = await lockedVillages(db, c.id);
-  const open = (await db.all('SELECT village_id id FROM assignments WHERE college_id=? ORDER BY id', c.id)).map(r => r.id).filter(id => !locked.has(id));
+  if (!isDate(b.start)) throw bad('Choose the date your first field day starts');
+  const count = int(b.days || 15, 'Number of days', { min: 1, max: 31 });
+  const shiftLen = int(b.shift_len || 3, 'Days each pair works in a row', { min: 1, max: 15 });
+  const dates = workingDates(b.start, count, !!b.skip_sundays);
+  const open = await openVillages(db, c.id);
   if (!open.length) throw bad('You have no villages available to schedule. Ask the admin to allot villages.');
-  const pair = cleanPair(b.volunteers);
-  const existing = await db.all(`SELECT d.id,(SELECT COUNT(*) FROM volunteers v WHERE v.day_id=d.id AND v.attended IS NOT NULL) rec
-    FROM days d WHERE d.college_id=? AND d.village_id IN (${open.map(() => '?').join(',')})`, c.id, ...open);
-  if (existing.length && !b.replace) throw new HttpError(409, 'You already have a schedule. Replace it?', { code: 'exists' });
-  if (existing.some(e => e.rec)) throw new HttpError(409, 'Attendance has already been recorded, so the schedule cannot be replaced in one go. Edit or delete individual days instead.', { code: 'has_data' });
+  const names = new Map((await db.all('SELECT v.id,v.name FROM villages v JOIN assignments a ON a.village_id=v.id WHERE a.college_id=?', c.id)).map(r => [r.id, r.name]));
+  const created = [], kept = [];
   await db.tx(async tx => {
-    for (const e of existing) await tx.run('DELETE FROM days WHERE id=?', e.id);
-    for (const [i, date] of dates.entries()) {
-      const village = open[Math.floor(i / per) % open.length];
-      const id = await tx.insert('INSERT INTO days(college_id,village_id,date,created_at) VALUES (?,?,?,?)', c.id, village, date, nowIso());
-      for (const [s, v] of pair.entries()) await tx.run('INSERT INTO volunteers(day_id,slot,name,contact) VALUES (?,?,?,?)', id, s, v.name, v.contact);
+    for (const vid of open) {
+      const ex = await tx.all('SELECT d.id,(SELECT COUNT(*) FROM volunteers v WHERE v.day_id=d.id AND v.attended IS NOT NULL) rec FROM days d WHERE d.college_id=? AND d.village_id=?', c.id, vid);
+      if (ex.length && !b.replace) { kept.push({ village: names.get(vid), reason: 'already scheduled' }); continue; }
+      if (ex.some(e => e.rec)) { kept.push({ village: names.get(vid), reason: 'attendance already recorded' }); continue; }
+      for (const e of ex) await tx.run('DELETE FROM days WHERE id=?', e.id);
+      for (const date of dates) await tx.insert('INSERT INTO days(college_id,village_id,date,created_at) VALUES (?,?,?,?)', c.id, vid, date, nowIso());
+      created.push({ village: names.get(vid), days: dates.length });
     }
   });
-  await clog(ctx, 'schedule', `${dates.length} days from ${dates[0]} to ${dates.at(-1)}`);
-  return { ok: true, days: dates.length };
+  const roster = await applyRoster(db, c.id, shiftLen);
+  await clog(ctx, 'schedule', `${created.length} village(s) x ${dates.length} days from ${dates[0]}`);
+  return { ok: true, created, kept, roster, from: dates[0], to: dates.at(-1) };
+});
+
+// rebuild the shifts (e.g. after the student list changed); only days without attendance are re-assigned
+route('POST', '/api/college/roster', 'college', async ctx => {
+  const shiftLen = int(ctx.body.shift_len || 3, 'Days each pair works in a row', { min: 1, max: 15 });
+  const roster = await applyRoster(ctx.db, ctx.college.id, shiftLen);
+  await clog(ctx, 'roster', `${roster.staffed} days staffed`);
+  return { ok: true, roster };
 });
 
 async function ownDay(ctx, id) {
@@ -201,29 +272,16 @@ route('PUT', '/api/college/days/:id/volunteers', 'college', async ctx => {
     }
     rows.push({ name, contact: phone(contact, `Contact number for ${name}`), att, addressed, registered });
   }
+  const old = await ctx.db.all('SELECT * FROM volunteers WHERE day_id=?', d.id);
   await ctx.db.tx(async tx => {
     await tx.run('DELETE FROM volunteers WHERE day_id=?', d.id);
-    for (const [i, r] of rows.entries()) await tx.run('INSERT INTO volunteers(day_id,slot,name,contact,attended,addressed,registered) VALUES (?,?,?,?,?,?,?)', d.id, i, r.name, r.contact, r.att, r.addressed, r.registered);
-  });
-  return { ok: true };
-});
-
-route('POST', '/api/college/block-volunteers', 'college', async ctx => {
-  await ownAssignedVillage(ctx, ctx.body.village_id);
-  const pair = cleanPair(ctx.body.volunteers);
-  const days = await ctx.db.all('SELECT id FROM days WHERE college_id=? AND village_id=?', ctx.college.id, Number(ctx.body.village_id));
-  await ctx.db.tx(async tx => {
-    for (const d of days) {
-      const cur = await tx.all('SELECT id,slot FROM volunteers WHERE day_id=? ORDER BY slot,id', d.id);
-      for (const [i, v] of pair.entries()) {
-        if (cur[i]) await tx.run('UPDATE volunteers SET name=?,contact=? WHERE id=?', v.name, v.contact, cur[i].id);
-        else await tx.run('INSERT INTO volunteers(day_id,slot,name,contact) VALUES (?,?,?,?)', d.id, i, v.name, v.contact);
-      }
-      for (const extra of cur.slice(pair.length)) await tx.run('DELETE FROM volunteers WHERE id=? AND attended IS NULL', extra.id);
+    for (const [i, r] of rows.entries()) {
+      const o = old.find(x => x.name === r.name && x.contact === r.contact && x.attended === r.att && x.addressed === r.addressed && x.registered === r.registered && x.verified);
+      await tx.run('INSERT INTO volunteers(day_id,slot,name,contact,attended,addressed,registered,verified,verified_by,verified_at,verify_note) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+        d.id, i, r.name, r.contact, r.att, r.addressed, r.registered, o ? o.verified : null, o ? o.verified_by : null, o ? o.verified_at : null, o ? o.verify_note : null);
     }
   });
-  await clog(ctx, 'volunteers_set', `${pair.length} volunteers for ${days.length} days`);
-  return { ok: true, days: days.length };
+  return { ok: true };
 });
 
 // ----- photos (stored in Google Drive) -----

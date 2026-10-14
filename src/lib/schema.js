@@ -25,6 +25,9 @@ export const TABLES = {
   volunteers: { pk: ['id'], cols: [['id', 'INTEGER'], ['day_id', 'INTEGER', { nn: 1, ref: ['days', 'CASCADE'] }], ['slot', 'INTEGER', { nn: 1, def: 0 }], ['name', 'TEXT', { nn: 1, def: "''" }],
     ['contact', 'TEXT', { nn: 1, def: "''" }], ['attended', 'INTEGER'], ['addressed', 'INTEGER', { nn: 1, def: 0 }], ['registered', 'INTEGER', { nn: 1, def: 0 }],
     ['verified', 'TEXT'], ['verified_by', 'TEXT'], ['verified_at', 'TEXT'], ['verify_note', 'TEXT']] },
+  // each college's own list of student volunteers; the 15-day shift roster is built from it
+  pool: { pk: ['id'], unique: [['college_id', 'contact']], cols: [['id', 'INTEGER'], ['college_id', 'INTEGER', { nn: 1, ref: ['colleges', 'CASCADE'] }], ['name', 'TEXT', { nn: 1 }],
+    ['contact', 'TEXT', { nn: 1 }], ['active', 'INTEGER', { nn: 1, def: 1 }], ['created_at', 'TEXT']] },
   media: { pk: ['id'], cols: [['id', 'INTEGER'], ['day_id', 'INTEGER', { nn: 1, ref: ['days', 'CASCADE'] }], ['college_id', 'INTEGER', { nn: 1, ref: ['colleges', 'CASCADE'] }],
     ['drive_id', 'TEXT', { nn: 1 }], ['name', 'TEXT'], ['mime', 'TEXT'], ['size', 'INTEGER'], ['created_at', 'TEXT']] },
   certificates: { pk: ['college_id'], cols: [['college_id', 'INTEGER', { nn: 1, ref: ['colleges', 'CASCADE'] }], ['number', 'TEXT', { nn: 1 }], ['issued_at', 'TEXT'], ['issued_by', 'TEXT']] },

@@ -1,320 +1,387 @@
 'use strict';
 // ---- staff console: super admin / admin / intern ----
-const app = $('#app');
-let ME = null;   // { user, scope, smtp }
+let SU = null;   // { user, scope, smtp, drive, sheet_url }
+let DASH = null;
 const ROLE = { super_admin: 'Super admin', admin: 'Admin', intern: 'Intern' };
-const isSuper = () => ME.user.role === 'super_admin', isOps = () => ME.user.role !== 'intern', isIntern = () => ME.user.role === 'intern';
-let badges = {};
+const isSuper = () => SU.user.role === 'super_admin', isOps = () => SU.user.role !== 'intern', isIntern = () => SU.user.role === 'intern';
+const app = $('#app');
 
-const TABS = () => [
-  ['dashboard', '📊 Dashboard'], ['colleges', '🏫 Colleges'], ['villages', '🏡 Villages'], ['allot', '🧭 Allotments'],
-  ['requests', '🔁 Requests', badges.pending_requests], ['acks', '✍️ Acknowledgements', badges.awaiting_ack], ['reports', '📑 Reports'], ['certs', '🏆 Certificates'],
-  ...(isOps() ? [['outbox', '✉️ Outbox']] : []), ...(isSuper() ? [['team', '👥 Team'], ['logs', '🛡 Activity log']] : []),
-];
-const RENDER = { dashboard: tDashboard, colleges: tColleges, villages: tVillages, allot: tAllot, requests: tRequests, acks: tAcks, reports: tReports, certs: tCerts, outbox: tOutbox, team: tTeam, logs: tLogs };
-
-setUnauth(() => { ME = null; renderLogin(); });
+setUnauth(() => { SU = null; renderLogin(); });
 
 async function boot() {
-  try { ME = await api('/api/staff/me'); } catch { ME = null; }
+  try { SU = await api('/api/staff/me'); } catch { SU = null; }
   window.addEventListener('hashchange', route);
   route();
 }
-function renderNav() {
-  show($('#navlinks'), ME ? html`<span class="pill-role">${ROLE[ME.user.role]}</span><span class="small" style="opacity:.85">${ME.user.name}</span>
-    ${ME.user.role === 'super_admin' && ME.sheet_url ? html`<a class="btn sm white" href="${ME.sheet_url}" target="_blank" rel="noopener">📗 Sheet</a>` : ''}<button class="btn sm white" data-act="pw">🔑</button><button class="btn sm white" data-act="logout">Sign out</button>` : '');
-}
+const PAGES = () => ({ dashboard: pgDashboard, colleges: pgColleges, villages: pgVillages, allot: pgAllot, ...(isOps() ? { officers: pgOfficers, notices: pgNotices, resources: pgResources, outbox: pgOutbox } : {}),
+  requests: pgRequests, cert: pgCert, issues: pgIssues, reports: pgReports, ...(isSuper() ? { team: pgTeam, logs: pgLogs } : {}) });
+const TITLES = { dashboard: 'Dashboard', colleges: 'Colleges', villages: 'Villages', allot: 'Allotments', officers: 'Village officers', requests: 'Change requests', cert: 'Certification', issues: 'Help desk issues', notices: 'Announcements',
+  resources: 'Resource centre', reports: 'Reports & exports', team: 'Team', logs: 'Activity log', outbox: 'Outbox' };
+
 async function route() {
-  renderNav();
-  if (!ME) return renderLogin();
-  const tab = location.hash.replace(/^#\/?/, '') || 'dashboard';
-  const key = RENDER[tab] && TABS().some(t => t[0] === tab) ? tab : 'dashboard';
-  try { const d = await api('/api/staff/dashboard'); badges = d.totals; } catch (e) { if (e.status === 401) return; }
-  show(app, html`<div class="wrap app"><div class="apphead"><div><span class="chip ${isSuper() ? 'pink' : isIntern() ? 'warn' : 'violet'}">${ROLE[ME.user.role]}</span>
-      <h1>Staff <em>console</em></h1>${isIntern() ? html`<div class="muted">You're seeing only the ${ME.scope.colleges.length} college(s) and ${ME.scope.villages.length} village(s) assigned to you.</div>` : ''}</div></div>
-    <div class="subnav" role="tablist">${TABS().map(([k, l, b]) => html`<button class="${k === key ? 'on' : ''}" role="tab" data-act="tab" data-k="${k}">${l}${b ? html`<span class="badge">${b}</span>` : ''}</button>`)}</div><div id="tab"><div class="loading">Loading…</div></div></div>`);
-  RENDER[key]().catch(handleErr);
+  if (!SU) return renderLogin();
+  let page = location.hash.replace(/^#\/?/, '').split('/')[0] || 'dashboard';
+  if (!PAGES()[page]) page = 'dashboard';
+  try { DASH = (await api('/api/staff/dashboard')); } catch (e) { if (e.status === 401) return; }
+  const t = DASH?.totals || {};
+  const nav = [{ group: 'Overview', items: [{ id: 'dashboard', label: 'Dashboard', icon: 'grid' }] },
+    { group: 'Manage', items: [{ id: 'colleges', label: 'Colleges', icon: 'building' }, { id: 'villages', label: 'Villages', icon: 'map-pin' }, { id: 'allot', label: 'Allotments', icon: 'link' }, ...(isOps() ? [{ id: 'officers', label: 'Village officers', icon: 'landmark' }] : [])] },
+    { group: 'Operations', items: [{ id: 'requests', label: 'Change requests', icon: 'refresh', count: t.pending_requests }, { id: 'cert', label: 'Certification', icon: 'certificate', count: t.awaiting_ack }, { id: 'issues', label: 'Help desk', icon: 'help', count: t.open_issues },
+      ...(isOps() ? [{ id: 'notices', label: 'Announcements', icon: 'megaphone' }, { id: 'resources', label: 'Resources', icon: 'book' }] : [])] },
+    { group: 'Insights', items: [{ id: 'reports', label: 'Reports & exports', icon: 'chart' }] },
+    ...(isOps() ? [{ group: 'Administration', items: [...(isSuper() ? [{ id: 'team', label: 'Team', icon: 'users' }, { id: 'logs', label: 'Activity log', icon: 'shield' }] : []), { id: 'outbox', label: 'Outbox', icon: 'mail' }] }] : [])];
+  const extra = html`${isSuper() && SU.sheet_url ? html`<a class="btn secondary sm" href="${SU.sheet_url}" target="_blank" rel="noopener">${icon('external')}<span>Open Google Sheet</span></a>` : ''}<button class="btn ghost sm" data-act="pw" aria-label="Change password">${icon('key')}</button>`;
+  show(app, consoleShell({ product: 'Staff console', who: SU.user.name, role: ROLE[SU.user.role], nav, active: page, base: '#', content: html`<div id="pg"><div class="loading"><div class="spin"></div></div></div>`, extra }));
+  document.title = TITLES[page] + ' · Staff console';
+  try { await PAGES()[page]($('#pg')); } catch (e) { handleErr(e); }
+  announce(TITLES[page]);
 }
-actions.tab = el => { location.hash = '#/' + el.dataset.k; };
 const refresh = () => route();
-const closeM = el => el.closest('.overlay').close();
-actions.closeModal = closeM;
-const mfoot = (label, cls = 'btn pink') => html`<div data-err></div><div class="row" style="justify-content:flex-end;margin-top:14px"><button type="button" class="btn white" data-act="closeModal">Cancel</button><button class="btn ${cls}" type="submit">${label}</button></div>`;
+actions.signout = async () => { await api('/api/auth/staff/logout', 'POST'); SU = null; renderLogin(); };
 
-// ---------- login ----------
+// ---------- sign-in ----------
 function renderLogin() {
-  renderNav();
-  show(app, html`<div class="login-bg"><div class="card"><h2 style="font-size:2rem;text-transform:uppercase">Staff sign-in</h2>
-    <p class="muted">Super admins, admins and interns sign in here. Every sign-in is logged.</p>
-    <form data-form="login" class="stack"><label class="f"><span>Username</span><input type="text" name="username" autocomplete="username" required autofocus></label>
+  show(app, html`<div class="loginpage" style="min-height:100vh"><div class="logincard"><div class="lg"><img src="${LOGO.district}" alt="District Administration Kozhikode"><img src="${LOGO.sweepDark}" alt="SWEEP Kozhikode"></div>
+    <h1>Staff console</h1><p class="sub">Super admins, admins and interns sign in here. Every sign-in is logged.</p>
+    <form data-form="login" class="stack-s"><label class="f"><span>Username</span><input type="text" name="username" autocomplete="username" autocapitalize="none" required autofocus></label>
     <label class="f"><span>Password</span><input type="password" name="password" autocomplete="current-password" required></label><div data-err></div>
-    <button class="btn pink xl" type="submit" style="width:100%">Sign in</button></form><p class="small"><a href="/">← Back to the public leaderboard</a></p></div></div>`);
+    <button class="btn primary lg" type="submit" style="width:100%">Sign in</button></form><p class="small center" style="margin-top:14px"><a href="/">← Back to the public site</a></p></div></div>`);
+  document.title = 'Staff sign-in';
 }
-forms.login = async f => { await api('/api/auth/staff', 'POST', fd(f)); ME = await api('/api/staff/me'); location.hash = '#/dashboard'; route(); };
-actions.logout = async () => { await api('/api/auth/staff/logout', 'POST'); ME = null; renderNav(); renderLogin(); };
-actions.pw = () => modal(html`<h3>Change password</h3><form data-form="pw" class="stack"><label class="f"><span>Current password</span><input type="password" name="current" required></label>
-  <label class="f"><span>New password (min 8)</span><input type="password" name="next" minlength="8" required></label>${mfoot('Update')}</form>`);
-forms.pw = async f => { await api('/api/staff/password', 'POST', fd(f)); closeM(f); toast('Password updated. Other sessions were signed out.'); };
+forms.login = async f => { await api('/api/auth/staff', 'POST', fd(f)); SU = await api('/api/staff/me'); location.hash = '#/dashboard'; route(); };
+actions.pw = () => modal(html`<h2>Change password</h2><form data-form="pw" class="stack-s"><label class="f"><span>Current password</span><input type="password" name="current" required autocomplete="current-password"></label>
+  <label class="f"><span>New password (at least 8 characters)</span><input type="password" name="next" minlength="8" required autocomplete="new-password"></label><div data-err></div>
+  <div class="row" style="justify-content:flex-end"><button type="button" class="btn secondary" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">Update</button></div></form>`);
+forms.pw = async f => { await api('/api/staff/password', 'POST', fd(f)); f.closest('.overlay').close(); toast('Password updated. Other sessions were signed out.'); };
 
-const empty = m => html`<div class="empty">${m}</div>`;
-const table = (head, rows, cls = '') => html`<div class="tablewrap"><table class="${cls}"><thead><tr>${head.map(h => html`<th class="${h.startsWith('#') ? 'num' : ''}">${h.replace(/^#/, '')}</th>`)}</tr></thead><tbody>${rows}</tbody></table></div>`;
-const searchBox = (id, ph) => html`<label class="f" style="max-width:340px;margin:0"><input type="search" id="${id}" placeholder="${ph}"></label>`;
+// ---------- shared bits ----------
+const mfoot = (label, cls = 'primary') => html`<div data-err></div><div class="row" style="justify-content:flex-end;margin-top:14px"><button type="button" class="btn secondary" data-act="closeModal">Cancel</button><button class="btn ${cls}" type="submit">${label}</button></div>`;
+const searchBox = (id, ph) => html`<label class="f" style="margin:0;min-width:240px"><span class="sr">${ph}</span><input type="search" id="${id}" placeholder="${ph}"></label>`;
 function wireSearch(id, sel) { const q = $('#' + id); if (!q) return; q.addEventListener('input', () => { const v = q.value.toLowerCase(); $$(sel).forEach(r => r.classList.toggle('hide', !r.textContent.toLowerCase().includes(v))); }); }
+const tbl = (head, rows, { cap = '' } = {}) => html`<div class="tablewrap"><table>${cap ? html`<caption class="sr">${cap}</caption>` : ''}<thead><tr>${head.map(h => html`<th class="${String(h).startsWith('#') ? 'num' : ''}">${String(h).replace(/^#/, '')}</th>`)}</tr></thead><tbody>${rows}</tbody></table></div>`;
+const rowBtn = (act, label, ic, attrs = '', tone = 'secondary') => raw(`<button class="btn sm ${tone}" data-act="${act}" ${attrs}>${ICONS[ic] ? `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${ICONS[ic]}</svg>` : ''}${esc(label)}</button>`);
 
 // ---------- dashboard ----------
-async function tDashboard() {
-  const d = await api('/api/staff/dashboard'), t = d.totals;
-  show($('#tab'), html`<div class="tiles" style="margin-bottom:22px">
-    <div class="tile t1"><i>🏫</i><b>${t.colleges}</b><span>Colleges</span></div><div class="tile t4"><i>🙌</i><b>${n(t.volunteers)}</b><span>Volunteers</span></div>
-    <div class="tile t3"><i>📣</i><b>${n(t.addressed)}</b><span>Addressed</span></div><div class="tile t2"><i>📝</i><b>${n(t.registered)}</b><span>Registered</span></div>
-    <div class="tile t5"><i>✍️</i><b>${t.villages_ack}<small style="font-size:1.1rem">/${t.villages}</small></b><span>Villages acknowledged</span></div></div>
-    <div class="grid g3" style="margin-bottom:22px">
-      <button class="card" style="text-align:left;cursor:pointer" data-act="tab" data-k="requests"><b style="font-size:2rem;font-family:var(--display)">${t.pending_requests}</b><div>change requests waiting</div></button>
-      <button class="card" style="text-align:left;cursor:pointer" data-act="tab" data-k="acks"><b style="font-size:2rem;font-family:var(--display)">${t.awaiting_ack}</b><div>villages awaiting officer acknowledgement</div></button>
-      <button class="card" style="text-align:left;cursor:pointer" data-act="tab" data-k="colleges"><b style="font-size:2rem;font-family:var(--display)">${t.passcode_pending}</b><div>colleges without a passcode yet</div></button></div>
-    <h3 style="font-size:1.4rem;text-transform:uppercase;margin-bottom:10px">Club standings</h3>
-    ${d.colleges.length ? table(['#', 'College', '#Villages ✔/total', '#Days held', '#Volunteers', '#Attendance', '#Addressed', '#Registered', '#Score'], d.colleges.map(c => html`<tr><td class="num"><b>${c.rank}</b></td><td><b>${c.name}</b></td>
-      <td class="num">${c.villages_ack}/${c.villages}</td><td class="num">${c.days_done}/${c.days_planned}</td><td class="num">${c.volunteers}</td><td class="num">${pct(c.attendance_pct)}</td><td class="num">${n(c.addressed)}</td><td class="num">${n(c.registered)}</td><td class="num"><b>${n(c.score)}</b></td></tr>`)) : empty('No colleges in your scope yet.')}`);
+async function pgDashboard(el) {
+  const t = DASH.totals, cs = DASH.colleges.slice(0, 15);
+  const attention = [['refresh', t.pending_requests, 'change requests waiting', 'requests'], ['certificate', t.awaiting_ack, 'villages awaiting officer certification', 'cert'], ['help', t.open_issues, 'open help-desk issues', 'issues'], ['key', t.passcode_pending, 'colleges without a passcode', 'colleges']];
+  show(el, html`${pageHead(`Welcome, ${SU.user.name}`, isIntern() ? `You are viewing the ${SU.scope.colleges.length} college(s) and ${SU.scope.villages.length} village(s) assigned to you.` : 'District overview of the Electoral Literacy Club programme.', '', ROLE[SU.user.role])}
+    <div class="kpis" style="margin-bottom:16px">${kpi('Colleges', t.colleges, { ic: 'building' })}${kpi('Villages allotted', t.villages, { ic: 'map-pin', tone: 'info' })}${kpi('Student volunteers', t.volunteers, { ic: 'users' })}
+      ${kpi('Voters enrolled', t.registered, { ic: 'user-check', tone: 'green' })}${kpi('People reached', t.addressed, { ic: 'megaphone', tone: 'saffron' })}${kpi('Villages certified', t.villages_ack, { ic: 'certificate', tone: 'green' })}</div>
+    <div class="grid g4" style="margin-bottom:16px">${attention.map(([ic, v, l, go]) => html`<a class="card rv" href="#/${go}" style="text-decoration:none;color:inherit;display:flex;gap:14px;align-items:center"><span class="kpi" style="padding:0;border:0;box-shadow:none"><span class="ico" style="position:static;width:42px;height:42px">${icon(ic)}</span></span><div><div style="font-size:1.6rem;font-weight:800;color:${v ? 'var(--saffron)' : 'var(--ok)'};line-height:1">${v}</div><div class="small muted">${l}</div></div></a>`)}</div>
+    <div class="card pad0"><div class="card-head pad"><h3>Club standings</h3><a class="btn ghost sm" href="#/reports">Full report ${icon('arrow-right')}</a></div>
+      ${cs.length ? tbl(['#', 'College', '#Villages certified', '#Days held', '#Students', '#Attendance', '#Reached', '#Registered', '#Score'], cs.map(c => html`<tr><td class="num"><b>${c.rank}</b></td><td><b>${c.name}</b></td><td class="num">${c.villages_ack}/${c.villages}</td><td class="num">${c.days_done}/${c.days_planned}</td><td class="num">${c.volunteers}</td><td class="num">${pct(c.attendance_pct)}</td><td class="num">${n(c.addressed)}</td><td class="num">${n(c.registered)}</td><td class="num"><b>${n(c.score)}</b></td></tr>`)) : html`<div style="padding:20px">${empty('No colleges in your scope yet', '', 'building')}</div>`}</div>`);
 }
 
 // ---------- colleges ----------
-async function tColleges() {
-  const list = await api('/api/staff/colleges');
-  show($('#tab'), html`<div class="row between" style="margin-bottom:14px">${searchBox('q', '🔍 Search colleges')}
-    <div class="row">${isOps() ? html`<button class="btn" data-act="addCollege">＋ Add ELC college</button>` : ''}<button class="btn violet" data-act="bulkPass">✉️ Push passcodes to all unsent</button></div></div>
-    ${ME.smtp ? '' : html`<div class="note" style="margin-bottom:14px">📭 Email (SMTP) isn't configured on the server, so passcode emails are saved in the <b>Outbox</b> tab instead of being delivered. See README to switch real email on.</div>`}
-    ${list.length ? table(['College', 'Address & contact', 'Coordinator', 'Passcode', 'Last login', '#Registered', ''], list.map(c => html`<tr class="rowq ${c.active ? '' : 'muted'}"><td><b>${c.name}</b>${c.active ? '' : html` <span class="chip grey">inactive</span>`}<div class="small muted">${c.short_name || ''}</div></td>
-      <td>${c.address}${c.lsgi ? html`<div class="small muted">${c.lsgi}</div>` : ''}<div class="small">📞 ${c.phone} · ✉️ ${c.email}</div></td><td>${c.coordinator || '—'}</td>
-      <td>${c.passcode_sent_at ? html`<span class="chip ok">sent ${fdt(c.passcode_sent_at)}</span>` : html`<span class="chip warn">not sent</span>`}</td><td>${fdt(c.last_login_at)}</td><td class="num">${n(c.stats?.registered ?? 0)}</td>
-      <td><div class="row" style="flex-wrap:nowrap"><button class="btn sm violet" data-act="pushPass" data-id="${c.id}" title="Generate a new passcode and email it">🔑 ${c.passcode_sent_at ? 'Re-send' : 'Push'}</button><button class="btn sm white" data-act="editCollege" data-id="${c.id}">Edit</button>
-        ${isOps() ? html`<button class="btn sm white" data-act="toggleCollege" data-id="${c.id}" data-on="${c.active ? 0 : 1}">${c.active ? 'Deactivate' : 'Activate'}</button>` : ''}${isSuper() ? html`<button class="btn sm danger" data-act="delCollege" data-id="${c.id}">🗑</button>` : ''}</div></td></tr>`)) : empty('No colleges yet. Add the first ELC college.')}`);
-  wireSearch('q', '.rowq'); window.__colleges = list;
+async function pgColleges(el) {
+  const list = await api('/api/staff/colleges'); window.__colleges = list;
+  show(el, html`${pageHead('Colleges', `${list.length} Electoral Literacy Club${list.length === 1 ? '' : 's'}.`, html`${isOps() ? html`<button class="btn primary" data-act="addCollege">${icon('plus')} Add college</button>` : ''}<button class="btn secondary" data-act="bulkPass">${icon('mail')} Send all pending passcodes</button>`, 'Manage')}
+    ${SU.smtp ? '' : html`<div class="alert info" style="margin-bottom:14px">${icon('mail')}<div>Email isn't connected yet, so passcodes are saved in the <a href="#/outbox">Outbox</a> instead of being delivered. See the README to switch real email on.</div></div>`}
+    <div class="card pad0"><div class="filterbar">${searchBox('q', 'Search colleges…')}<label class="f"><span class="sr">Filter</span><select id="cf"><option value="">All colleges</option><option value="nopass">Passcode not sent</option><option value="inactive">Inactive</option></select></label></div>
+    ${list.length ? tbl(['College', 'Contact', '#Villages', '#Students', '#Registered', 'Passcode', ''], list.map(c => html`<tr class="rowq" data-f="${!c.passcode_sent_at ? 'nopass' : ''} ${c.active ? '' : 'inactive'}"><td><b>${c.name}</b>${c.active ? '' : html` ${badge('inactive', 'grey')}`}<div class="small muted">${c.lsgi || ''}${c.address ? ` · ${c.address}` : ''}</div></td>
+      <td class="small">${icon('phone')} ${c.phone}<br>${icon('mail')} ${c.email}${c.coordinator ? html`<br>${icon('user')} ${c.coordinator}` : ''}</td><td class="num">${c.stats?.villages ?? 0}</td><td class="num">${c.stats?.volunteers ?? 0}</td><td class="num">${n(c.stats?.registered ?? 0)}</td>
+      <td>${c.passcode_sent_at ? html`${badge('Sent', 'ok')}<div class="xs muted">${fdt(c.passcode_sent_at)}</div>` : badge('Not sent', 'warn')}${c.last_login_at ? html`<div class="xs muted">Last sign-in ${ago(c.last_login_at)}</div>` : ''}</td>
+      <td><div class="row gap-s nowrap">${rowBtn('pushPass', c.passcode_sent_at ? 'Resend' : 'Send passcode', 'key', `data-id="${c.id}"`, 'primary')}${rowBtn('editCollege', 'Edit', 'edit', `data-id="${c.id}"`)}${isOps() ? rowBtn('toggleCollege', c.active ? 'Deactivate' : 'Activate', 'lock', `data-id="${c.id}" data-on="${c.active ? 0 : 1}"`, 'ghost') : ''}${isSuper() ? rowBtn('delCollege', '', 'trash', `data-id="${c.id}" aria-label="Delete ${esc(c.name)}"`, 'danger') : ''}</div></td></tr>`)) : html`<div style="padding:20px">${empty('No colleges yet', 'Add the first Electoral Literacy Club.', 'building')}</div>`}</div>`);
+  const apply = () => { const v = $('#q').value.toLowerCase(), f = $('#cf').value; $$('.rowq').forEach(r => r.classList.toggle('hide', !((!v || r.textContent.toLowerCase().includes(v)) && (!f || r.dataset.f.includes(f))))); };
+  $('#q')?.addEventListener('input', apply); $('#cf')?.addEventListener('change', apply);
 }
-const collegeForm = c => html`<form data-form="college" data-id="${c?.id || ''}" class="stack"><div class="formgrid">
-  <label class="f"><span>College name *</span><input type="text" name="name" value="${c?.name || ''}" required maxlength="160"></label>
-  <label class="f"><span>Short name (for leaderboard)</span><input type="text" name="short_name" value="${c?.short_name || ''}" maxlength="40"></label></div>
+const collegeForm = c => html`<form data-form="college" data-id="${c?.id || ''}" class="stack-s"><div class="formgrid"><label class="f"><span>College name *</span><input type="text" name="name" value="${c?.name || ''}" required maxlength="160"></label>
+  <label class="f"><span>Short name (shown on the leaderboard)</span><input type="text" name="short_name" value="${c?.short_name || ''}" maxlength="40"></label></div>
   <label class="f"><span>Address *</span><textarea name="address" required maxlength="300">${c?.address || ''}</textarea></label>
-  <div class="formgrid"><label class="f"><span>Contact number *</span><input type="tel" name="phone" value="${c?.phone || ''}" required></label>
-  <label class="f"><span>Email (passcode goes here) *</span><input type="email" name="email" value="${c?.email || ''}" required></label></div>
-  <div class="formgrid"><label class="f"><span>ELC coordinator / nodal teacher</span><input type="text" name="coordinator" value="${c?.coordinator || ''}" maxlength="100"></label>
-  <label class="f"><span>Located LSGI</span><input type="text" name="lsgi" value="${c?.lsgi || ''}" maxlength="120" placeholder="e.g. Chelannur Grama Panchayath"></label></div>
-  <div class="formgrid"><label class="f"><span>Latitude (for distance)</span><input type="text" inputmode="decimal" name="lat" value="${c?.lat ?? ''}" placeholder="11.2588"></label>
-  <label class="f"><span>Longitude</span><input type="text" inputmode="decimal" name="lng" value="${c?.lng ?? ''}" placeholder="75.7804"></label></div>
-  <p class="small muted">Tip: right-click the campus on Google Maps and click the coordinates to copy them. Distances shown are straight-line estimates.</p>${mfoot(c ? 'Save changes' : 'Add college')}</form>`;
-actions.addCollege = () => modal(html`<h3>Add ELC college</h3>${collegeForm()}`, { wide: true });
-actions.editCollege = el => modal(html`<h3>Edit college</h3>${collegeForm(window.__colleges.find(c => c.id === Number(el.dataset.id)))}`, { wide: true });
-forms.college = async f => {
-  const id = f.dataset.id; await api(id ? '/api/staff/colleges/' + id : '/api/staff/colleges', id ? 'PUT' : 'POST', fd(f));
-  closeM(f); toast(id ? 'College updated' : 'College added. Now push its passcode 🔑'); refresh();
-};
-actions.toggleCollege = async el => {
-  const on = el.dataset.on === '1';
-  if (!on && !await confirmBox('Deactivate this college? It will disappear from the leaderboard and be signed out. Data is kept.', 'Deactivate')) return;
-  await api(`/api/staff/colleges/${el.dataset.id}/active`, 'POST', { active: on }); refresh();
-};
-actions.delCollege = async el => {
-  if (!await confirmBox('Permanently delete this college and ALL its schedule, attendance and allotments? This cannot be undone. (Use Deactivate to keep the data.)', 'Delete forever')) return;
-  await api('/api/staff/colleges/' + el.dataset.id, 'DELETE'); toast('College deleted'); refresh();
-};
-function passToast(r) {
-  if (r.status === 'sent') toast(`Passcode emailed to ${r.email} ✔`);
-  else if (r.status === 'saved') toast(`Passcode saved to Outbox for ${r.college} (SMTP not configured)`);
-  else toast(`Could not email ${r.college}: ${r.error}`, true);
-}
-actions.pushPass = async el => {
-  const c = window.__colleges.find(x => x.id === Number(el.dataset.id));
-  if (c.passcode_sent_at && !await confirmBox(`Generate a NEW passcode for ${c.name}? The old one stops working.`, 'Generate & send')) return;
-  passToast(await api(`/api/staff/colleges/${c.id}/passcode`, 'POST')); refresh();
-};
-actions.bulkPass = async () => {
-  if (!await confirmBox('Generate and email passcodes to every college that has not received one yet?', 'Push to all')) return;
-  const { results } = await api('/api/staff/passcodes/bulk', 'POST');
-  toast(results.length ? `${results.filter(r => r.status !== 'failed').length}/${results.length} passcodes pushed` : 'Everyone already has a passcode'); refresh();
-};
+  <div class="formgrid"><label class="f"><span>Contact number *</span><input type="tel" name="phone" value="${c?.phone || ''}" required></label><label class="f"><span>Email (passcode is sent here) *</span><input type="email" name="email" value="${c?.email || ''}" required></label>
+  <label class="f"><span>ELC coordinator</span><input type="text" name="coordinator" value="${c?.coordinator || ''}" maxlength="100"></label><label class="f"><span>Located LSGI</span><input type="text" name="lsgi" value="${c?.lsgi || ''}" maxlength="120" placeholder="e.g. Chelannur Grama Panchayath"></label>
+  <label class="f"><span>Latitude (optional)</span><input type="text" inputmode="decimal" name="lat" value="${c?.lat ?? ''}"></label><label class="f"><span>Longitude (optional)</span><input type="text" inputmode="decimal" name="lng" value="${c?.lng ?? ''}"></label></div>
+  ${mfoot(c ? 'Save changes' : 'Add college')}</form>`;
+actions.addCollege = () => modal(html`<h2>Add college</h2>${collegeForm()}`, { wide: true });
+actions.editCollege = el => modal(html`<h2>Edit college</h2>${collegeForm(window.__colleges.find(c => c.id === Number(el.dataset.id)))}`, { wide: true });
+forms.college = async f => { const id = f.dataset.id; await api(id ? '/api/staff/colleges/' + id : '/api/staff/colleges', id ? 'PUT' : 'POST', fd(f)); f.closest('.overlay').close(); toast(id ? 'College updated' : 'College added. Now send its passcode.'); refresh(); };
+actions.toggleCollege = async el => { const on = el.dataset.on === '1'; if (!on && !await confirmBox('Deactivate this college? It will leave the leaderboard and be signed out. Its data is kept.', 'Deactivate', true)) return; await api(`/api/staff/colleges/${el.dataset.id}/active`, 'POST', { active: on }); refresh(); };
+actions.delCollege = async el => { if (!await confirmBox('Permanently delete this college and ALL its schedule, attendance and allotments? This cannot be undone. (Deactivate keeps the data.)', 'Delete forever', true)) return; await api('/api/staff/colleges/' + el.dataset.id, 'DELETE'); toast('College deleted'); refresh(); };
+function passToast(r) { if (r.status === 'sent') toast(`Passcode emailed to ${r.email}`); else if (r.status === 'saved') toast(`Passcode saved in the Outbox for ${r.college || r.name} (email isn't connected)`); else toast(`Could not email ${r.college || r.name}: ${r.error}`, true); }
+actions.pushPass = async el => { const c = window.__colleges.find(x => x.id === Number(el.dataset.id)); if (c.passcode_sent_at && !await confirmBox(`Generate a NEW passcode for ${c.name}? The old one stops working.`, 'Generate and send')) return; passToast(await api(`/api/staff/colleges/${c.id}/passcode`, 'POST')); refresh(); };
+actions.bulkPass = async () => { if (!await confirmBox('Generate and send passcodes to every college that has not received one yet?', 'Send to all')) return; const { results } = await api('/api/staff/passcodes/bulk', 'POST'); toast(results.length ? `${results.filter(r => r.status !== 'failed').length} of ${results.length} passcodes sent` : 'Everyone already has a passcode'); refresh(); };
 
 // ---------- villages ----------
-async function tVillages() {
-  const list = await api('/api/staff/villages');
-  window.__villages = list;
-  show($('#tab'), html`<div class="row between" style="margin-bottom:14px">${searchBox('q', '🔍 Search villages')}${isOps() ? html`<button class="btn" data-act="addVillage">＋ Add village</button>` : ''}</div>
-    ${list.length ? table(['Village', 'Taluk / LSGI', 'Village office & officer', 'Contact', '#Clubs', ''], list.map(v => html`<tr class="rowq"><td><b>${v.name}</b><div class="small muted">${v.lat != null ? `${v.lat}, ${v.lng}` : 'no coordinates'}</div></td><td>${v.taluk || ''}<div class="small muted">${v.lsgi || ''}</div></td>
-      <td>${v.office_address ? html`<div class="small">${v.office_address}</div>` : ''}${v.officer_name ? html`<b>${v.officer_name}</b>` : html`<span class="muted small">officer not set</span>`}</td><td class="small">${v.office_phone || ''}${v.officer_phone ? html`<br>${v.officer_phone}` : ''}<br>${v.officer_email || ''}</td><td class="num">${v.colleges}</td>
-      <td><div class="row" style="flex-wrap:nowrap"><button class="btn sm white" data-act="editVillage" data-id="${v.id}">Edit</button>${isSuper() ? html`<button class="btn sm danger" data-act="delVillage" data-id="${v.id}">🗑</button>` : ''}</div></td></tr>`)) : empty('No villages in your scope.')}`);
-  wireSearch('q', '.rowq');
+async function pgVillages(el) {
+  const list = await api('/api/staff/villages'); window.__villages = list;
+  const taluks = [...new Set(list.map(v => v.taluk).filter(Boolean))].sort();
+  show(el, html`${pageHead('Villages', `${list.length} village${list.length === 1 ? '' : 's'}. One village is held by one college.`, isOps() ? html`<button class="btn primary" data-act="addVillage">${icon('plus')} Add village</button>` : '', 'Manage')}
+    <div class="card pad0"><div class="filterbar">${searchBox('q', 'Search villages, LSGI, colleges…')}<label class="f"><span class="sr">Taluk</span><select id="tf"><option value="">All taluks</option>${taluks.map(t => html`<option>${t}</option>`)}</select></label>
+      <label class="f"><span class="sr">Status</span><select id="sf"><option value="">All</option><option value="free">Not allotted</option><option value="held">Allotted</option><option value="nooff">No officer assigned</option></select></label></div>
+    ${list.length ? tbl(['Village', 'Taluk / LSGI', 'Allotted to', 'Village office', 'Officer', ''], list.map(v => html`<tr class="rowq" data-t="${v.taluk || ''}" data-s="${v.holder ? 'held' : 'free'} ${v.officer_id ? '' : 'nooff'}"><td><b>${v.name}</b><div class="xs muted">${v.lat != null ? `${v.lat}, ${v.lng}` : 'no map position'}</div></td>
+      <td>${v.taluk || '—'}<div class="small muted">${v.lsgi || ''}</div></td><td>${v.holder ? html`${v.holder} ${ackBadge(v.ack_status)}` : badge('Not allotted', 'grey')}</td><td class="small">${v.office_address || ''}${v.office_phone ? html`<div>${icon('phone')} ${v.office_phone}</div>` : ''}</td>
+      <td>${v.officer_name ? html`<b>${v.officer_name}</b>` : html`<span class="muted small">Not assigned</span>`}</td><td><div class="row gap-s nowrap">${rowBtn('editVillage', 'Edit', 'edit', `data-id="${v.id}"`)}${isSuper() ? rowBtn('delVillage', '', 'trash', `data-id="${v.id}" aria-label="Delete ${esc(v.name)}"`, 'danger') : ''}</div></td></tr>`)) : html`<div style="padding:20px">${empty('No villages in your scope', '', 'map-pin')}</div>`}</div>`);
+  const apply = () => { const q = $('#q').value.toLowerCase(), t = $('#tf').value, s = $('#sf').value; $$('.rowq').forEach(r => r.classList.toggle('hide', !((!q || r.textContent.toLowerCase().includes(q)) && (!t || r.dataset.t === t) && (!s || r.dataset.s.includes(s))))); };
+  ['#q', '#tf', '#sf'].forEach(s => $(s)?.addEventListener(s === '#q' ? 'input' : 'change', apply));
 }
-const villageForm = v => html`<form data-form="village" data-id="${v?.id || ''}" class="stack"><div class="formgrid">
-  <label class="f"><span>Village *</span><input type="text" name="name" value="${v?.name || ''}" required maxlength="80"></label>
-  <label class="f"><span>Taluk</span><select name="taluk">${['Kozhikode', 'Koyilandy', 'Vadakara', 'Thamarassery'].map(t => html`<option ${v?.taluk === t ? 'selected' : ''}>${t}</option>`)}</select></label></div>
-  <div class="formgrid"><label class="f"><span>LSGI (Panchayath / Municipality / Corporation)</span><input type="text" name="lsgi" value="${v?.lsgi || ''}" maxlength="120"></label>
-  <label class="f"><span>Village office phone</span><input type="text" name="office_phone" value="${v?.office_phone || ''}" maxlength="80"></label></div>
+const villageForm = v => html`<form data-form="village" data-id="${v?.id || ''}" class="stack-s"><div class="formgrid"><label class="f"><span>Village *</span><input type="text" name="name" value="${v?.name || ''}" required maxlength="80"></label>
+  <label class="f"><span>Taluk</span><select name="taluk">${['Kozhikode', 'Koyilandy', 'Vadakara', 'Thamarassery'].map(t => html`<option ${v?.taluk === t ? 'selected' : ''}>${t}</option>`)}</select></label>
+  <label class="f"><span>LSGI (Panchayath / Municipality / Corporation)</span><input type="text" name="lsgi" value="${v?.lsgi || ''}" maxlength="120"></label><label class="f"><span>Village office phone</span><input type="text" name="office_phone" value="${v?.office_phone || ''}" maxlength="80"></label></div>
   <label class="f"><span>Village office address</span><textarea name="office_address" maxlength="300">${v?.office_address || ''}</textarea></label>
   <div class="formgrid"><label class="f"><span>Latitude</span><input type="text" name="lat" value="${v?.lat ?? ''}"></label><label class="f"><span>Longitude</span><input type="text" name="lng" value="${v?.lng ?? ''}"></label></div>
-  <div class="note">Village officer: the acknowledgement link is emailed here when a college submits this village.</div>
-  <div class="formgrid"><label class="f"><span>Officer name</span><input type="text" name="officer_name" value="${v?.officer_name || ''}"></label><label class="f"><span>Officer phone</span><input type="tel" name="officer_phone" value="${v?.officer_phone || ''}"></label>
-  <label class="f"><span>Officer email</span><input type="email" name="officer_email" value="${v?.officer_email || ''}"></label></div>${mfoot(v ? 'Save changes' : 'Add village')}</form>`;
-actions.addVillage = () => modal(html`<h3>Add village</h3>${villageForm()}`, { wide: true });
-actions.editVillage = el => modal(html`<h3>Edit village</h3>${villageForm(window.__villages.find(v => v.id === Number(el.dataset.id)))}`, { wide: true });
-forms.village = async f => { const id = f.dataset.id; await api(id ? '/api/staff/villages/' + id : '/api/staff/villages', id ? 'PUT' : 'POST', fd(f)); closeM(f); toast('Saved ✔'); refresh(); };
-actions.delVillage = async el => { if (!await confirmBox('Delete this village from the master list?', 'Delete')) return; await api('/api/staff/villages/' + el.dataset.id, 'DELETE'); refresh(); };
+  <p class="hint">The village officer is assigned from the Village officers page. Map positions were found automatically and may be a little off: correct them here.</p>
+  <input type="hidden" name="officer_name" value="${v?.officer_name || ''}"><input type="hidden" name="officer_phone" value="${v?.officer_phone || ''}"><input type="hidden" name="officer_email" value="${v?.officer_email || ''}">${mfoot(v ? 'Save changes' : 'Add village')}</form>`;
+actions.addVillage = () => modal(html`<h2>Add village</h2>${villageForm()}`, { wide: true });
+actions.editVillage = el => modal(html`<h2>Edit village</h2>${villageForm(window.__villages.find(v => v.id === Number(el.dataset.id)))}`, { wide: true });
+forms.village = async f => { const id = f.dataset.id; await api(id ? '/api/staff/villages/' + id : '/api/staff/villages', id ? 'PUT' : 'POST', fd(f)); f.closest('.overlay').close(); toast('Saved'); refresh(); };
+actions.delVillage = async el => { if (!await confirmBox('Delete this village from the master list?', 'Delete', true)) return; await api('/api/staff/villages/' + el.dataset.id, 'DELETE'); refresh(); };
 
 // ---------- allotments ----------
 let allotCollege = null;
-async function tAllot() {
+async function pgAllot(el) {
   const [colleges, asg] = await Promise.all([api('/api/staff/colleges'), api('/api/staff/assignments')]);
-  window.__colleges = colleges;
   if (!allotCollege || !colleges.some(c => c.id === allotCollege)) allotCollege = colleges[0]?.id || null;
-  const sel = colleges.find(c => c.id === allotCollege);
-  const vs = sel ? await api(`/api/staff/colleges/${sel.id}/villages`) : [];
-  show($('#tab'), html`<div class="card" style="margin-bottom:22px"><h3>Allot villages</h3>
-    ${colleges.length ? html`<div class="grid g2"><div class="stack"><label class="f"><span>College</span><select id="ac">${colleges.map(c => html`<option value="${c.id}" ${c.id === allotCollege ? 'selected' : ''}>${c.name}</option>`)}</select></label>
-      <div class="note"><b>${sel.name}</b><br>${sel.address}<br>📞 ${sel.phone} · ✉️ ${sel.email}<br>👤 ${sel.coordinator || '—'}<br>${sel.lat == null ? '⚠️ No coordinates, so distances can\'t be shown. Edit the college to add them.' : `📍 ${sel.lat}, ${sel.lng}`}</div></div>
-      <div><b>Villages nearest first</b> <span class="small muted">(straight-line km)</span><div style="max-height:360px;overflow:auto;margin-top:8px;border:3px solid var(--ink);border-radius:12px">${vs.length ? table(['Village', '#km', ''], vs.map(v => html`<tr><td><b>${v.name}</b><div class="small muted">${v.taluk || ''}${v.holder ? html` · <b>held by ${v.holder}</b>` : ''}</div></td><td class="num">${v.distance_km ?? '—'}</td>
-        <td>${v.allotted ? html`<button class="btn sm danger" data-act="unassignVillage" data-v="${v.id}">Remove</button>` : v.holder ? html`<span class="chip grey">taken</span>` : html`<button class="btn sm" data-act="assign" data-v="${v.id}">＋ Allot</button>`}</td></tr>`)) : empty('No villages in your scope.')}</div></div></div>` : empty('Add a college first.')}</div>
-    <div class="row between" style="margin-bottom:10px"><h3 style="font-size:1.4rem;text-transform:uppercase">All allotments</h3>${searchBox('q', '🔍 Filter')}</div>
-    ${asg.length ? table(['College', 'College address', 'College contact', 'Village', '#Distance', 'Status', ''], asg.map(a => html`<tr class="rowq"><td><b>${a.college}</b></td><td class="small">${a.college_address}</td><td class="small">📞 ${a.college_phone}<br>✉️ ${a.college_email}${a.coordinator ? html`<br>👤 ${a.coordinator}` : ''}</td>
-      <td><b>${a.village}</b><div class="small muted">${a.taluk || ''}</div></td><td class="num">${km(a.distance_km)}${a.distance_note ? html`<div class="small muted">${a.distance_note}</div>` : a.distance_road ? html`<div class="small muted">by road</div>` : ''}</td><td>${statusChip(a.ack_status)}</td>
-      <td><button class="btn sm danger" data-act="unassign" data-id="${a.id}">Remove</button></td></tr>`)) : empty('Nothing allotted yet.')}`);
-  const s = $('#ac'); if (s) s.addEventListener('change', () => { allotCollege = Number(s.value); tAllot(); });
-  wireSearch('q', '.rowq');
+  const sel = colleges.find(c => c.id === allotCollege), vs = sel ? await api(`/api/staff/colleges/${sel.id}/villages`) : [];
+  const mine = vs.filter(v => v.allotted);
+  show(el, html`${pageHead('Allotments', 'Give each college its villages. A village can be held by only one college.', '', 'Manage')}
+    ${colleges.length ? html`<div class="grid g2" style="margin-bottom:18px"><div class="card"><label class="f"><span>College</span><select id="ac">${colleges.map(c => html`<option value="${c.id}" ${c.id === allotCollege ? 'selected' : ''}>${c.name}</option>`)}</select></label>
+        <dl class="kv"><dt>Address</dt><dd>${sel.address}</dd><dt>LSGI</dt><dd>${sel.lsgi || '—'}</dd><dt>Contact</dt><dd>${sel.phone} · ${sel.email}</dd><dt>Coordinator</dt><dd>${sel.coordinator || '—'}</dd></dl>
+        <h3 style="margin:16px 0 8px">Holds ${mine.length} village${mine.length === 1 ? '' : 's'}</h3><div class="pillrow">${mine.length ? mine.map(v => html`<span class="badge">${v.name}</span>`) : html`<span class="muted small">None yet</span>`}</div></div>
+      <div class="card pad0"><div class="filterbar">${searchBox('vq', 'Search villages to allot…')}</div><div style="max-height:360px;overflow:auto">${tbl(['Village', 'Status', ''], vs.map(v => html`<tr class="rowv"><td><b>${v.name}</b><div class="xs muted">${v.taluk || ''}${v.distance_km != null ? ` · ${v.distance_km} km` : ''}</div></td>
+          <td>${v.allotted ? badge('This college', 'ok') : v.holder ? html`${badge('Taken', 'grey')}<div class="xs muted">${v.holder}</div>` : badge('Free', 'info')}</td>
+          <td class="right">${v.allotted ? rowBtn('unassignVillage', 'Remove', 'x', `data-v="${v.id}"`, 'danger') : v.holder ? '' : rowBtn('assign', 'Allot', 'plus', `data-v="${v.id}"`, 'primary')}</td></tr>`))}</div></div></div>` : empty('Add a college first', '', 'building')}
+    <div class="card pad0"><div class="card-head pad"><h3>All allotments (${asg.length})</h3><a class="btn secondary sm" href="#/reports">${icon('download')} Export master list</a></div><div class="filterbar">${searchBox('aq', 'Filter allotments…')}</div>
+    ${asg.length ? tbl(['College', 'Village', 'LSGI', 'Village office', '#Distance', 'Certification', ''], asg.map(a => html`<tr class="rowa"><td><b>${a.college}</b><div class="xs muted">${a.college_phone}</div></td><td><b>${a.village}</b><div class="xs muted">${a.taluk || ''}</div></td><td class="small">${a.village_lsgi || ''}</td>
+      <td class="small">${a.office_address || ''}${a.office_phone ? html`<div>${icon('phone')} ${a.office_phone}</div>` : ''}</td><td class="num">${km(a.distance_km)}${a.distance_note ? html`<div class="xs muted">${a.distance_note}</div>` : a.distance_road ? html`<div class="xs muted">by road</div>` : ''}</td>
+      <td>${ackBadge(a.ack_status)}</td><td>${rowBtn('unassign', '', 'trash', `data-id="${a.id}" aria-label="Remove allotment"`, 'danger')}</td></tr>`)) : html`<div style="padding:20px">${empty('Nothing allotted yet', '', 'link')}</div>`}</div>`);
+  const s = $('#ac'); if (s) s.addEventListener('change', () => { allotCollege = Number(s.value); pgAllot(el); });
+  wireSearch('vq', '.rowv'); wireSearch('aq', '.rowa');
 }
-actions.assign = async el => { await api('/api/staff/assignments', 'POST', { college_id: allotCollege, village_id: Number(el.dataset.v) }); toast('Village allotted ✔'); tAllot(); };
-actions.unassign = async el => {
-  if (!await confirmBox('Remove this allotment? Any schedule and attendance the college entered for the village is deleted too.', 'Remove')) return;
-  await api('/api/staff/assignments/' + el.dataset.id, 'DELETE'); toast('Removed'); tAllot();
-};
-actions.unassignVillage = async el => {
-  const a = (await api('/api/staff/assignments')).find(x => x.college_id === allotCollege && x.village_id === Number(el.dataset.v));
-  if (a) actions.unassign({ dataset: { id: a.id } });
-};
+actions.assign = async el => { await api('/api/staff/assignments', 'POST', { college_id: allotCollege, village_id: Number(el.dataset.v) }); toast('Village allotted'); pgAllot($('#pg')); };
+actions.unassign = async el => { if (!await confirmBox('Remove this allotment? Any schedule and attendance the college entered for the village is deleted too.', 'Remove', true)) return; await api('/api/staff/assignments/' + el.dataset.id, 'DELETE'); toast('Removed'); pgAllot($('#pg')); };
+actions.unassignVillage = async el => { const a = (await api('/api/staff/assignments')).find(x => x.college_id === allotCollege && x.village_id === Number(el.dataset.v)); if (a) actions.unassign({ dataset: { id: a.id } }); };
 
-// ---------- requests ----------
-async function tRequests() {
+// ---------- officers ----------
+async function pgOfficers(el) {
+  const [list, vs] = await Promise.all([api('/api/staff/officers'), api('/api/staff/villages')]); window.__officers = list; window.__allVillages = vs;
+  show(el, html`${pageHead('Village officers', 'Officers verify attendance in their villages and certify the colleges\' data. Certificates are issued on their certification.', html`<button class="btn primary" data-act="addOfficer">${icon('plus')} Add officer</button>`, 'Manage')}
+    ${list.length ? html`<div class="card pad0">${tbl(['Officer', 'Contact', 'Villages', 'Passcode', ''], list.map(o => html`<tr><td><b>${o.name}</b>${o.active ? '' : html` ${badge('inactive', 'grey')}`}<div class="small muted">${o.designation || ''}</div></td><td class="small">${o.phone ? html`${icon('phone')} ${o.phone}<br>` : ''}${o.email ? html`${icon('mail')} ${o.email}` : html`<span class="muted">no email</span>`}</td>
+      <td><div class="pillrow">${o.villages.length ? o.villages.map(v => badge(v.name)) : html`<span class="muted small">none</span>`}</div></td><td>${o.passcode_sent_at ? html`${badge('Sent', 'ok')}<div class="xs muted">${fdt(o.passcode_sent_at)}</div>` : badge('Not sent', 'warn')}${o.last_login_at ? html`<div class="xs muted">Last sign-in ${ago(o.last_login_at)}</div>` : ''}</td>
+      <td><div class="row gap-s nowrap">${rowBtn('officerPass', o.passcode_sent_at ? 'Resend' : 'Send passcode', 'key', `data-id="${o.id}"`, 'primary')}${rowBtn('editOfficer', 'Edit', 'edit', `data-id="${o.id}"`)}${rowBtn('toggleOfficer', o.active ? 'Deactivate' : 'Activate', 'lock', `data-id="${o.id}" data-on="${o.active ? 0 : 1}"`, 'ghost')}${isSuper() ? rowBtn('delOfficer', '', 'trash', `data-id="${o.id}" aria-label="Delete ${esc(o.name)}"`, 'danger') : ''}</div></td></tr>`))}</div>`
+      : empty('No village officers yet', 'Add each village officer, assign their villages, then send them a passcode. Until then, officers can certify through the link emailed when a college submits a village.', 'landmark')}`);
+}
+const officerForm = o => {
+  const mine = new Set((o?.villages || []).map(v => v.id));
+  return html`<form data-form="officer" data-id="${o?.id || ''}" class="stack-s"><div class="formgrid"><label class="f"><span>Officer name *</span><input type="text" name="name" value="${o?.name || ''}" required maxlength="100"></label>
+    <label class="f"><span>Designation</span><input type="text" name="designation" value="${o?.designation || 'Village Officer'}" maxlength="100"></label><label class="f"><span>Phone</span><input type="tel" name="phone" value="${o?.phone || ''}"></label>
+    <label class="f"><span>Email (passcode is sent here)</span><input type="email" name="email" value="${o?.email || ''}"></label></div>
+    <label class="f"><span>Villages this officer is responsible for</span><input type="search" id="ovq" placeholder="Search villages…" style="margin-bottom:6px"></label>
+    <div style="max-height:220px;overflow:auto;border:1px solid var(--line-2);border-radius:var(--r-sm);padding:8px 12px">${window.__allVillages.map(v => html`<label class="chk ovrow" style="padding:4px 0"><input type="checkbox" name="villages" value="${v.id}" ${mine.has(v.id) ? 'checked' : ''}> <span>${v.name} <span class="muted small">${v.taluk || ''}${v.officer_name && !mine.has(v.id) ? ` · now: ${v.officer_name}` : ''}</span></span></label>`)}</div>${mfoot(o ? 'Save changes' : 'Add officer')}</form>`;
+};
+function wireOfficerModal(m) { $('#ovq', m)?.addEventListener('input', e => { const q = e.target.value.toLowerCase(); $$('.ovrow', m).forEach(r => r.classList.toggle('hide', !r.textContent.toLowerCase().includes(q))); }); }
+actions.addOfficer = () => wireOfficerModal(modal(html`<h2>Add village officer</h2>${officerForm()}`, { wide: true }));
+actions.editOfficer = el => wireOfficerModal(modal(html`<h2>Edit village officer</h2>${officerForm(window.__officers.find(o => o.id === Number(el.dataset.id)))}`, { wide: true }));
+forms.officer = async f => {
+  const id = f.dataset.id, v = fd(f), body = { name: v.name, designation: v.designation, phone: v.phone, email: v.email, villages: $$('input[name=villages]:checked', f).map(x => Number(x.value)) };
+  await api(id ? '/api/staff/officers/' + id : '/api/staff/officers', id ? 'PUT' : 'POST', body); f.closest('.overlay').close(); toast('Saved'); refresh();
+};
+actions.officerPass = async el => { const o = window.__officers.find(x => x.id === Number(el.dataset.id)); if (!o.email) return toast('Add the officer\'s email first', true); if (o.passcode_sent_at && !await confirmBox(`Generate a NEW passcode for ${o.name}?`, 'Generate and send')) return; passToast(await api(`/api/staff/officers/${o.id}/passcode`, 'POST')); refresh(); };
+actions.toggleOfficer = async el => { await api(`/api/staff/officers/${el.dataset.id}/active`, 'POST', { active: el.dataset.on === '1' }); refresh(); };
+actions.delOfficer = async el => { if (!await confirmBox('Delete this officer? Their villages become unassigned.', 'Delete', true)) return; await api('/api/staff/officers/' + el.dataset.id, 'DELETE'); refresh(); };
+
+// ---------- change requests ----------
+async function pgRequests(el) {
   const rs = await api('/api/staff/requests');
-  show($('#tab'), rs.length ? html`<div class="grid g2">${rs.map(r => html`<div class="card"><div class="row between"><h3 style="margin:0">${r.college}</h3><span class="chip ${r.status === 'approved' ? 'ok' : r.status === 'rejected' ? 'pink' : 'warn'}">${r.status}</span></div>
-    <p style="font-size:1.15rem;margin:10px 0">${r.from_village ? html`<b>${r.from_village}</b> → <b>${r.to_village}</b>` : html`＋ extra village <b>${r.to_village}</b>`}</p>
-    <dl class="kv"><dt>Reason</dt><dd>${r.reason}</dd><dt>Distance</dt><dd>${km(r.distance_km)} to requested village</dd><dt>Contact</dt><dd>${r.college_phone}</dd><dt>Asked</dt><dd>${fdt(r.created_at)}</dd>
-      ${r.status !== 'pending' ? html`<dt>Decision</dt><dd>${r.decided_by} · ${fdt(r.decided_at)} ${r.admin_note ? `· ${r.admin_note}` : ''}</dd>` : ''}</dl>
-    ${r.status === 'pending' ? html`<div class="row" style="margin-top:14px"><button class="btn" data-act="decide" data-id="${r.id}" data-d="approve">✔ Approve</button><button class="btn danger" data-act="decide" data-id="${r.id}" data-d="reject">✕ Reject</button></div>` : ''}</div>`)}</div>` : empty('No change requests. 🎉'));
+  show(el, html`${pageHead('Change requests', 'Colleges can ask for a different village, or an extra one. Approving swaps it in.', '', 'Operations')}
+    ${rs.length ? html`<div class="grid g2">${rs.map(r => html`<div class="card rv"><div class="card-head"><h3>${r.college}</h3>${badge(r.status, r.status === 'approved' ? 'ok' : r.status === 'rejected' ? 'danger' : 'warn')}</div>
+      <p style="font-size:1.05rem">${r.from_village ? html`<b>${r.from_village}</b> ${icon('arrow-right')} <b>${r.to_village}</b>` : html`Extra village: <b>${r.to_village}</b>`}</p>
+      <dl class="kv" style="margin-top:8px"><dt>Reason</dt><dd>${r.reason}</dd><dt>Contact</dt><dd>${r.college_phone}</dd><dt>Asked</dt><dd>${fdt(r.created_at)}</dd>${r.status !== 'pending' ? html`<dt>Decision</dt><dd>${r.decided_by} · ${fdt(r.decided_at)}${r.admin_note ? ` · ${r.admin_note}` : ''}</dd>` : ''}</dl>
+      ${r.status === 'pending' ? html`<div class="row" style="margin-top:14px"><button class="btn green" data-act="decide" data-id="${r.id}" data-d="approve">${icon('check')} Approve</button><button class="btn danger" data-act="decide" data-id="${r.id}" data-d="reject">${icon('x')} Reject</button></div>` : ''}</div>`)}</div>` : empty('No change requests', 'You are all caught up.', 'check-circle')}`);
 }
-actions.decide = el => {
-  const ap = el.dataset.d === 'approve';
-  modal(html`<h3>${ap ? 'Approve' : 'Reject'} request</h3><form data-form="decide" data-id="${el.dataset.id}" data-d="${el.dataset.d}" class="stack">
-    <label class="f"><span>Note to the college (optional)</span><textarea name="note" maxlength="300"></textarea></label>${mfoot(ap ? 'Approve & swap village' : 'Reject', ap ? 'btn' : 'btn danger')}</form>`);
-};
-forms.decide = async f => { await api(`/api/staff/requests/${f.dataset.id}/decide`, 'POST', { decision: f.dataset.d, note: fd(f).note }); closeM(f); toast('Decision recorded'); refresh(); };
+actions.decide = el => { const ap = el.dataset.d === 'approve';
+  modal(html`<h2>${ap ? 'Approve' : 'Reject'} request</h2><form data-form="decide" data-id="${el.dataset.id}" data-d="${el.dataset.d}" class="stack-s"><label class="f"><span>Note to the college (optional)</span><textarea name="note" maxlength="300"></textarea></label>${mfoot(ap ? 'Approve and swap village' : 'Reject', ap ? 'green' : 'danger')}</form>`); };
+forms.decide = async f => { await api(`/api/staff/requests/${f.dataset.id}/decide`, 'POST', { decision: f.dataset.d, note: fd(f).note }); f.closest('.overlay').close(); toast('Decision recorded'); refresh(); };
 
-// ---------- acknowledgements ----------
-async function tAcks() {
-  const as = await api('/api/staff/acks');
-  window.__acks = as;
-  show($('#tab'), html`<p class="muted">Colleges submit a village once its days are complete. The village officer reviews the report from an emailed link; acknowledged villages count towards the college's certificate.</p>
-    ${as.length ? table(['College', 'Village', 'Officer', 'Report', 'Status', ''], as.map(a => html`<tr><td><b>${a.college}</b></td><td>${a.village}<div class="small muted">${a.taluk || ''}</div></td>
-      <td>${a.officer_name || html`<span class="muted">not set</span>`}<div class="small">${a.officer_phone || ''}<br>${a.officer_email || html`<span style="color:var(--bad)">no email: share link manually</span>`}</div></td>
-      <td class="small">${a.totals.days} days · ${a.totals.attended} vol-days<br>${n(a.totals.addressed)} addressed · <b>${n(a.totals.registered)} reg.</b></td>
-      <td>${statusChip(a.ack_status)}${a.ack_status === 'acknowledged' ? html`<div class="small">${a.ack_name}${a.ack_designation ? `, ${a.ack_designation}` : ''}<br>${fdt(a.ack_at)}</div>` : ''}${a.query_note ? html`<div class="small" style="color:var(--bad)">${a.query_note}</div>` : ''}</td>
-      <td><div class="row">${a.ack_status === 'submitted' ? html`<button class="btn sm" data-act="copyLink" data-l="${a.link}">🔗 Copy link</button><button class="btn sm white" data-act="resend" data-id="${a.id}">Resend</button><button class="btn sm violet" data-act="ackBehalf" data-id="${a.id}">Record on behalf</button>` : ''}
-        ${a.ack_status !== 'none' ? html`<button class="btn sm danger" data-act="unlock" data-id="${a.id}">Reopen</button>` : ''}</div></td></tr>`)) : empty('No villages have been submitted yet.')}`);
+// ---------- certification ----------
+let certTab = 'waiting';
+async function pgCert(el) {
+  const [acks, certs] = await Promise.all([api('/api/staff/acks'), api('/api/staff/certificates')]); window.__acks = acks;
+  const waiting = acks.filter(a => a.ack_status === 'submitted'), done = acks.filter(a => a.ack_status === 'acknowledged');
+  show(el, html`${pageHead('Certification', 'Colleges send finished villages to the village officer. When every village of a college is certified, it is ready for its certificate.', '', 'Operations')}
+    <div class="tabs" role="tablist" style="margin-bottom:14px"><button class="tab" role="tab" aria-selected="${certTab === 'waiting'}" data-act="certTab" data-k="waiting">Awaiting officer (${waiting.length})</button><button class="tab" role="tab" aria-selected="${certTab === 'done'}" data-act="certTab" data-k="done">Certified (${done.length})</button><button class="tab" role="tab" aria-selected="${certTab === 'certs'}" data-act="certTab" data-k="certs">Certificates (${certs.ready.length})</button></div>
+    ${certTab === 'certs' ? certsView(certs) : ackTable(certTab === 'waiting' ? waiting : done, certTab === 'waiting')}`);
 }
+actions.certTab = el => { certTab = el.dataset.k; pgCert($('#pg')); };
+const ackTable = (rows, waiting) => rows.length ? html`<div class="card pad0">${tbl(['College', 'Village', 'Officer', 'Report', 'Status', ''], rows.map(a => html`<tr><td><b>${a.college}</b></td><td>${a.village}<div class="xs muted">${a.taluk || ''}</div></td>
+  <td>${a.officer_name ? html`<b>${a.officer_name}</b>` : html`<span class="muted small">no officer assigned</span>`}<div class="xs muted">${a.officer_phone || ''}${a.officer_email ? html`<br>${a.officer_email}` : ''}</div></td>
+  <td class="small">${a.totals.days} days · ${a.totals.attended} shifts<br>${n(a.totals.addressed)} reached · <b>${n(a.totals.registered)} registered</b></td>
+  <td>${ackBadge(a.ack_status)}${a.ack_status === 'acknowledged' ? html`<div class="xs muted">${a.ack_name}${a.ack_designation ? `, ${a.ack_designation}` : ''}<br>${fdt(a.ack_at)}</div>` : ''}${a.query_note ? html`<div class="xs" style="color:var(--danger)">${a.query_note}</div>` : ''}</td>
+  <td><div class="row gap-s">${waiting ? html`${rowBtn('copyLink', 'Copy link', 'link', `data-l="${a.link}"`)}${rowBtn('resend', 'Resend', 'mail', `data-id="${a.id}"`)}${rowBtn('ackBehalf', 'Certify for officer', 'check', `data-id="${a.id}"`, 'primary')}` : ''}${rowBtn('unlock', 'Reopen', 'refresh', `data-id="${a.id}"`, 'danger')}</div></td></tr>`))}</div>`
+  : empty(waiting ? 'Nothing is waiting' : 'No village is certified yet', '', 'certificate');
+const certsView = c => html`<div class="card pad0" style="margin-bottom:18px"><div class="card-head pad"><h3>Ready for certificates (${c.ready.length})</h3></div>${c.ready.length ? tbl(['College', '#Villages', '#Shifts', '#Reached', '#Registered', 'Certificate', ''], c.ready.map(x => html`<tr><td><b>${x.name}</b></td><td class="num">${x.villages_ack}/${x.villages}</td><td class="num">${x.vdays_attended}</td><td class="num">${n(x.addressed)}</td><td class="num">${n(x.registered)}</td>
+  <td>${x.certificate ? badge(x.certificate.number, 'ok') : badge('Not issued', 'warn')}</td><td>${x.certificate ? rowBtn('printCert', 'View / print', 'printer', `data-id="${x.id}"`, 'primary') : isSuper() ? rowBtn('issueCert', 'Issue number', 'certificate', `data-id="${x.id}"`, 'primary') : ''}</td></tr>`)) : html`<div style="padding:20px">${empty('No college is fully certified yet', '', 'certificate')}</div>`}</div>
+  <div class="card pad0"><div class="card-head pad"><h3>Still in progress (${c.waiting.length})</h3></div>${c.waiting.length ? tbl(['College', '#Certified', '#Awaiting officer'], c.waiting.map(x => html`<tr><td>${x.name}</td><td class="num">${x.villages_ack}/${x.villages}</td><td class="num">${x.villages_submitted}</td></tr>`)) : html`<div style="padding:20px">${empty('All done', '', 'check-circle')}</div>`}</div>`;
 actions.copyLink = async el => { try { await navigator.clipboard.writeText(el.dataset.l); toast('Link copied'); } catch { prompt('Copy this link', el.dataset.l); } };
-actions.resend = async el => { const r = await api(`/api/staff/acks/${el.dataset.id}/resend`, 'POST'); toast(r.status === 'failed' ? 'No email on record: ' + (r.error || '') : r.status === 'sent' ? 'Reminder emailed ✔' : 'Reminder saved to Outbox', r.status === 'failed'); };
-actions.ackBehalf = el => modal(html`<h3>Record acknowledgement</h3><p class="muted">Use when the officer confirmed by phone or in person. This is logged under your name.</p>
-  <form data-form="ackBehalf" data-id="${el.dataset.id}" class="stack"><div class="formgrid"><label class="f"><span>Officer name *</span><input type="text" name="officer_name" required></label><label class="f"><span>Designation</span><input type="text" name="designation"></label></div>
-  <label class="f"><span>Remarks</span><textarea name="remarks" maxlength="300"></textarea></label>${mfoot('Record')}</form>`);
-forms.ackBehalf = async f => { await api(`/api/staff/acks/${f.dataset.id}/override`, 'POST', { mode: 'acknowledge', ...fd(f) }); closeM(f); toast('Recorded'); refresh(); };
-actions.unlock = el => modal(html`<h3>Reopen for corrections</h3><p class="muted">The college can edit this village again. Any issued certificate for the college is withdrawn.</p>
-  <form data-form="unlock" data-id="${el.dataset.id}" class="stack"><label class="f"><span>Reason (shown to the college)</span><input type="text" name="note" maxlength="300" required></label>${mfoot('Reopen', 'btn danger')}</form>`);
-forms.unlock = async f => { await api(`/api/staff/acks/${f.dataset.id}/override`, 'POST', { mode: 'unlock', ...fd(f) }); closeM(f); refresh(); };
-
-// ---------- reports ----------
-let repType = 'colleges';
-async function tReports() {
-  const r = await api('/api/staff/reports/' + repType);
-  const names = { colleges: 'Colleges', volunteers: 'Volunteers', villages: 'Villages & acknowledgement', days: 'Day-by-day log' };
-  show($('#tab'), html`<div class="row between" style="margin-bottom:14px"><div class="tabs" style="margin:0">${Object.entries(names).map(([k, l]) => html`<button class="tab ${k === repType ? 'on' : ''}" data-act="repType" data-k="${k}">${l}</button>`)}</div>
-    <a class="btn" href="/api/staff/reports/${repType}?format=csv">⬇ Download CSV</a></div>
-    ${r.rows.length ? html`<div class="tablewrap" style="max-height:70vh"><table><thead><tr>${r.cols.map(([, l]) => html`<th>${l}</th>`)}</tr></thead><tbody>
-      ${r.rows.map(row => html`<tr>${r.cols.map(([k]) => html`<td class="${typeof row[k] === 'number' ? 'num' : ''}">${row[k] ?? ''}</td>`)}</tr>`)}</tbody></table></div>` : empty('Nothing to report yet.')}`);
-}
-actions.repType = el => { repType = el.dataset.k; tReports(); };
-
-// ---------- certificates ----------
-async function tCerts() {
-  const { ready, waiting } = await api('/api/staff/certificates');
-  show($('#tab'), html`<p class="muted">A college becomes certificate-ready once <b>every</b> allotted village is acknowledged by its village officer. ${isSuper() ? 'Issue the certificate number once the District Collector approves.' : 'The Super Admin records issue on the Collector\'s behalf.'}</p>
-    <h3 style="font-size:1.4rem;text-transform:uppercase;margin-bottom:10px">Ready for certification (${ready.length})</h3>
-    ${ready.length ? table(['College', '#Villages', '#Vol-days', '#Addressed', '#Registered', 'Certificate', ''], ready.map(c => html`<tr><td><b>${c.name}</b></td><td class="num">${c.villages_ack}/${c.villages}</td><td class="num">${c.vdays_attended}</td><td class="num">${n(c.addressed)}</td><td class="num">${n(c.registered)}</td>
-      <td>${c.certificate ? html`<span class="chip ok">${c.certificate.number}</span>` : html`<span class="chip warn">not issued</span>`}</td>
-      <td><div class="row">${c.certificate ? html`<button class="btn sm" data-act="printCert" data-id="${c.id}">🖨 View / print</button>` : isSuper() ? html`<button class="btn sm violet" data-act="issueCert" data-id="${c.id}">Issue number</button>` : ''}</div></td></tr>`)) : empty('No college is fully acknowledged yet.')}
-    <h3 style="font-size:1.4rem;text-transform:uppercase;margin:24px 0 10px">Still in progress (${waiting.length})</h3>
-    ${waiting.length ? table(['College', '#Villages acknowledged', '#Awaiting officer'], waiting.map(c => html`<tr><td>${c.name}</td><td class="num">${c.villages_ack}/${c.villages}</td><td class="num">${c.villages_submitted}</td></tr>`)) : empty('All done!')}`);
-}
-actions.issueCert = async el => {
-  if (!await confirmBox('Issue a certificate number for this college? Do this once the Collector has approved.', 'Issue')) return;
-  const r = await api(`/api/staff/certificates/${el.dataset.id}/issue`, 'POST'); toast('Issued ' + r.number); refresh();
-};
+actions.resend = async el => { const r = await api(`/api/staff/acks/${el.dataset.id}/resend`, 'POST'); toast(r.status === 'failed' ? 'No email on record: ' + (r.error || '') : r.status === 'sent' ? 'Reminder emailed' : 'Reminder saved in the Outbox', r.status === 'failed'); };
+actions.ackBehalf = el => modal(html`<h2>Certify on the officer's behalf</h2><p class="muted small" style="margin-bottom:10px">Use when the officer confirmed by phone or in person. This is logged under your name.</p><form data-form="ackBehalf" data-id="${el.dataset.id}" class="stack-s"><div class="formgrid"><label class="f"><span>Officer name *</span><input type="text" name="officer_name" required></label><label class="f"><span>Designation</span><input type="text" name="designation"></label></div>
+  <label class="f"><span>Remarks</span><textarea name="remarks" maxlength="300"></textarea></label>${mfoot('Record certification', 'green')}</form>`);
+forms.ackBehalf = async f => { await api(`/api/staff/acks/${f.dataset.id}/override`, 'POST', { mode: 'acknowledge', ...fd(f) }); f.closest('.overlay').close(); toast('Recorded'); refresh(); };
+actions.unlock = el => modal(html`<h2>Reopen for corrections</h2><p class="muted small" style="margin-bottom:10px">The college can edit this village again. Any issued certificate for the college is withdrawn.</p><form data-form="unlock" data-id="${el.dataset.id}" class="stack-s"><label class="f"><span>Reason (shown to the college)</span><input type="text" name="note" maxlength="300" required></label>${mfoot('Reopen', 'danger')}</form>`);
+forms.unlock = async f => { await api(`/api/staff/acks/${f.dataset.id}/override`, 'POST', { mode: 'unlock', ...fd(f) }); f.closest('.overlay').close(); refresh(); };
+actions.issueCert = async el => { if (!await confirmBox('Issue a certificate number for this college? Do this once the Collector has approved.', 'Issue')) return; const r = await api(`/api/staff/certificates/${el.dataset.id}/issue`, 'POST'); toast('Issued ' + r.number); refresh(); };
 actions.printCert = async el => {
-  const d = await api('/api/staff/certificates/' + el.dataset.id), c = d.college, s = d.stats;
-  const year = new Date(d.certificate.issued_at).getFullYear();
-  const m = modal(html`<div class="row noprint" style="justify-content:flex-end;margin-bottom:10px"><button class="btn" data-act="doPrint">🖨 Print all (${1 + d.volunteers.length} pages)</button><button class="btn white" data-act="closeModal">Close</button></div>
-    <div class="cert"><div style="letter-spacing:.3em;font-size:.8rem">DISTRICT ELECTION OFFICE · KOZHIKODE</div><h1>Certificate of Appreciation</h1><p>This is to certify that the Electoral Literacy Club of</p>
-      <div class="nm">${c.name}</div><p>has completed voter-enrolment and electoral-literacy outreach in <b>${d.villages.length}</b> villages (${d.villages.map(v => v.name).join(', ')}), with <b>${s.vdays_attended}</b> volunteer-days of field work, addressing <b>${n(s.addressed)}</b> people and helping <b>${n(s.registered)}</b> citizens register as voters. Each village's activity was acknowledged by its Village Officer.</p>
+  const d = await api('/api/staff/certificates/' + el.dataset.id), c = d.college, s = d.stats, year = new Date(d.certificate.issued_at).getFullYear();
+  const head = html`<div class="lg"><img src="${LOGO.district}" alt=""><img src="${LOGO.sweepDark}" alt=""></div>`;
+  modal(html`<div class="row noprint" style="justify-content:flex-end;margin-bottom:10px"><button class="btn primary" data-act="doPrint">${icon('printer')} Print all (${1 + d.volunteers.length} pages)</button><button class="btn secondary" data-act="closeModal">Close</button></div>
+    <div class="cert">${head}<div style="letter-spacing:.3em;font-size:.8rem">DISTRICT ELECTION OFFICE · KOZHIKODE</div><h1>Certificate of Appreciation</h1><p>This is to certify that the Electoral Literacy Club of</p><div class="nm">${c.name}</div>
+      <p>has completed voter-enrolment and electoral-literacy outreach in <b>${d.villages.length}</b> village${d.villages.length > 1 ? 's' : ''} (${d.villages.map(v => v.name).join(', ')}), with <b>${s.vdays_attended}</b> volunteer-days of field work, reaching <b>${n(s.addressed)}</b> people and helping <b>${n(s.registered)}</b> citizens register as voters. The activity in each village was certified by its Village Officer.</p>
       <p class="small">Certificate No. ${d.certificate.number} · ${year}</p><div class="sig"><div>Nodal Officer, ELC</div><div>District Collector &amp; District Election Officer</div></div></div>
-    ${d.volunteers.map(v => html`<div class="cert" style="margin-top:20px"><div style="letter-spacing:.3em;font-size:.8rem">DISTRICT ELECTION OFFICE · KOZHIKODE</div><h1>Certificate of Participation</h1><p>This is to certify that</p><div class="nm">${v.name}</div>
-      <p>of <b>${c.name}</b> volunteered in the Electoral Literacy Club voter-enrolment drive for <b>${v.days_attended}</b> field day(s), addressing <b>${n(v.addressed)}</b> people and helping <b>${n(v.registered)}</b> register to vote.</p>
-      <p class="small">Ref. ${d.certificate.number} · ${year}</p><div class="sig"><div>College ELC Coordinator</div><div>District Collector &amp; District Election Officer</div></div></div>`)}`, { wide: true });
-  m.querySelector('.modal').style.width = 'min(980px,100%)';
+    ${d.volunteers.map(v => html`<div class="cert" style="margin-top:20px">${head}<div style="letter-spacing:.3em;font-size:.8rem">DISTRICT ELECTION OFFICE · KOZHIKODE</div><h1>Certificate of Participation</h1><p>This is to certify that</p><div class="nm">${v.name}</div>
+      <p>of <b>${c.name}</b> volunteered in the Electoral Literacy Club voter-enrolment drive for <b>${v.days_attended}</b> field day(s), reaching <b>${n(v.addressed)}</b> people and helping <b>${n(v.registered)}</b> register to vote.</p><p class="small">Ref. ${d.certificate.number} · ${year}</p><div class="sig"><div>College ELC Coordinator</div><div>District Collector &amp; District Election Officer</div></div></div>`)}`, { wide: true });
 };
 actions.doPrint = () => { document.body.classList.add('pc'); window.print(); setTimeout(() => document.body.classList.remove('pc'), 500); };
 
-// ---------- outbox ----------
-async function tOutbox() {
-  const { smtp, rows } = await api('/api/staff/outbox');
-  window.__outbox = rows;
-  show($('#tab'), html`<div class="note" style="margin-bottom:14px">${smtp ? '📡 SMTP is on: emails below were handed to your mail server.' : '📭 SMTP is off: emails are only stored here (not delivered). Passcodes in these messages are live, so treat this tab as confidential.'}</div>
-    ${rows.length ? table(['When', 'To', 'Subject', 'Status', ''], rows.map(r => html`<tr><td>${fdt(r.ts)}</td><td>${r.to_addr || '—'}</td><td>${r.subject}</td>
-      <td><span class="chip ${r.status === 'sent' ? 'ok' : r.status === 'saved' ? 'warn' : 'pink'}">${r.status}</span>${r.error ? html`<div class="small">${r.error}</div>` : ''}</td><td><button class="btn sm white" data-act="viewMail" data-id="${r.id}">Open</button></td></tr>`)) : empty('No emails yet.')}`);
+// ---------- help desk ----------
+let issueFilter = 'open';
+async function pgIssues(el) {
+  const all = await api('/api/staff/issues'); window.__issues = all;
+  const list = all.filter(i => issueFilter === 'all' || (issueFilter === 'open' ? i.status !== 'resolved' : i.status === 'resolved'));
+  show(el, html`${pageHead('Help desk', 'Issues raised by colleges. Reply here and the college sees it in its workspace.', '', 'Operations')}
+    <div class="chips" style="margin-bottom:14px">${[['open', `Open (${all.filter(i => i.status !== 'resolved').length})`], ['resolved', 'Resolved'], ['all', 'All']].map(([k, l]) => html`<button class="chip ${issueFilter === k ? 'on' : ''}" data-act="issueFilter" data-k="${k}">${l}</button>`)}</div>
+    ${list.length ? html`<div class="stack-s">${list.map(i => html`<div class="card rv"><div class="row between"><div><b>${i.subject}</b><div class="small muted">${i.college} · ${i.category} · ${fdt(i.created_at)}</div></div>${badge(i.status.replace('_', ' '), i.status === 'resolved' ? 'ok' : i.status === 'in_progress' ? 'info' : 'warn')}</div>
+      <p style="margin-top:8px">${i.message}</p>${i.staff_reply ? html`<div class="alert info" style="margin-top:10px">${icon('message')}<div><b>${i.replied_by}:</b> ${i.staff_reply}</div></div>` : ''}
+      <div class="row" style="margin-top:12px"><button class="btn primary sm" data-act="replyIssue" data-id="${i.id}">${icon('message')} Reply / update</button><span class="small muted">${icon('phone')} ${i.college_phone} · ${i.college_email}</span></div></div>`)}</div>` : empty('No issues here', '', 'check-circle')}`);
 }
-actions.viewMail = el => { const r = window.__outbox.find(x => x.id === Number(el.dataset.id)); modal(html`<h3>${r.subject}</h3><p class="small muted">To ${r.to_addr || '—'} · ${fdt(r.ts)}</p><pre style="white-space:pre-wrap;font-family:var(--body);background:var(--paper);padding:14px;border-radius:12px;border:2px solid var(--ink)">${r.body}</pre><div class="row" style="justify-content:flex-end"><button class="btn white" data-act="closeModal">Close</button></div>`); };
+actions.issueFilter = el => { issueFilter = el.dataset.k; pgIssues($('#pg')); };
+actions.replyIssue = el => { const i = window.__issues.find(x => x.id === Number(el.dataset.id));
+  modal(html`<h2>${i.subject}</h2><p class="small muted">${i.college}</p><p style="margin:10px 0">${i.message}</p><form data-form="issueReply" data-id="${i.id}" class="stack-s"><label class="f"><span>Status</span><select name="status"><option value="open" ${i.status === 'open' ? 'selected' : ''}>Open</option><option value="in_progress" ${i.status === 'in_progress' ? 'selected' : ''}>In progress</option><option value="resolved" ${i.status === 'resolved' ? 'selected' : ''}>Resolved</option></select></label>
+  <label class="f"><span>Reply to the college</span><textarea name="reply" maxlength="2000">${i.staff_reply || ''}</textarea></label>${mfoot('Save')}</form>`, { wide: true }); };
+forms.issueReply = async f => { await api('/api/staff/issues/' + f.dataset.id, 'POST', fd(f)); f.closest('.overlay').close(); toast('Updated'); refresh(); };
+
+// ---------- announcements ----------
+async function pgNotices(el) {
+  const list = await api('/api/announcements'); window.__ann = list;
+  const aud = { all: 'Everyone (public)', colleges: 'Colleges', officers: 'Village officers' };
+  show(el, html`${pageHead('Announcements', 'Post notices for colleges, village officers, or the public home page.', html`<button class="btn primary" data-act="addNotice">${icon('plus')} New announcement</button>`, 'Operations')}
+    ${list.length ? html`<div class="stack-s">${list.map(a => html`<div class="notice ${a.pinned ? 'pinned' : ''}"><div class="row between"><h3>${a.pinned ? html`${icon('pin')} ` : ''}${a.title}</h3><div class="row gap-s">${badge(aud[a.audience], 'info')}${a.expired ? badge('expired', 'grey') : ''}</div></div>${a.body ? html`<p>${a.body}</p>` : ''}
+      <div class="when">${fdt(a.created_at)} · ${a.created_by}${a.expires_on ? ` · until ${fdate(a.expires_on)}` : ''}</div><div class="row gap-s" style="margin-top:8px">${rowBtn('editNotice', 'Edit', 'edit', `data-id="${a.id}"`)}${rowBtn('delNotice', 'Delete', 'trash', `data-id="${a.id}"`, 'danger')}</div></div>`)}</div>` : empty('No announcements yet', '', 'megaphone')}`);
+}
+const noticeForm = a => html`<form data-form="notice" data-id="${a?.id || ''}" class="stack-s"><label class="f"><span>Title *</span><input type="text" name="title" value="${a?.title || ''}" required maxlength="140"></label><label class="f"><span>Message</span><textarea name="body" rows="5" maxlength="2000">${a?.body || ''}</textarea></label>
+  <div class="formgrid"><label class="f"><span>Who sees it</span><select name="audience"><option value="all" ${a?.audience === 'all' ? 'selected' : ''}>Everyone (public home page too)</option><option value="colleges" ${a?.audience === 'colleges' ? 'selected' : ''}>Colleges only</option><option value="officers" ${a?.audience === 'officers' ? 'selected' : ''}>Village officers only</option></select></label>
+  <label class="f"><span>Show until (optional)</span><input type="date" name="expires_on" value="${a?.expires_on || ''}"></label></div><label class="chk"><input type="checkbox" name="pinned" ${a?.pinned ? 'checked' : ''}> Pin to the top</label>${mfoot(a ? 'Save' : 'Publish')}</form>`;
+actions.addNotice = () => modal(html`<h2>New announcement</h2>${noticeForm()}`, { wide: true });
+actions.editNotice = el => modal(html`<h2>Edit announcement</h2>${noticeForm(window.__ann.find(a => a.id === Number(el.dataset.id)))}`, { wide: true });
+forms.notice = async f => { const id = f.dataset.id, v = fd(f); await api(id ? '/api/staff/announcements/' + id : '/api/staff/announcements', id ? 'PUT' : 'POST', { ...v, pinned: !!v.pinned }); f.closest('.overlay').close(); toast(id ? 'Saved' : 'Published'); refresh(); };
+actions.delNotice = async el => { if (!await confirmBox('Delete this announcement?', 'Delete', true)) return; await api('/api/staff/announcements/' + el.dataset.id, 'DELETE'); refresh(); };
+
+// ---------- resources ----------
+async function pgResources(el) {
+  const list = await api('/api/resources'); window.__res = list;
+  const aud = { public: 'Public', colleges: 'Colleges', officers: 'Village officers', staff: 'Staff only' };
+  show(el, html`${pageHead('Resource centre', 'Share manuals, forms and guides with colleges, officers or everyone.', html`<button class="btn primary" data-act="addRes">${icon('plus')} Add resource</button>`, 'Operations')}
+    ${list.length ? html`<div class="card pad0">${tbl(['Title', 'Category', 'Visible to', 'Type', 'Added', ''], list.map(r => html`<tr><td><b>${r.title}</b><div class="small muted">${r.description || ''}</div></td><td>${r.category}</td><td>${badge(aud[r.audience], r.audience === 'public' ? 'ok' : 'info')}</td>
+      <td>${r.kind === 'link' ? html`${icon('link')} Link` : html`${icon('file')} ${r.filename}${r.size ? html` <span class="xs muted">${Math.round(r.size / 1024)} KB</span>` : ''}`}</td><td class="small">${fdt(r.created_at)}</td>
+      <td><div class="row gap-s nowrap">${r.kind === 'link' ? html`<a class="btn sm secondary" href="${r.url}" target="_blank" rel="noopener">${icon('external')} Open</a>` : html`<a class="btn sm secondary" href="/api/resources/${r.id}/download">${icon('download')} Download</a>`}${rowBtn('editRes', 'Edit', 'edit', `data-id="${r.id}"`)}${rowBtn('delRes', '', 'trash', `data-id="${r.id}" aria-label="Delete ${esc(r.title)}"`, 'danger')}</div></td></tr>`))}</div>` : empty('Nothing shared yet', 'Add manuals, circulars and forms here.', 'book')}`);
+}
+const CATS = ['Manual', 'Form', 'Circular', 'Template', 'Training', 'General'];
+actions.addRes = () => modal(html`<h2>Add resource</h2><form data-form="res" class="stack-s"><label class="f"><span>Title *</span><input type="text" name="title" required maxlength="140"></label><label class="f"><span>Description</span><input type="text" name="description" maxlength="500"></label>
+  <div class="formgrid"><label class="f"><span>Category</span><select name="category">${CATS.map(c => html`<option>${c}</option>`)}</select></label><label class="f"><span>Visible to</span><select name="audience"><option value="colleges">Colleges</option><option value="officers">Village officers</option><option value="public">Everyone (public)</option><option value="staff">Staff only</option></select></label></div>
+  <div class="seg" role="radiogroup" aria-label="Type"><label><input type="radio" name="kind" value="file" checked><span class="na">${icon('upload')} Upload a file</span></label><label><input type="radio" name="kind" value="link"><span class="na">${icon('link')} Link</span></label></div>
+  <label class="f" id="rf"><span>File (PDF, Word, Excel, PowerPoint, image, ZIP · up to 5 MB)</span><input type="file" name="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.png,.jpg,.jpeg,.webp,.zip"></label>
+  <label class="f hide" id="rl"><span>Link (https://…)</span><input type="url" name="url" placeholder="https://"></label>${mfoot('Add resource')}</form>`, { wide: true });
+document.addEventListener('change', e => { if (e.target.name === 'kind') { const link = e.target.value === 'link'; $('#rf')?.classList.toggle('hide', link); $('#rl')?.classList.toggle('hide', !link); } });
+forms.res = async f => {
+  const v = fd(f), body = { title: v.title, description: v.description, category: v.category, audience: v.audience, kind: v.kind };
+  if (v.kind === 'link') body.url = v.url;
+  else {
+    const file = $('input[type=file]', f).files[0]; if (!file) throw new Error('Choose a file to upload'); if (file.size > 5 * 1024 * 1024) throw new Error('Files can be up to 5 MB');
+    body.filename = file.name; body.mime = file.type; body.data = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = () => rej(new Error('Could not read the file')); r.readAsDataURL(file); });
+  }
+  await api('/api/staff/resources', 'POST', body); f.closest('.overlay').close(); toast('Added'); refresh();
+};
+actions.editRes = el => { const r = window.__res.find(x => x.id === Number(el.dataset.id));
+  modal(html`<h2>Edit resource</h2><form data-form="resEdit" data-id="${r.id}" class="stack-s"><label class="f"><span>Title *</span><input type="text" name="title" value="${r.title}" required maxlength="140"></label><label class="f"><span>Description</span><input type="text" name="description" value="${r.description || ''}" maxlength="500"></label>
+  <div class="formgrid"><label class="f"><span>Category</span><select name="category">${[...new Set([...CATS, r.category])].map(c => html`<option ${c === r.category ? 'selected' : ''}>${c}</option>`)}</select></label>
+  <label class="f"><span>Visible to</span><select name="audience">${[['colleges', 'Colleges'], ['officers', 'Village officers'], ['public', 'Everyone (public)'], ['staff', 'Staff only']].map(([k, l]) => html`<option value="${k}" ${r.audience === k ? 'selected' : ''}>${l}</option>`)}</select></label></div>${mfoot('Save')}</form>`); };
+forms.resEdit = async f => { await api('/api/staff/resources/' + f.dataset.id, 'PUT', fd(f)); f.closest('.overlay').close(); toast('Saved'); refresh(); };
+actions.delRes = async el => { if (!await confirmBox('Delete this resource? Anyone who had access loses it.', 'Delete', true)) return; await api('/api/staff/resources/' + el.dataset.id, 'DELETE'); refresh(); };
+
+// ---------- reports & exports ----------
+const RF = { daily: ['college', 'taluk', 'village', 'lsgi', 'dates', 'attendance', 'verified', 'ack', 'q'], students: ['college', 'taluk', 'village', 'dates', 'q'], colleges: ['college', 'taluk', 'dates', 'q'],
+  villages: ['college', 'taluk', 'village', 'lsgi', 'dates', 'ack', 'q'], allotments: ['college', 'taluk', 'village', 'lsgi', 'ack', 'q'], issues: ['college', 'status', 'dates', 'q'] };
+let REP = { type: 'daily', filters: {}, sort: '', dir: 'asc', cols: null }, OPTS = null;
+async function pgReports(el) {
+  OPTS ||= await api('/api/staff/report-options');
+  show(el, html`${pageHead('Reports & exports', 'Choose a report, narrow it with filters, sort it, pick the columns, then download as CSV (opens in Excel) or print.', '', 'Insights')}
+    <div class="tabs" role="tablist" aria-label="Report" style="margin-bottom:14px">${OPTS.datasets.map(d => html`<button class="tab" role="tab" aria-selected="${REP.type === d.key}" data-act="repType" data-k="${d.key}">${d.title}</button>`)}</div>
+    <div class="card pad0"><form class="filterbar" id="rfilters" data-form="repApply">${repFilters()}<button class="btn primary" type="submit">${icon('filter')} Apply</button><button class="btn ghost" type="button" data-act="repClear">Clear</button></form>
+      <div class="row between" style="padding:12px 16px;border-bottom:1px solid var(--line)"><div id="repcount" class="small muted">Loading…</div><div class="row gap-s"><div class="dropdown"><button class="btn secondary sm" data-act="dropdown" aria-haspopup="true" aria-expanded="false">${icon('list')} Columns</button><div class="menu" id="colmenu" style="min-width:260px;max-height:320px;overflow:auto"></div></div>
+        <button class="btn secondary sm" data-act="repPrint">${icon('printer')} Print</button><button class="btn primary sm" data-act="repCsv">${icon('download')} Download CSV</button></div></div><div id="repbody"></div></div>`);
+  await loadReport();
+}
+function repFilters() {
+  const f = REP.filters, want = RF[REP.type], sel = (k, label, opts, all = 'All') => html`<label class="f"><span>${label}</span><select name="${k}"><option value="">${all}</option>${opts.map(([v, l]) => html`<option value="${v}" ${String(f[k]) === String(v) ? 'selected' : ''}>${l}</option>`)}</select></label>`;
+  return html`${want.includes('college') ? sel('college', 'College', OPTS.colleges.map(c => [c.id, c.name])) : ''}${want.includes('taluk') ? sel('taluk', 'Taluk', OPTS.taluks.map(t => [t, t])) : ''}${want.includes('village') ? sel('village', 'Village', OPTS.villages.map(v => [v.id, v.name])) : ''}
+    ${want.includes('lsgi') ? html`<label class="f"><span>LSGI contains</span><input type="text" name="lsgi" value="${f.lsgi || ''}" placeholder="e.g. Chelannur"></label>` : ''}
+    ${want.includes('dates') ? html`<label class="f"><span>From</span><input type="date" name="from" value="${f.from || ''}"></label><label class="f"><span>To</span><input type="date" name="to" value="${f.to || ''}"></label>` : ''}
+    ${want.includes('attendance') ? sel('attendance', 'Attendance', [['present', 'Present'], ['absent', 'Absent'], ['not_marked', 'Not marked']]) : ''}${want.includes('verified') ? sel('verified', 'Officer check', [['yes', 'Verified'], ['no', 'Disputed'], ['pending', 'Not verified']]) : ''}
+    ${want.includes('ack') ? sel('ack', 'Certification', [['acknowledged', 'Certified'], ['submitted', 'Awaiting officer'], ['none', 'In progress']]) : ''}${want.includes('status') ? sel('status', 'Status', [['open', 'Open'], ['in_progress', 'In progress'], ['resolved', 'Resolved']]) : ''}
+    ${want.includes('q') ? html`<label class="f"><span>Search</span><input type="search" name="q" value="${f.q || ''}" placeholder="Any text"></label>` : ''}`;
+}
+const repQuery = (extra = {}) => { const p = new URLSearchParams(); Object.entries(REP.filters).forEach(([k, v]) => { if (v) p.set(k, v); }); if (REP.sort) { p.set('sort', REP.sort); p.set('dir', REP.dir); } if (REP.cols) p.set('cols', REP.cols.join(',')); Object.entries(extra).forEach(([k, v]) => p.set(k, v)); return p.toString(); };
+async function loadReport() {
+  const r = await api(`/api/staff/reports/${REP.type}?${repQuery()}`); window.__rep = r;
+  REP.cols ||= r.cols.map(c => c.key);
+  const shown = r.cols.filter(c => REP.cols.includes(c.key));
+  show($('#colmenu'), html`${r.cols.map(c => html`<label class="chk" style="padding:6px 10px"><input type="checkbox" data-col="${c.key}" ${REP.cols.includes(c.key) ? 'checked' : ''}> ${c.label}</label>`)}`);
+  $('#repcount').textContent = `${n(r.total)} row${r.total === 1 ? '' : 's'}${r.total > r.rows.length ? ` (showing the first ${n(r.rows.length)}: download for all)` : ''}`;
+  show($('#repbody'), r.rows.length ? html`<div class="tablewrap" style="border:0;max-height:62vh"><table><caption class="sr">${r.title}</caption><thead><tr>${shown.map(c => html`<th class="sortable ${c.num ? 'num' : ''}" tabindex="0" data-act="repSort" data-k="${c.key}" aria-sort="${REP.sort === c.key ? (REP.dir === 'asc' ? 'ascending' : 'descending') : 'none'}">${c.label} ${REP.sort === c.key ? (REP.dir === 'asc' ? '▲' : '▼') : ''}</th>`)}</tr></thead>
+    <tbody>${r.rows.map(row => html`<tr>${shown.map(c => html`<td class="${c.num ? 'num' : ''}">${row[c.key] ?? ''}</td>`)}</tr>`)}</tbody></table></div>` : html`<div style="padding:20px">${empty('No rows match these filters', 'Try clearing a filter.', 'search')}</div>`);
+}
+document.addEventListener('change', e => { const c = e.target.dataset?.col; if (!c) return; const set = new Set(REP.cols); e.target.checked ? set.add(c) : set.delete(c); if (!set.size) { e.target.checked = true; return; } REP.cols = window.__rep.cols.map(x => x.key).filter(k => set.has(k)); loadReport(); });
+document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('th[data-act=repSort]')) { e.preventDefault(); e.target.click(); } });
+actions.repType = el => { REP = { type: el.dataset.k, filters: {}, sort: '', dir: 'asc', cols: null }; pgReports($('#pg')); };
+forms.repApply = async f => { REP.filters = Object.fromEntries(Object.entries(fd(f)).filter(([, v]) => v)); await loadReport(); };
+actions.repClear = () => { REP.filters = {}; pgReports($('#pg')); };
+actions.repSort = el => { const k = el.dataset.k; REP.dir = REP.sort === k && REP.dir === 'asc' ? 'desc' : 'asc'; REP.sort = k; loadReport(); };
+actions.repCsv = () => { const a = document.createElement('a'); a.href = `/api/staff/reports/${REP.type}?${repQuery({ format: 'csv' })}`; document.body.append(a); a.click(); a.remove(); };
+actions.repPrint = () => window.print();
 
 // ---------- team ----------
-async function tTeam() {
-  const [team, colleges, villages] = await Promise.all([api('/api/staff/team'), api('/api/staff/colleges'), api('/api/staff/villages')]);
-  window.__team = team; window.__cl = colleges; window.__vl = villages;
-  show($('#tab'), html`<div class="row between" style="margin-bottom:14px"><p class="muted" style="margin:0;max-width:640px"><b>Super admin</b>: everything, including team and logs. <b>Admin</b>: all college, village, allotment, request and report work. <b>Intern</b>: only the colleges and villages you assign to them.</p><button class="btn" data-act="addStaff">＋ Add staff</button></div>
-    ${table(['Name', 'Username', 'Role', 'Scope', 'Last sign-in', 'Status', ''], team.map(u => html`<tr><td><b>${u.name}</b><div class="small muted">${u.email || ''}</div></td><td>${u.username}</td><td><span class="chip ${u.role === 'super_admin' ? 'pink' : u.role === 'admin' ? 'violet' : 'warn'}">${ROLE[u.role]}</span></td>
-      <td class="small">${u.role === 'intern' ? `${u.colleges.length} colleges · ${u.villages.length} villages` : 'All'}</td><td>${fdt(u.last_login_at)}</td><td>${u.active ? html`<span class="chip ok">active</span>` : html`<span class="chip grey">off</span>`}</td>
-      <td><button class="btn sm white" data-act="editStaff" data-id="${u.id}">Edit</button></td></tr>`))}`);
+async function pgTeam(el) {
+  const [team, colleges, villages] = await Promise.all([api('/api/staff/team'), api('/api/staff/colleges'), api('/api/staff/villages')]); window.__team = team; window.__cl = colleges; window.__vl = villages;
+  show(el, html`${pageHead('Team', 'Super admin: everything. Admin: all college, village, officer and report work. Intern: only the colleges and villages you assign.', html`<button class="btn primary" data-act="addStaff">${icon('plus')} Add staff</button>`, 'Administration')}
+    <div class="card pad0">${tbl(['Name', 'Username', 'Role', 'Scope', 'Last sign-in', 'Status', ''], team.map(u => html`<tr><td><b>${u.name}</b><div class="small muted">${u.email || ''}</div></td><td>${u.username}</td><td>${badge(ROLE[u.role], u.role === 'super_admin' ? 'solid' : u.role === 'admin' ? 'info' : 'saffron')}</td>
+      <td class="small">${u.role === 'intern' ? `${u.colleges.length} colleges · ${u.villages.length} villages` : 'Everything'}</td><td>${fdt(u.last_login_at)}</td><td>${u.active ? badge('active', 'ok') : badge('off', 'grey')}</td><td>${rowBtn('editStaff', 'Edit', 'edit', `data-id="${u.id}"`)}</td></tr>`))}</div>`);
 }
-const checkList = (name, items, sel) => html`<div style="max-height:190px;overflow:auto;border:2.5px solid var(--ink);border-radius:12px;padding:8px 12px;background:#fff">${items.map(i => html`<label class="chk" style="padding:3px 0"><input type="checkbox" name="${name}" value="${i.id}" ${sel.includes(i.id) ? 'checked' : ''}> ${i.name}</label>`)}</div>`;
+const checkList = (name, items, sel, ph) => html`<input type="search" class="cl-q" data-for="${name}" placeholder="${ph}" style="margin-bottom:6px"><div style="max-height:190px;overflow:auto;border:1px solid var(--line-2);border-radius:var(--r-sm);padding:6px 12px">${items.map(i => html`<label class="chk cl-${name}" style="padding:3px 0"><input type="checkbox" name="${name}" value="${i.id}" ${sel.includes(i.id) ? 'checked' : ''}> ${i.name}</label>`)}</div>`;
 function staffForm(u) {
-  return html`<form data-form="staff" data-id="${u?.id || ''}" class="stack"><div class="formgrid"><label class="f"><span>Full name *</span><input type="text" name="name" value="${u?.name || ''}" required></label>
-    <label class="f"><span>Username *</span><input type="text" name="username" value="${u?.username || ''}" ${u ? 'disabled' : 'required'} autocapitalize="none"></label>
-    <label class="f"><span>Email</span><input type="email" name="email" value="${u?.email || ''}"></label>
-    <label class="f"><span>Role *</span><select name="role" id="role">${Object.entries(ROLE).map(([k, l]) => html`<option value="${k}" ${u?.role === k ? 'selected' : ''}>${l}</option>`)}</select></label></div>
-    <label class="f"><span>${u ? 'New password (leave blank to keep)' : 'Password * (min 8)'}</span><input type="password" name="password" minlength="8" ${u ? '' : 'required'} autocomplete="new-password"></label>
-    ${u ? html`<label class="chk"><input type="checkbox" name="active" ${u.active ? 'checked' : ''}> Account active</label>` : ''}
-    <div id="scope"><div class="note">Interns see and manage only these. They can edit details and handle requests/acknowledgements for them, but can't create or delete colleges or villages.</div>
-      <div class="formgrid" style="margin-top:10px"><div><b>Colleges</b>${checkList('colleges', window.__cl.map(c => ({ id: c.id, name: c.name })), u?.colleges || [])}</div><div><b>Villages</b>${checkList('villages', window.__vl.map(v => ({ id: v.id, name: `${v.name} (${v.taluk || ''})` })), u?.villages || [])}</div></div></div>${mfoot(u ? 'Save' : 'Create account')}</form>`;
+  return html`<form data-form="staff" data-id="${u?.id || ''}" class="stack-s"><div class="formgrid"><label class="f"><span>Full name *</span><input type="text" name="name" value="${u?.name || ''}" required></label><label class="f"><span>Username *</span><input type="text" name="username" value="${u?.username || ''}" ${u ? 'disabled' : 'required'} autocapitalize="none"></label>
+    <label class="f"><span>Email</span><input type="email" name="email" value="${u?.email || ''}"></label><label class="f"><span>Role *</span><select name="role" id="role">${Object.entries(ROLE).map(([k, l]) => html`<option value="${k}" ${u?.role === k ? 'selected' : ''}>${l}</option>`)}</select></label></div>
+    <label class="f"><span>${u ? 'New password (leave blank to keep)' : 'Password * (at least 8 characters)'}</span><input type="password" name="password" minlength="8" ${u ? '' : 'required'} autocomplete="new-password"></label>${u ? html`<label class="chk"><input type="checkbox" name="active" ${u.active ? 'checked' : ''}> Account active</label>` : ''}
+    <div id="scope"><div class="alert info">${icon('help')}<div>Interns see and manage only these colleges and villages. They can edit details and handle requests for them, but cannot create or delete colleges or villages.</div></div>
+      <div class="formgrid" style="margin-top:10px"><div><b>Colleges</b>${checkList('colleges', window.__cl.map(c => ({ id: c.id, name: c.name })), u?.colleges || [], 'Search colleges…')}</div><div><b>Villages</b>${checkList('villages', window.__vl.map(v => ({ id: v.id, name: `${v.name} (${v.taluk || ''})` })), u?.villages || [], 'Search villages…')}</div></div></div>${mfoot(u ? 'Save' : 'Create account')}</form>`;
 }
-function wireRole(m) { const r = $('#role', m), sc = $('#scope', m), f = () => sc.classList.toggle('hide', r.value !== 'intern'); r.addEventListener('change', f); f(); }
-actions.addStaff = () => wireRole(modal(html`<h3>Add staff</h3>${staffForm()}`, { wide: true }));
-actions.editStaff = el => wireRole(modal(html`<h3>Edit staff</h3>${staffForm(window.__team.find(u => u.id === Number(el.dataset.id)))}`, { wide: true }));
+function wireStaff(m) {
+  const r = $('#role', m), sc = $('#scope', m), f = () => sc.classList.toggle('hide', r.value !== 'intern'); r.addEventListener('change', f); f();
+  $$('.cl-q', m).forEach(q => q.addEventListener('input', () => { const v = q.value.toLowerCase(); $$('.cl-' + q.dataset.for, m).forEach(l => l.classList.toggle('hide', !l.textContent.toLowerCase().includes(v))); }));
+}
+actions.addStaff = () => wireStaff(modal(html`<h2>Add staff</h2>${staffForm()}`, { wide: true }));
+actions.editStaff = el => wireStaff(modal(html`<h2>Edit staff</h2>${staffForm(window.__team.find(u => u.id === Number(el.dataset.id)))}`, { wide: true }));
 forms.staff = async f => {
   const id = f.dataset.id, v = fd(f), body = { ...v, active: !id || !!v.active, colleges: $$('input[name=colleges]:checked', f).map(x => Number(x.value)), villages: $$('input[name=villages]:checked', f).map(x => Number(x.value)) };
   const sid = id || (await api('/api/staff/team', 'POST', body)).id;
   if (id || body.role === 'intern') await api('/api/staff/team/' + sid, 'PUT', body);
-  closeM(f); toast('Saved ✔'); refresh();
+  f.closest('.overlay').close(); toast('Saved'); refresh();
 };
 
-// ---------- activity log ----------
+// ---------- activity log / outbox ----------
 let logKind = '';
-async function tLogs() {
+async function pgLogs(el) {
   const rows = await api('/api/staff/logs' + (logKind ? '?kind=' + logKind : ''));
-  show($('#tab'), html`<div class="tabs">${[['', 'Everything'], ['signin', '🔐 Sign-ins'], ['manage', '🛠 Management actions']].map(([k, l]) => html`<button class="tab ${k === logKind ? 'on' : ''}" data-act="logKind" data-k="${k}">${l}</button>`)}</div>
-    <p class="small muted">Latest 500 events. Covers staff, college and village-officer activity.</p>
-    ${rows.length ? table(['When', 'Who', 'Role', 'Action', 'Detail', 'IP'], rows.map(r => html`<tr><td style="white-space:nowrap">${fdt(r.ts)}</td><td><b>${r.actor || '—'}</b><div class="small muted">${r.actor_type}</div></td><td>${r.role ? ROLE[r.role] : ''}</td>
-      <td><span class="chip ${r.action === 'login' ? 'ok' : r.action === 'login_failed' ? 'pink' : r.action === 'logout' ? 'grey' : 'cyan'}">${r.action}</span></td><td>${r.detail || ''}</td><td class="small">${r.ip || ''}</td></tr>`)) : empty('No events.')}`);
+  show(el, html`${pageHead('Activity log', 'Sign-ins and management actions by staff, colleges and village officers (latest 500).', '', 'Administration')}
+    <div class="chips" style="margin-bottom:14px">${[['', 'Everything'], ['signin', 'Sign-ins'], ['manage', 'Actions']].map(([k, l]) => html`<button class="chip ${k === logKind ? 'on' : ''}" data-act="logKind" data-k="${k}">${l}</button>`)}</div>
+    ${rows.length ? html`<div class="card pad0">${tbl(['When', 'Who', 'Role', 'Action', 'Detail', 'IP'], rows.map(r => html`<tr><td style="white-space:nowrap">${fdt(r.ts)}</td><td><b>${r.actor || '—'}</b><div class="xs muted">${r.actor_type}</div></td><td>${r.role ? ROLE[r.role] : ''}</td>
+      <td>${badge(r.action, r.action === 'login' ? 'ok' : r.action === 'login_failed' ? 'danger' : r.action === 'logout' ? 'grey' : 'info')}</td><td>${r.detail || ''}</td><td class="small">${r.ip || ''}</td></tr>`))}</div>` : empty('No events', '', 'shield')}`);
 }
-actions.logKind = el => { logKind = el.dataset.k; tLogs(); };
+actions.logKind = el => { logKind = el.dataset.k; pgLogs($('#pg')); };
+async function pgOutbox(el) {
+  const { smtp, rows } = await api('/api/staff/outbox'); window.__outbox = rows;
+  show(el, html`${pageHead('Outbox', 'Every email the portal has sent or tried to send.', '', 'Administration')}
+    <div class="alert ${smtp ? 'ok' : 'warn'}" style="margin-bottom:14px">${icon('mail')}<div>${smtp ? 'Email is connected: messages below were handed to the mail service.' : 'Email is not connected yet: messages are only stored here, not delivered. Passcodes in these messages are live, so treat this page as confidential.'}</div></div>
+    ${rows.length ? html`<div class="card pad0">${tbl(['When', 'To', 'Subject', 'Status', ''], rows.map(r => html`<tr><td>${fdt(r.ts)}</td><td>${r.to_addr || '—'}</td><td>${r.subject}</td><td>${badge(r.status, r.status === 'sent' ? 'ok' : r.status === 'saved' ? 'warn' : 'danger')}${r.error ? html`<div class="xs muted">${r.error}</div>` : ''}</td><td>${rowBtn('viewMail', 'Open', 'eye', `data-id="${r.id}"`)}</td></tr>`))}</div>` : empty('No emails yet', '', 'mail')}`);
+}
+actions.viewMail = el => { const r = window.__outbox.find(x => x.id === Number(el.dataset.id)); modal(html`<h2>${r.subject}</h2><p class="small muted">To ${r.to_addr || '—'} · ${fdt(r.ts)}</p><pre style="white-space:pre-wrap;font-family:inherit;background:var(--bg);padding:14px;border-radius:var(--r-sm);border:1px solid var(--line)">${r.body}</pre><div class="row" style="justify-content:flex-end"><button class="btn secondary" data-act="closeModal">Close</button></div>`, { wide: true }); };
 
 boot();

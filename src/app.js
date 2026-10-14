@@ -1,10 +1,14 @@
 // The portal's request handling: public + sign-in routes, then the college and staff routes. Runs inside the Portal object.
 import { openDb, log } from './lib/db.js';
-import { routes, route, guardCheck, COOKIE, setCookie, sessionUser, issueSession } from './lib/router.js';
+import { routes, route, guardCheck, COOKIE, setCookie, sessionUser, issueSession, whoIs } from './lib/router.js';
 import { HttpError, verifySecret, normPasscode } from './lib/util.js';
 import { publicBoard } from './lib/stats.js';
 import './routes/college.js';
 import './routes/admin.js';
+import './routes/officers.js';
+import './routes/officer.js';
+import './routes/content.js';
+import './routes/reports.js';
 
 // ---------- public + auth routes ----------
 let boardCache = { at: 0, data: null };
@@ -12,6 +16,13 @@ route('GET', '/api/public/board', null, async ctx => {
   if (boardCache.data && Date.now() - boardCache.at < 20000) return boardCache.data;     // leaderboard may be up to 20s old
   boardCache = { at: Date.now(), data: await publicBoard(ctx.db) };
   return boardCache.data;
+});
+route('GET', '/api/whoami', null, async ctx => {
+  // the public site cares about a college or officer session first; someone testing as staff in the same browser still sees their workspace
+  const c = await sessionUser(ctx, 'college'); if (c) return { kind: 'college', name: c.name };
+  const o = await sessionUser(ctx, 'officer'); if (o) return { kind: 'officer', name: o.name };
+  const u = await sessionUser(ctx, 'staff');
+  return u ? { kind: 'staff', name: u.name } : { kind: null, name: null };
 });
 route('GET', '/api/public/colleges', null, ctx => ctx.db.all('SELECT id,name FROM colleges WHERE active=1 ORDER BY name'));
 

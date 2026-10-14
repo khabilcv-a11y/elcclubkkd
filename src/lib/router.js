@@ -9,7 +9,7 @@ export function route(method, pattern, guard, handler) {
   routes.push({ method, re, keys, guard, handler });
 }
 
-export const COOKIE = { college: 'elc_c', staff: 'elc_s' };
+export const COOKIE = { college: 'elc_c', staff: 'elc_s', officer: 'elc_o' };
 
 export function parseCookies(req) {
   const out = {};
@@ -23,6 +23,10 @@ export function parseCookies(req) {
 export async function sessionUser(ctx, kind) {
   const p = await readSession(ctx.env, parseCookies(ctx.req)[COOKIE[kind]]);
   if (!p || p.k !== kind) return null;
+  if (kind === 'officer') {
+    const o = await ctx.db.get('SELECT * FROM officers WHERE id=? AND active=1', p.id);
+    return o && o.passcode_hash && fingerprint(o.passcode_hash) === p.v ? o : null;
+  }
   if (kind === 'college') {
     const c = await ctx.db.get('SELECT * FROM colleges WHERE id=? AND active=1', p.id);
     return c && c.passcode_hash && fingerprint(c.passcode_hash) === p.v ? c : null;
@@ -32,7 +36,7 @@ export async function sessionUser(ctx, kind) {
   delete a.pass; return a;
 }
 export async function issueSession(ctx, kind, subject, hours) {
-  const v = fingerprint(kind === 'college' ? subject.passcode_hash : subject.pass);
+  const v = fingerprint(kind === 'staff' ? subject.pass : subject.passcode_hash);
   setCookie(ctx, COOKIE[kind], await signSession(ctx.env, { k: kind, id: subject.id, v, hours }), hours * 3600);
 }
 
@@ -41,6 +45,11 @@ export async function guardCheck(guard, ctx) {
   if (guard === 'college') {
     ctx.college = await sessionUser(ctx, 'college');
     if (!ctx.college) throw new HttpError(401, 'Please sign in with your college passcode');
+    return;
+  }
+  if (guard === 'officer') {
+    ctx.officer = await sessionUser(ctx, 'officer');
+    if (!ctx.officer) throw new HttpError(401, 'Please sign in with your officer passcode');
     return;
   }
   ctx.user = await sessionUser(ctx, 'staff');
@@ -68,4 +77,15 @@ export async function assertCollege(ctx, id) {
 export async function assertVillage(ctx, id) {
   const s = await scopeOf(ctx);
   if (s && !s.villages.has(Number(id))) throw new HttpError(403, 'This village is not assigned to you');
+}
+
+// for pages that anyone may open but that show different things to different people
+export async function whoIs(ctx) {
+  const u = await sessionUser(ctx, 'staff');
+  if (u) { ctx.user = u; return 'staff'; }
+  const c = await sessionUser(ctx, 'college');
+  if (c) { ctx.college = c; return 'college'; }
+  const o = await sessionUser(ctx, 'officer');
+  if (o) { ctx.officer = o; return 'officer'; }
+  return 'public';
 }

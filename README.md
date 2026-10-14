@@ -85,11 +85,19 @@ Sign up at resend.com (free tier), verify your sending domain, create an API key
 | Team management, sign-in & action log | ✔ | – | – |
 
 ## How the programme works
-1. Admin adds a college and allots villages (distance shown, nearest first; a village taken by one college can't be given to another), then taps **Push passcode**.
-2. College signs in, can request a different village (only free ones are offered), **schedules 15 days in one tap** (3 days per village), sets 2 volunteers per village block, and records per volunteer: attended or not, people addressed, registered, plus photos (saved to Drive).
-3. A finished village goes to the **village officer** by emailed link to acknowledge (or ask for corrections).
-4. When every village of a college is acknowledged it is certificate-ready; the super admin records the certificate number and prints college + volunteer certificates.
-5. The home page shows the live leaderboard. Score = registered×10 + addressed×2 + volunteer-days×5 + villages acknowledged×50 (`src/lib/stats.js`).
+Every village a college holds needs **15 field days with 2 student volunteers each day**. A college with 3 villages therefore has 6 students out each day, in shifts.
+
+1. **District office** imports or adds colleges and villages, allots villages (a village belongs to one college), assigns village officers, and sends each college its passcode.
+2. **College** adds its students (paste a list), then creates the schedule in one tap: 15 working days per village. Students are split between villages so nobody is in two places on a day; in each village they work in pairs, each pair a few days in a row, then the next pair takes over, repeating until all 15 days are covered. Any day can be changed; shifts can be rebuilt when the list changes (days with attendance are never touched).
+3. **Daily log**: for each village and day the college records who was present, how many people they reached and how many registered, plus photos (saved to Drive).
+4. **Village officer** signs in, sees which students are working in their villages today, confirms or disputes attendance, reviews the report, and finally **certifies** the village. Colleges can also use the emailed link without signing in.
+5. When every village of a college is certified it is certificate-ready; the super admin records the certificate number and prints college + student certificates.
+6. The **home page and display board** show live counts, a village map, insights, a leaderboard, announcements and public resources. Score = registered×10 + reached×2 + shifts worked×5 + villages certified×50 (`src/lib/stats.js`).
+
+Also included: announcements (to everyone / colleges / officers), a college help desk, a resource centre (files kept in Google Drive), filtered and sorted exports (CSV), and an accessibility toolbar (text size, high contrast, readable font, underlined links, pause animations).
+
+### Importing the district list
+`node scripts/import-xlsx.js <file.xlsx> --dry` shows what would change; add `--geocode --prune` to place villages on the map from their PIN codes and remove unused starter villages. Run `npm install xlsx --no-save` once first. After that, colleges, villages and allotments are maintained from the staff console.
 
 ## Free-plan limits to know about
 - Cloudflare free: 100,000 requests/day to the Portal object and 5 GB storage: far more than this programme needs.

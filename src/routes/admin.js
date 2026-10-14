@@ -4,6 +4,7 @@ import { sendMail, mailConfigured } from '../lib/mailer.js';
 import { collegeStats } from '../lib/stats.js';
 import { driveConfigured } from '../lib/drive.js';
 import { daysWithVolunteers, reportFrom, LOCKED, villageReport, photoResponse } from './college.js';
+import { studentSummary } from './reports.js';
 import { HttpError, bad, haversine, hashSecret, verifySecret, newPasscode, nowIso, str, reqStr, num, emailOk, csv, isDup } from '../lib/util.js';
 
 const STAFF = 'staff';
@@ -24,13 +25,14 @@ route('GET', '/api/staff/dashboard', STAFF, async ctx => {
   const stats = (await collegeStats(db)).filter(c => !s || s.colleges.has(c.id));
   const sum = k => stats.reduce((t, c) => t + c[k], 0);
   const cids = stats.map(c => c.id), L = inList(cids);
-  const [pending, awaiting, noPass] = await Promise.all([
+  const [pending, awaiting, noPass, openIssues] = await Promise.all([
     db.get(`SELECT COUNT(*) n FROM change_requests WHERE status='pending' AND college_id IN (${L})`, ...cids),
     db.get(`SELECT COUNT(*) n FROM assignments WHERE ack_status='submitted' AND college_id IN (${L})`, ...cids),
-    db.get(`SELECT COUNT(*) n FROM colleges WHERE active=1 AND passcode_sent_at IS NULL AND id IN (${L})`, ...cids)]);
+    db.get(`SELECT COUNT(*) n FROM colleges WHERE active=1 AND passcode_sent_at IS NULL AND id IN (${L})`, ...cids),
+    db.get(`SELECT COUNT(*) n FROM issues WHERE status<>'resolved' AND college_id IN (${L})`, ...cids)]);
   return {
     totals: { colleges: stats.length, villages: sum('villages'), volunteers: sum('volunteers'), days_done: sum('days_done'), addressed: sum('addressed'),
-      registered: sum('registered'), villages_ack: sum('villages_ack'), pending_requests: pending.n, awaiting_ack: awaiting.n, passcode_pending: noPass.n },
+      registered: sum('registered'), villages_ack: sum('villages_ack'), pending_requests: pending.n, awaiting_ack: awaiting.n, passcode_pending: noPass.n, open_issues: openIssues.n },
     colleges: stats,
   };
 });
@@ -111,9 +113,8 @@ route('POST', '/api/staff/passcodes/bulk', STAFF, async ctx => {
 // ---------- villages ----------
 route('GET', '/api/staff/villages', STAFF, async ctx => {
   const s = await scopeOf(ctx);
-  const [cnt, vs] = await Promise.all([ctx.db.all('SELECT village_id id,COUNT(*) n FROM assignments GROUP BY village_id'), ctx.db.all('SELECT * FROM villages ORDER BY taluk,name')]);
-  const m = new Map(cnt.map(r => [r.id, r.n]));
-  return vs.filter(v => !s || s.villages.has(v.id)).map(v => ({ ...v, colleges: m.get(v.id) || 0 }));
+  const rows = await ctx.db.all(`SELECT v.*,a.college_id,a.ack_status,c.name holder FROM villages v LEFT JOIN assignments a ON a.village_id=v.id LEFT JOIN colleges c ON c.id=a.college_id ORDER BY v.taluk,v.name`);
+  return rows.filter(v => !s || s.villages.has(v.id)).map(v => ({ ...v, colleges: v.college_id ? 1 : 0 }));
 });
 function villageBody(b) {
   const o = { name: reqStr(b.name, 'Village name', 80), taluk: str(b.taluk, 60), lat: num(b.lat), lng: num(b.lng),
@@ -283,52 +284,6 @@ route('POST', '/api/staff/acks/:id/override', STAFF, async ctx => {
   return { ok: true };
 });
 
-// ---------- reports ----------
-async function reportData(db, type, s) {
-  const okC = id => !s || s.colleges.has(id);
-  if (type === 'colleges') return {
-    cols: [['rank', 'Rank'], ['name', 'College'], ['villages', 'Villages allotted'], ['villages_ack', 'Villages acknowledged'], ['days_planned', 'Days planned'], ['days_done', 'Days held'],
-      ['volunteers', 'Volunteers'], ['vdays_attended', 'Volunteer-days attended'], ['vdays_absent', 'Volunteer-days absent'], ['attendance_pct', 'Attendance %'],
-      ['addressed', 'People addressed'], ['registered', 'Registered'], ['verified_registered', 'Registered (acknowledged villages)'], ['score', 'Score']],
-    rows: (await collegeStats(db)).filter(c => okC(c.id)) };
-  if (type === 'volunteers') return {
-    cols: [['college', 'College'], ['name', 'Volunteer'], ['contact', 'Contact'], ['days_assigned', 'Days assigned'], ['days_attended', 'Days attended'], ['days_absent', 'Days absent'],
-      ['addressed', 'People addressed'], ['registered', 'Registered']],
-    rows: (await db.all(`SELECT college_id,college,name,contact,days_assigned,days_attended,days_absent,addressed,registered FROM (
-      SELECT d.college_id, MIN(c.name) college, MIN(v.name) name, v.contact, COUNT(*) days_assigned, COALESCE(SUM((v.attended=1)),0) days_attended, COALESCE(SUM((v.attended=0)),0) days_absent,
-      COALESCE(SUM(CASE WHEN v.attended=1 THEN v.addressed END),0) addressed, COALESCE(SUM(CASE WHEN v.attended=1 THEN v.registered END),0) registered
-      FROM volunteers v JOIN days d ON d.id=v.day_id JOIN colleges c ON c.id=d.college_id WHERE v.name<>''
-      GROUP BY d.college_id, lower(trim(v.name)), v.contact) t ORDER BY college, name`)).filter(r => okC(r.college_id)) };
-  if (type === 'villages') {
-    const rows = (await db.all(`SELECT a.college_id,a.village_id,c.name college,v.name village,v.taluk,a.ack_status,a.ack_name,a.ack_designation,a.ack_at FROM assignments a
-      JOIN colleges c ON c.id=a.college_id JOIN villages v ON v.id=a.village_id ORDER BY v.name`)).filter(r => okC(r.college_id) && (!s || s.villages.has(r.village_id)));
-    const cache = new Map();
-    for (const r of rows) {
-      if (!cache.has(r.college_id)) cache.set(r.college_id, await daysWithVolunteers(db, r.college_id));
-      const t = reportFrom(cache.get(r.college_id), r.village_id).totals;
-      Object.assign(r, { days: t.days, attended: t.attended, addressed: t.addressed, registered: t.registered });
-    }
-    return { cols: [['village', 'Village'], ['taluk', 'Taluk'], ['college', 'College'], ['days', 'Days'], ['attended', 'Volunteer-days attended'], ['addressed', 'People addressed'], ['registered', 'Registered'],
-      ['ack_status', 'Acknowledgement'], ['ack_name', 'Acknowledged by'], ['ack_designation', 'Designation'], ['ack_at', 'Acknowledged on']], rows };
-  }
-  if (type === 'days') return {
-    cols: [['date', 'Date'], ['college', 'College'], ['village', 'Village'], ['volunteer', 'Volunteer'], ['contact', 'Contact'], ['attendance', 'Attendance'], ['addressed', 'People addressed'], ['registered', 'Registered']],
-    rows: (await db.all(`SELECT d.college_id,d.village_id,d.date,c.name college,vg.name village,v.name volunteer,v.contact,
-      CASE v.attended WHEN 1 THEN 'Present' WHEN 0 THEN 'Absent' ELSE 'Not marked' END attendance,v.addressed,v.registered
-      FROM days d JOIN colleges c ON c.id=d.college_id JOIN villages vg ON vg.id=d.village_id LEFT JOIN volunteers v ON v.day_id=d.id
-      ORDER BY d.date,c.name`)).filter(r => okC(r.college_id) && (!s || s.villages.has(r.village_id))) };
-  throw new HttpError(404, 'Unknown report');
-}
-route('GET', '/api/staff/reports/:type', STAFF, async ctx => {
-  const r = await reportData(ctx.db, ctx.params.type, await scopeOf(ctx));
-  if (ctx.query.format === 'csv') {
-    await slog(ctx, 'report_export', ctx.params.type);
-    return { __raw: true, text: csv(r.rows, r.cols.map(([key, label]) => ({ key, label }))),
-      headers: { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="elc-${ctx.params.type}-${nowIso().slice(0, 10)}.csv"` } };
-  }
-  return { cols: r.cols, rows: r.rows };
-});
-
 // ---------- certificates (collector issues) ----------
 const certReady = async db => (await collegeStats(db)).filter(c => c.villages > 0 && c.villages_ack === c.villages && c.vdays_attended > 0);
 route('GET', '/api/staff/certificates', STAFF, async ctx => {
@@ -356,10 +311,10 @@ route('GET', '/api/staff/certificates/:id', STAFF, async ctx => {
   await assertCollege(ctx, id);
   const [c, stats, cert, vols, villages] = await Promise.all([
     ctx.db.get('SELECT id,name,address FROM colleges WHERE id=?', id), collegeStats(ctx.db), ctx.db.get('SELECT * FROM certificates WHERE college_id=?', id),
-    reportData(ctx.db, 'volunteers', null),
+    studentSummary(ctx, id),
     ctx.db.all(`SELECT v.name,v.taluk,a.ack_name,a.ack_designation,a.ack_at FROM assignments a JOIN villages v ON v.id=a.village_id WHERE a.college_id=? ORDER BY v.name`, id)]);
   if (!c || !cert) throw new HttpError(404, 'No certificate has been issued for this college yet');
-  return { college: c, stats: stats.find(x => x.id === id), certificate: cert, volunteers: vols.rows.filter(r => r.college_id === id && r.days_attended > 0), villages };
+  return { college: c, stats: stats.find(x => x.id === id), certificate: cert, volunteers: vols.map(v => ({ name: v.student, days_attended: v.present, addressed: v.addressed, registered: v.registered })), villages };
 });
 
 // ---------- logs, outbox, staff ----------
