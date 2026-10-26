@@ -1,6 +1,5 @@
 import { route } from '../lib/router.js';
 import { log } from '../lib/db.js';
-import { sendMail } from '../lib/mailer.js';
 import { collegeStats } from '../lib/stats.js';
 import { driveUpload, driveGet, driveDelete, driveConfigured } from '../lib/drive.js';
 import { HttpError, bad, haversine, isDate, todayStr, nowIso, str, reqStr, int, phone, token, isDup } from '../lib/util.js';
@@ -415,11 +414,6 @@ route('POST', '/api/college/submit-village', 'college', async ctx => {
   if (!totals.attended) throw bad('No volunteer attended any day, so there is nothing to acknowledge');
   const tk = a.ack_token || token(18);
   await db.run("UPDATE assignments SET ack_status='submitted',ack_token=?,submitted_at=?,query_note=NULL WHERE id=?", tk, nowIso(), a.id);
-  const link = `${env.BASE_URL || new URL(ctx.req.url).origin}/#/ack/${tk}`;
-  const mail = await sendMail(db, env, village.officer_email, `Please acknowledge Electoral Literacy Club work in ${village.name}`,
-    `Dear ${village.officer_name || 'Village Officer'},\n\n${c.name} has completed its Electoral Literacy Club voter-enrolment activity in ${village.name}: ` +
-    `${totals.attended} volunteer-days, ${totals.addressed} people addressed, ${totals.registered} registered.\n\n` +
-    `Please review and acknowledge the report here (no login needed):\n${link}\n\nThank you,\nELC Kozhikode`);
   await clog(ctx, 'submit_village', `${village.name} sent for acknowledgement`);
-  return { ok: true, emailed: mail.status };
+  return { ok: true };
 });

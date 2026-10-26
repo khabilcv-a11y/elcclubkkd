@@ -1,5 +1,5 @@
 'use strict';
-// ---- emailed certification link for a village officer without a login (#/ack/<token>) ----
+// ---- certification link for a village officer without a login (#/ack/<token>) ----
 let ACK_TOKEN = null;
 async function renderAck(token) {
   ACK_TOKEN = token;
@@ -19,7 +19,7 @@ async function renderAck(token) {
         <form data-form="ack" class="stack-s"><div class="formgrid"><label class="f"><span>Your name</span><input type="text" name="name" required maxlength="100"></label><label class="f"><span>Designation</span><input type="text" name="designation" maxlength="100" placeholder="Village Officer"></label></div>
         <label class="f"><span>Remarks (needed if something is wrong)</span><textarea name="remarks" maxlength="500"></textarea></label><div data-err></div>
         <div class="row"><button class="btn green lg" type="submit" data-a="acknowledge">${icon('certificate')} Certify</button><button class="btn secondary lg" type="submit" data-a="query">Ask for a correction</button></div></form>`
-      : html`<h3>Nothing to do right now</h3><p class="muted" style="margin-top:6px">This report isn't waiting for certification. If the college has corrected it, you will get a fresh email.</p>`}</div></div>`));
+      : html`<h3>Nothing to do right now</h3><p class="muted" style="margin-top:6px">This report isn't waiting for certification. If the college has corrected it, the district office will share a fresh link.</p>`}</div></div>`));
 }
 forms.ack = async (f, e) => {
   const action = (e.submitter && e.submitter.dataset.a) || 'acknowledge', v = fd(f);

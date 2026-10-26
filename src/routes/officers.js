@@ -1,7 +1,6 @@
 // Village officers: staff manage them; officers sign in with a passcode (like colleges).
 import { route, scopeOf, issueSession, setCookie, sessionUser, COOKIE } from '../lib/router.js';
 import { log } from '../lib/db.js';
-import { sendMail } from '../lib/mailer.js';
 import { HttpError, bad, hashSecret, verifySecret, newPasscode, normPasscode, nowIso, str, reqStr, emailOk } from '../lib/util.js';
 
 const OPS = ['super_admin', 'admin'];
@@ -73,12 +72,8 @@ route('POST', '/api/staff/officers/:id/passcode', OPS, async ctx => {
   if (!o) throw new HttpError(404, 'Officer not found');
   const code = newPasscode();
   await ctx.db.run('UPDATE officers SET passcode_hash=?,passcode_sent_at=? WHERE id=?', await hashSecret(code.replace('-', ''), 20000), nowIso(), id);
-  const r = await sendMail(ctx.db, ctx.env, o.email, 'Your ELC Kozhikode village officer passcode',
-    `Hello ${o.name},\n\nYou can now review and certify the Electoral Literacy Club work in your village(s).\n\n  Passcode: ${code}\n  Sign in: ${base(ctx)}/#/officer-login\n\n` +
-    `Choose your name on the page and enter the passcode. A new passcode replaces this one.\n\nELC Kozhikode`);
-  if (r.status === 'failed') await ctx.db.run('UPDATE officers SET passcode_sent_at=NULL WHERE id=?', id);
-  await slog(ctx, 'officer_passcode', `${o.name} (${r.status})`);
-  return { name: o.name, email: o.email, status: r.status, error: r.error };
+  await slog(ctx, 'officer_passcode', o.name);
+  return { name: o.name, code };
 });
 
 // ---- officer sign-in (public) ----

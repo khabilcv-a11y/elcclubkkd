@@ -209,16 +209,52 @@ async function renderLogin(role = 'college') {
   try {
     if (role === 'officer') {
       const list = await api('/api/public/officers');
-      show($('#lc'), html`<form data-form="loginOfficer" class="stack-s"><label class="f"><span>Your name</span><select name="officer_id" required><option value="">Select your name…</option>${list.map(o => html`<option value="${o.id}">${o.name}${o.villages ? ' · ' + o.villages : ''}</option>`)}</select></label>
+      show($('#lc'), html`<form data-form="loginOfficer" class="stack-s">${comboField('officer_id', 'Your name', 'Start typing your name or village…', list.map(o => ({ id: o.id, label: o.name, sub: o.villages || '' })))}
         <label class="f"><span>Passcode</span><input name="passcode" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="e.g. K7M2-9XQP" required style="letter-spacing:.08em;font-weight:600;text-transform:uppercase"></label><div data-err></div>
-        <button class="btn primary lg" type="submit" style="width:100%">Sign in</button><p class="hint center">Your passcode is emailed by the district office. Not listed? Ask them to add you.</p></form>`);
+        <button class="btn primary lg" type="submit" style="width:100%">Sign in</button><p class="hint center">Your passcode is shared by the district office. Not listed? Ask them to add you.</p></form>`);
     } else {
       const list = await api('/api/public/colleges');
-      show($('#lc'), html`<form data-form="loginCollege" class="stack-s"><label class="f"><span>Your college</span><select name="college_id" required><option value="">Select your college…</option>${list.map(c => html`<option value="${c.id}">${c.name}</option>`)}</select></label>
+      show($('#lc'), html`<form data-form="loginCollege" class="stack-s">${comboField('college_id', 'Your college', 'Start typing your college name…', list.map(c => ({ id: c.id, label: c.name, sub: '' })))}
         <label class="f"><span>Password</span><input name="passcode" type="password" autocomplete="current-password" required></label><div data-err></div>
         <button class="btn primary lg" type="submit" style="width:100%">Sign in</button><p class="hint center">First time? Use the starting password shared by the district office, then change it from your workspace.</p></form>`);
     }
+    wireCombo($('#lc'));
   } catch (e) { show($('#lc'), html`<div class="alert err">${e.message}</div>`); }
 }
-forms.loginCollege = async f => { await api('/api/auth/college', 'POST', fd(f)); await detectMe(); toast('Welcome, ' + ME.name); location.hash = '#/me'; };
-forms.loginOfficer = async f => { await api('/api/auth/officer', 'POST', fd(f)); await detectMe(); toast('Welcome, ' + ME.name); location.hash = '#/officer'; };
+
+// ---------- type-to-search suggestion list (replaces the long drop-down) ----------
+let COMBO_ITEMS = [];
+function comboField(name, label, placeholder, items) {
+  COMBO_ITEMS = items;
+  return html`<div class="combo"><label class="f"><span>${label}</span><input type="text" class="combo-in" role="combobox" aria-expanded="false" aria-controls="combo-list" aria-autocomplete="list" autocomplete="off" autocapitalize="words" spellcheck="false" placeholder="${placeholder}" required></label>
+    <input type="hidden" name="${name}" class="combo-id"><ul id="combo-list" class="combo-list" role="listbox" hidden></ul></div>`;
+}
+function wireCombo(root) {
+  const input = $('.combo-in', root), hid = $('.combo-id', root), list = $('.combo-list', root);
+  if (!input) return;
+  const items = COMBO_ITEMS; let shown = [], at = -1;
+  const mark = (text, toks) => { let out = esc(text); for (const t of toks) if (t) out = out.replace(new RegExp('(' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'ig'), '<mark>$1</mark>'); return out; };
+  const close = () => { list.hidden = true; input.setAttribute('aria-expanded', 'false'); at = -1; };
+  const pick = i => { const it = shown[i]; if (!it) return; hid.value = it.id; input.value = it.label; input.setCustomValidity(''); close(); $('input[type=password],input[name=passcode]', root)?.focus(); };
+  const paint = () => {
+    const toks = input.value.toLowerCase().split(/\s+/).filter(Boolean);
+    shown = items.map(it => ({ it, hay: (it.label + ' ' + it.sub).toLowerCase() })).filter(x => toks.every(t => x.hay.includes(t)))
+      .sort((a, b) => (b.hay.startsWith(toks[0] || '') ? 1 : 0) - (a.hay.startsWith(toks[0] || '') ? 1 : 0) || a.it.label.localeCompare(b.it.label)).map(x => x.it).slice(0, 8);
+    list.innerHTML = shown.length ? shown.map((it, i) => `<li role="option" id="co${i}" data-i="${i}" aria-selected="false"><b>${mark(it.label, toks)}</b>${it.sub ? `<small>${mark(it.sub, toks)}</small>` : ''}</li>`).join('') : '<li class="none" role="option" aria-disabled="true">No match. Check the spelling, or ask the district office to add you.</li>';
+    list.hidden = false; input.setAttribute('aria-expanded', 'true'); at = -1;
+  };
+  const move = d => { if (list.hidden) paint(); if (!shown.length) return; at = (at + d + shown.length) % shown.length; $$('li', list).forEach((li, i) => { const on = i === at; li.classList.toggle('on', on); li.setAttribute('aria-selected', on); if (on) { input.setAttribute('aria-activedescendant', li.id); li.scrollIntoView({ block: 'nearest' }); } }); };
+  input.addEventListener('input', () => { hid.value = ''; input.setCustomValidity('Choose from the suggestions'); paint(); });
+  input.addEventListener('focus', () => { if (!hid.value) paint(); });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); move(1); } else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1); }
+    else if (e.key === 'Enter' && !list.hidden) { if (at >= 0 || shown.length === 1) { e.preventDefault(); pick(at >= 0 ? at : 0); } }
+    else if (e.key === 'Escape') close();
+  });
+  list.addEventListener('mousedown', e => { const li = e.target.closest('li[data-i]'); if (li) { e.preventDefault(); pick(Number(li.dataset.i)); } });
+  input.addEventListener('blur', () => setTimeout(close, 120));
+  input.setCustomValidity('Choose from the suggestions');
+  input.focus();
+}
+forms.loginCollege = async f => { if (!fd(f).college_id) throw new Error('Pick your college from the suggestions'); await api('/api/auth/college', 'POST', fd(f)); await detectMe(); toast('Welcome, ' + ME.name); location.hash = '#/me'; };
+forms.loginOfficer = async f => { if (!fd(f).officer_id) throw new Error('Pick your name from the suggestions'); await api('/api/auth/officer', 'POST', fd(f)); await detectMe(); toast('Welcome, ' + ME.name); location.hash = '#/officer'; };

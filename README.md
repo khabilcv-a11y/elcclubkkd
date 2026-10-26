@@ -14,7 +14,7 @@ Everything runs on **free** services:
 | Live working copy | Cloudflare Durable Object with SQLite storage (free plan) |
 | **Database of record** | **A Google Sheet** (one tab per table) reached through a Google Apps Script |
 | Photos | Google Drive (same Apps Script) |
-| Emails | Resend free tier (optional; without it emails are saved in the Outbox tab) |
+| Sharing logins | Copy and paste (the portal never sends email) |
 
 ## How the Google Sheet works as the database (and why it is not slow)
 ```
@@ -69,12 +69,12 @@ npx wrangler secret put SCRIPT_URL
 npx wrangler secret put SCRIPT_SECRET
 npx wrangler secret put SHEET_URL        # optional: adds a "Sheet" button for the super admin
 ```
-Optional: `BASE_URL` (your public address, used in emailed links), `RESEND_API_KEY`, `MAIL_FROM`.
+Optional: `BASE_URL` (your public address, used when copying certification links).
 
 **Automatic deploys from GitHub:** Cloudflare dashboard → Workers & Pages → your Worker → **Settings → Builds → Connect** → pick this repo. Build command: empty. Deploy command: `npx wrangler deploy`. From then on every push to `main` redeploys. Secrets stay in Cloudflare and are not touched by deploys.
 
-### 4. Email (passcodes, officer links)
-Sign up at resend.com (free tier), verify your sending domain, create an API key → `RESEND_API_KEY`, and set `MAIL_FROM="ELC Kozhikode <elc@yourdomain>"`. Until then every email is stored in **Staff → Outbox**.
+### 4. Sharing logins (no email)
+The portal never sends email. When you create or reset a college password, an officer passcode or a staff login, it shows a copy-ready message that you paste into WhatsApp or SMS yourself.
 
 ## Staff roles
 | | Super admin | Admin | Intern |

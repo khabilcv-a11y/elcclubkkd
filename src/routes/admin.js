@@ -1,6 +1,5 @@
 import { route, scopeOf, assertCollege, assertVillage, issueSession } from '../lib/router.js';
 import { log } from '../lib/db.js';
-import { sendMail, mailConfigured } from '../lib/mailer.js';
 import { collegeStats } from '../lib/stats.js';
 import { driveConfigured } from '../lib/drive.js';
 import { daysWithVolunteers, reportFrom, LOCKED, villageReport, photoResponse } from './college.js';
@@ -17,7 +16,7 @@ const inList = ids => ids.length ? ids.map(() => '?').join(',') : 'NULL';
 
 route('GET', '/api/staff/me', STAFF, async ctx => {
   const s = await scopeOf(ctx);
-  return { user: ctx.user, scope: s && { colleges: [...s.colleges], villages: [...s.villages] }, smtp: mailConfigured(ctx.env), drive: driveConfigured(ctx.env), sheet_url: ctx.env.SHEET_URL || null };
+  return { user: ctx.user, scope: s && { colleges: [...s.colleges], villages: [...s.villages] }, drive: driveConfigured(ctx.env), sheet_url: ctx.env.SHEET_URL || null };
 });
 
 // ---------- dashboard ----------
@@ -255,16 +254,6 @@ route('GET', '/api/staff/photos/:id', STAFF, async ctx => {
   await assertCollege(ctx, m.college_id); await assertVillage(ctx, m.village_id);
   return photoResponse(ctx, m);
 });
-route('POST', '/api/staff/acks/:id/resend', STAFF, async ctx => {
-  const a = await ctx.db.get('SELECT a.*,c.name college FROM assignments a JOIN colleges c ON c.id=a.college_id WHERE a.id=?', Number(ctx.params.id));
-  if (!a || a.ack_status !== 'submitted') throw bad('Nothing awaiting acknowledgement here');
-  await assertCollege(ctx, a.college_id); await assertVillage(ctx, a.village_id);
-  const v = await ctx.db.get('SELECT * FROM villages WHERE id=?', a.village_id);
-  const r = await sendMail(ctx.db, ctx.env, v.officer_email, `Reminder: please acknowledge ELC work in ${v.name}`,
-    `Dear ${v.officer_name || 'Village Officer'},\n\nPlease review and acknowledge the Electoral Literacy Club report by ${a.college}:\n${base(ctx)}/#/ack/${a.ack_token}\n\nThank you,\nELC Kozhikode`);
-  await slog(ctx, 'ack_resend', `${v.name} (${r.status})`);
-  return r;
-});
 route('POST', '/api/staff/acks/:id/override', STAFF, async ctx => {
   const a = await ctx.db.get('SELECT a.*,v.name village,c.name college FROM assignments a JOIN villages v ON v.id=a.village_id JOIN colleges c ON c.id=a.college_id WHERE a.id=?', Number(ctx.params.id));
   if (!a) throw new HttpError(404, 'Not found');
@@ -311,7 +300,6 @@ route('GET', '/api/staff/logs', SUPER, ctx => {
   const where = k === 'signin' ? "WHERE action IN ('login','login_failed','logout')" : k === 'manage' ? "WHERE action NOT IN ('login','login_failed','logout')" : '';
   return ctx.db.all(`SELECT * FROM logs ${where} ORDER BY id DESC LIMIT 500`);
 });
-route('GET', '/api/staff/outbox', OPS, async ctx => ({ smtp: mailConfigured(ctx.env), rows: await ctx.db.all('SELECT * FROM outbox ORDER BY id DESC LIMIT 200') }));
 
 route('GET', '/api/staff/team', SUPER, async ctx => {
   const [rows, cs, vs] = await Promise.all([ctx.db.all('SELECT id,username,name,email,role,active,last_login_at,created_at FROM admins ORDER BY role,name'),

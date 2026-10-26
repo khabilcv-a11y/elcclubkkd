@@ -305,7 +305,7 @@ actions.cancelReq = async el => { await api('/api/college/requests/' + el.datase
 actions.submitVillage = async el => {
   if (!await confirmBox('Send this village to its village officer for certification? You will not be able to edit it while the officer reviews it.', 'Send')) return;
   const r = await api('/api/college/submit-village', 'POST', { village_id: Number(el.dataset.v) });
-  toast(r.emailed === 'failed' ? 'Sent. The officer has no email on record, so the district office will pass it on.' : 'Sent to the village officer'); reloadCol();
+  toast('Sent to the village officer for certification'); reloadCol();
 };
 
 // ---------- Announcements / Help desk / Resources ----------

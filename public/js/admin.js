@@ -13,10 +13,10 @@ async function boot() {
   window.addEventListener('hashchange', route);
   route();
 }
-const PAGES = () => ({ dashboard: pgDashboard, colleges: pgColleges, villages: pgVillages, allot: pgAllot, ...(isOps() ? { officers: pgOfficers, notices: pgNotices, resources: pgResources, outbox: pgOutbox } : {}),
+const PAGES = () => ({ dashboard: pgDashboard, colleges: pgColleges, villages: pgVillages, allot: pgAllot, ...(isOps() ? { officers: pgOfficers, notices: pgNotices, resources: pgResources } : {}),
   requests: pgRequests, cert: pgCert, issues: pgIssues, reports: pgReports, ...(isSuper() ? { team: pgTeam, logs: pgLogs } : {}) });
 const TITLES = { dashboard: 'Dashboard', colleges: 'Colleges', villages: 'Villages', allot: 'Allotments', officers: 'Village officers', requests: 'Change requests', cert: 'Certification', issues: 'Help desk issues', notices: 'Announcements',
-  resources: 'Resource centre', reports: 'Reports & exports', team: 'Team', logs: 'Activity log', outbox: 'Outbox' };
+  resources: 'Resource centre', reports: 'Reports & exports', team: 'Team', logs: 'Activity log' };
 
 async function route() {
   if (!SU) return renderLogin();
@@ -29,7 +29,7 @@ async function route() {
     { group: 'Operations', items: [{ id: 'requests', label: 'Change requests', icon: 'refresh', count: t.pending_requests }, { id: 'cert', label: 'Certification', icon: 'certificate', count: t.awaiting_ack }, { id: 'issues', label: 'Help desk', icon: 'help', count: t.open_issues },
       ...(isOps() ? [{ id: 'notices', label: 'Announcements', icon: 'megaphone' }, { id: 'resources', label: 'Resources', icon: 'book' }] : [])] },
     { group: 'Insights', items: [{ id: 'reports', label: 'Reports & exports', icon: 'chart' }] },
-    ...(isOps() ? [{ group: 'Administration', items: [...(isSuper() ? [{ id: 'team', label: 'Team', icon: 'users' }, { id: 'logs', label: 'Activity log', icon: 'shield' }] : []), { id: 'outbox', label: 'Outbox', icon: 'mail' }] }] : [])];
+    ...(isOps() ? [{ group: 'Administration', items: [...(isSuper() ? [{ id: 'team', label: 'Team', icon: 'users' }, { id: 'logs', label: 'Activity log', icon: 'shield' }] : [])] }] : [])];
   const extra = html`${isSuper() && SU.sheet_url ? html`<a class="btn secondary sm" href="${SU.sheet_url}" target="_blank" rel="noopener">${icon('external')}<span>Open Google Sheet</span></a>` : ''}<button class="btn ghost sm" data-act="pw" aria-label="Change password">${icon('key')}</button>`;
   show(app, consoleShell({ product: 'Staff console', who: SU.user.name, role: ROLE[SU.user.role], nav, active: page, base: '#', content: html`<div id="pg"><div class="loading"><div class="spin"></div></div></div>`, extra }));
   document.title = TITLES[page] + ' · Staff console';
@@ -171,14 +171,14 @@ async function pgOfficers(el) {
   show(el, html`${pageHead('Village officers', 'Officers verify attendance in their villages and certify the colleges\' data. Certificates are issued on their certification.', html`<button class="btn secondary" data-act="seedOfficers">${icon('users')} Create one for every village</button><button class="btn primary" data-act="addOfficer">${icon('plus')} Add officer</button>`, 'Manage')}
     ${list.length ? html`<div class="card pad0">${tbl(['Officer', 'Contact', 'Villages', 'Passcode', ''], list.map(o => html`<tr><td><b>${o.name}</b>${o.active ? '' : html` ${badge('inactive', 'grey')}`}<div class="small muted">${o.designation || ''}</div></td><td class="small">${o.phone ? html`${icon('phone')} ${o.phone}<br>` : ''}${o.email ? html`${icon('mail')} ${o.email}` : html`<span class="muted">no email</span>`}</td>
       <td><div class="pillrow">${o.villages.length ? o.villages.map(v => badge(v.name)) : html`<span class="muted small">none</span>`}</div></td><td>${o.passcode_sent_at ? html`${badge('Sent', 'ok')}<div class="xs muted">${fdt(o.passcode_sent_at)}</div>` : badge('Not sent', 'warn')}${o.last_login_at ? html`<div class="xs muted">Last sign-in ${ago(o.last_login_at)}</div>` : ''}</td>
-      <td><div class="row gap-s nowrap">${rowBtn('officerPass', o.passcode_sent_at ? 'Resend' : 'Send passcode', 'key', `data-id="${o.id}"`, 'primary')}${rowBtn('editOfficer', 'Edit', 'edit', `data-id="${o.id}"`)}${rowBtn('toggleOfficer', o.active ? 'Deactivate' : 'Activate', 'lock', `data-id="${o.id}" data-on="${o.active ? 0 : 1}"`, 'ghost')}${isSuper() ? rowBtn('delOfficer', '', 'trash', `data-id="${o.id}" aria-label="Delete ${esc(o.name)}"`, 'danger') : ''}</div></td></tr>`))}</div>`
-      : empty('No village officers yet', 'Use "Create one for every village" to start with a placeholder officer per village, then edit names and contacts as they become known. Until then, officers can certify through the link emailed when a college submits a village.', 'landmark')}`);
+      <td><div class="row gap-s nowrap">${rowBtn('officerPass', o.passcode_sent_at ? 'Reset passcode' : 'Create passcode', 'key', `data-id="${o.id}"`, 'primary')}${rowBtn('editOfficer', 'Edit', 'edit', `data-id="${o.id}"`)}${rowBtn('toggleOfficer', o.active ? 'Deactivate' : 'Activate', 'lock', `data-id="${o.id}" data-on="${o.active ? 0 : 1}"`, 'ghost')}${isSuper() ? rowBtn('delOfficer', '', 'trash', `data-id="${o.id}" aria-label="Delete ${esc(o.name)}"`, 'danger') : ''}</div></td></tr>`))}</div>`
+      : empty('No village officers yet', 'Use "Create one for every village" to start with a placeholder officer per village, then edit names and contacts as they become known. Until then, you can copy a certification link for any submitted village from the Certification page and pass it on.', 'landmark')}`);
 }
 const officerForm = o => {
   const mine = new Set((o?.villages || []).map(v => v.id));
   return html`<form data-form="officer" data-id="${o?.id || ''}" class="stack-s"><div class="formgrid"><label class="f"><span>Officer name *</span><input type="text" name="name" value="${o?.name || ''}" required maxlength="100"></label>
     <label class="f"><span>Designation</span><input type="text" name="designation" value="${o?.designation || 'Village Officer'}" maxlength="100"></label><label class="f"><span>Phone</span><input type="tel" name="phone" value="${o?.phone || ''}"></label>
-    <label class="f"><span>Email (passcode is sent here)</span><input type="email" name="email" value="${o?.email || ''}"></label></div>
+    <label class="f"><span>Email (optional)</span><input type="email" name="email" value="${o?.email || ''}"></label></div>
     <label class="f"><span>Villages this officer is responsible for</span><input type="search" id="ovq" placeholder="Search villages…" style="margin-bottom:6px"></label>
     <div style="max-height:220px;overflow:auto;border:1px solid var(--line-2);border-radius:var(--r-sm);padding:8px 12px">${window.__allVillages.map(v => html`<label class="chk ovrow" style="padding:4px 0"><input type="checkbox" name="villages" value="${v.id}" ${mine.has(v.id) ? 'checked' : ''}> <span>${v.name} <span class="muted small">${v.taluk || ''}${v.officer_name && !mine.has(v.id) ? ` · now: ${v.officer_name}` : ''}</span></span></label>`)}</div>${mfoot(o ? 'Save changes' : 'Add officer')}</form>`;
 };
@@ -190,7 +190,7 @@ forms.officer = async f => {
   await api(id ? '/api/staff/officers/' + id : '/api/staff/officers', id ? 'PUT' : 'POST', body); f.closest('.overlay').close(); toast('Saved'); refresh();
   if (!id) credsModal(`Login for ${v.name}`, staffCreds(v.name, v.role, v.username, v.password));
 };
-actions.officerPass = async el => { const o = window.__officers.find(x => x.id === Number(el.dataset.id)); if (!o.email) return toast('Add the officer\'s email first', true); if (o.passcode_sent_at && !await confirmBox(`Generate a NEW passcode for ${o.name}?`, 'Generate and send')) return; passToast(await api(`/api/staff/officers/${o.id}/passcode`, 'POST')); refresh(); };
+
 actions.toggleOfficer = async el => { await api(`/api/staff/officers/${el.dataset.id}/active`, 'POST', { active: el.dataset.on === '1' }); refresh(); };
 actions.delOfficer = async el => { if (!await confirmBox('Delete this officer? Their villages become unassigned.', 'Delete', true)) return; await api('/api/staff/officers/' + el.dataset.id, 'DELETE'); refresh(); };
 
@@ -221,12 +221,18 @@ const ackTable = (rows, waiting) => rows.length ? html`<div class="card pad0">${
   <td>${a.officer_name ? html`<b>${a.officer_name}</b>` : html`<span class="muted small">no officer assigned</span>`}<div class="xs muted">${a.officer_phone || ''}${a.officer_email ? html`<br>${a.officer_email}` : ''}</div></td>
   <td class="small">${a.totals.days} days · ${a.totals.attended} shifts<br>${n(a.totals.addressed)} reached · <b>${n(a.totals.registered)} registered</b></td>
   <td>${ackBadge(a.ack_status)}${a.ack_status === 'acknowledged' ? html`<div class="xs muted">${a.ack_name}${a.ack_designation ? `, ${a.ack_designation}` : ''}<br>${fdt(a.ack_at)}</div>` : ''}${a.query_note ? html`<div class="xs" style="color:var(--danger)">${a.query_note}</div>` : ''}</td>
-  <td><div class="row gap-s">${waiting ? html`${rowBtn('copyLink', 'Copy link', 'link', `data-l="${a.link}"`)}${rowBtn('resend', 'Resend', 'mail', `data-id="${a.id}"`)}${rowBtn('ackBehalf', 'Certify for officer', 'check', `data-id="${a.id}"`, 'primary')}` : ''}${rowBtn('unlock', 'Reopen', 'refresh', `data-id="${a.id}"`, 'danger')}</div></td></tr>`))}</div>`
+  <td><div class="row gap-s">${waiting ? html`${rowBtn('copyLink', 'Copy link', 'link', `data-l="${a.link}"`)}${rowBtn('ackBehalf', 'Certify for officer', 'check', `data-id="${a.id}"`, 'primary')}` : ''}${rowBtn('unlock', 'Reopen', 'refresh', `data-id="${a.id}"`, 'danger')}</div></td></tr>`))}</div>`
   : empty(waiting ? 'Nothing is waiting' : 'No village is certified yet', '', 'certificate');
 const certsView = c => html`<div class="card pad0">${c.certified.length ? tbl(['Village', 'College', 'Certified by', 'Certificate no.', '#Eligible students', ''], c.certified.map(x => html`<tr><td><b>${x.village}</b><div class="xs muted">${x.taluk || ''}</div></td><td>${x.college}</td><td>${x.officer || '—'}<div class="xs muted">${x.designation || ''} ${x.certified_at ? '· ' + fdt(x.certified_at) : ''}</div></td>
   <td>${x.cert_no ? badge(x.cert_no, 'ok') : '—'}</td><td class="num">${x.students}</td><td>${rowBtn('printCert', 'View / print', 'printer', `data-id="${x.id}"`, 'primary')}</td></tr>`)) : html`<div style="padding:20px">${empty('No village is certified yet', 'Student certificates appear here as soon as a village officer certifies a village.', 'certificate')}</div>`}</div>`;
 actions.copyLink = async el => { try { await navigator.clipboard.writeText(el.dataset.l); toast('Link copied'); } catch { prompt('Copy this link', el.dataset.l); } };
-actions.resend = async el => { const r = await api(`/api/staff/acks/${el.dataset.id}/resend`, 'POST'); toast(r.status === 'failed' ? 'No email on record: ' + (r.error || '') : r.status === 'sent' ? 'Reminder emailed' : 'Reminder saved in the Outbox', r.status === 'failed'); };
+
+actions.officerPass = async el => {
+  const o = window.__officers.find(x => x.id === Number(el.dataset.id));
+  if (o.passcode_sent_at && !await confirmBox(`Create a NEW passcode for ${o.name}? The old one stops working.`, 'Create passcode')) return;
+  const r = await api(`/api/staff/officers/${o.id}/passcode`, 'POST');
+  credsModal(`Login for ${o.name}`, `${SITE}\nVillage officer login\n\nName: ${r.name}\nWebsite: ${location.origin}/#/officer-login\nPasscode: ${r.code}\n\nOpen the website, choose "Village officer", pick your name and enter the passcode. Keep it private.`); refresh();
+};
 actions.ackBehalf = el => modal(html`<h2>Certify on the officer's behalf</h2><p class="muted small" style="margin-bottom:10px">Use when the officer confirmed by phone or in person. This is logged under your name.</p><form data-form="ackBehalf" data-id="${el.dataset.id}" class="stack-s"><div class="formgrid"><label class="f"><span>Officer name *</span><input type="text" name="officer_name" required></label><label class="f"><span>Designation</span><input type="text" name="designation"></label></div>
   <label class="f"><span>Remarks</span><textarea name="remarks" maxlength="300"></textarea></label>${mfoot('Record certification', 'green')}</form>`);
 forms.ackBehalf = async f => { await api(`/api/staff/acks/${f.dataset.id}/override`, 'POST', { mode: 'acknowledge', ...fd(f) }); f.closest('.overlay').close(); toast('Recorded'); refresh(); };
@@ -415,7 +421,7 @@ forms.staff = async f => {
   f.closest('.overlay').close(); toast('Saved'); refresh();
 };
 
-// ---------- activity log / outbox ----------
+// ---------- activity log ----------
 let logKind = '';
 async function pgLogs(el) {
   const rows = await api('/api/staff/logs' + (logKind ? '?kind=' + logKind : ''));
@@ -425,13 +431,6 @@ async function pgLogs(el) {
       <td>${badge(r.action, r.action === 'login' ? 'ok' : r.action === 'login_failed' ? 'danger' : r.action === 'logout' ? 'grey' : 'info')}</td><td>${r.detail || ''}</td><td class="small">${r.ip || ''}</td></tr>`))}</div>` : empty('No events', '', 'shield')}`);
 }
 actions.logKind = el => { logKind = el.dataset.k; pgLogs($('#pg')); };
-async function pgOutbox(el) {
-  const { smtp, rows } = await api('/api/staff/outbox'); window.__outbox = rows;
-  show(el, html`${pageHead('Outbox', 'Every email the portal has sent or tried to send.', '', 'Administration')}
-    <div class="alert ${smtp ? 'ok' : 'warn'}" style="margin-bottom:14px">${icon('mail')}<div>${smtp ? 'Email is connected: messages below were handed to the mail service.' : 'Email is not connected yet: messages are only stored here, not delivered. Passcodes in these messages are live, so treat this page as confidential.'}</div></div>
-    ${rows.length ? html`<div class="card pad0">${tbl(['When', 'To', 'Subject', 'Status', ''], rows.map(r => html`<tr><td>${fdt(r.ts)}</td><td>${r.to_addr || '—'}</td><td>${r.subject}</td><td>${badge(r.status, r.status === 'sent' ? 'ok' : r.status === 'saved' ? 'warn' : 'danger')}${r.error ? html`<div class="xs muted">${r.error}</div>` : ''}</td><td>${rowBtn('viewMail', 'Open', 'eye', `data-id="${r.id}"`)}</td></tr>`))}</div>` : empty('No emails yet', '', 'mail')}`);
-}
-actions.viewMail = el => { const r = window.__outbox.find(x => x.id === Number(el.dataset.id)); modal(html`<h2>${r.subject}</h2><p class="small muted">To ${r.to_addr || '—'} · ${fdt(r.ts)}</p><pre style="white-space:pre-wrap;font-family:inherit;background:var(--bg);padding:14px;border-radius:var(--r-sm);border:1px solid var(--line)">${r.body}</pre><div class="row" style="justify-content:flex-end"><button class="btn secondary" data-act="closeModal">Close</button></div>`, { wide: true }); };
 
 boot();
 
