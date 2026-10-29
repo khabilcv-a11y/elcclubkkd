@@ -41,6 +41,7 @@ route('GET', '/api/college/enrol', 'college', async ctx => {
   return { kind: kindOf(ctx.college), entry: r ? { strength: r.strength, registered: r.registered, ineligible: r.ineligible, updated_at: r.updated_at } : null, totals: tally(r ? [r] : []) };
 });
 route('PUT', '/api/college/enrol', 'college', async ctx => {
+  ctx.db.deferred = true;
   const b = ctx.body, c = ctx.college;
   const strength = int(b.strength, 'Total students', { max: 200000 }), registered = int(b.registered, 'Registered students', { max: 200000 }), ineligible = int(b.ineligible, 'Students not eligible yet', { max: 200000 });
   if (registered + ineligible > strength) throw bad("Registered plus not eligible can't be more than the total number of students");

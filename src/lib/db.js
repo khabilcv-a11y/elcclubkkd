@@ -1,5 +1,5 @@
 import { TABLES, LAZY_TABLES } from './schema.js';
-import { engine, getEntry, putEntry, reloadEntry, callScript } from './store.js';
+import { engine, getEntry, putEntry, reloadEntry, callScript, pending, hooks } from './store.js';
 
 // ids are large unique numbers generated here (no auto-increment, so parallel writers never collide)
 let lastId = 0;
@@ -18,6 +18,26 @@ async function flushLazy(env) {
   try { harmless.add((await callScript(env, { action: 'apply', ops })).version); }
   catch (e) { console.error('background write failed', e.message); lazyBuf.push(...ops.filter(o => o.op === 'i' && LAZY_TABLES.has(o.t))); }   // keep audit rows for the next attempt
 }
+// Data-entry saves (daily report, volunteers, enrolment numbers, photos) are written into the portal's own copy at once and
+// handed to the sheet in the background with retries, so nobody waits for Google. The copy is never refreshed from the sheet while any are pending.
+const deferredBuf = []; let flushing = null, tries = 0;
+async function flushDeferred(env) {
+  if (flushing) return flushing;
+  flushing = (async () => {
+    while (deferredBuf.length) {
+      const ops = deferredBuf.slice();
+      try { const r = await callScript(env, { action: 'apply', ops }); deferredBuf.splice(0, ops.length); pending.n = deferredBuf.length; harmless.add(r.version); tries = 0; }
+      catch (e) {
+        if (e.extra?.code === 'conflict') { console.error('saved entry rejected by the sheet:', e.message); deferredBuf.splice(0, ops.length); pending.n = deferredBuf.length; continue; }
+        tries++; console.error('background save failed (attempt ' + tries + '):', e.message);
+        if (tries >= 6) break;                       // try again on the next save or the 5-minute job
+        await sleep(Math.min(15000, 700 * 2 ** tries));
+      }
+    }
+  })().finally(() => { flushing = null; });
+  return flushing;
+}
+hooks.flush = flushDeferred;
 const HAS_ID = new Set(Object.entries(TABLES).filter(([, t]) => t.pk.length === 1 && t.pk[0] === 'id').map(([n]) => n));
 
 // Adds "id" to INSERT INTO t(cols) VALUES (...) for tables that use ids.
@@ -69,6 +89,14 @@ export async function openDb(env, execCtx) {
     const ex = extra.slice();
     const send = [...ops, ...ex];
     if (!send.length) return;
+    if (db.deferred && ok) {
+      for (const e of ex) { const t = TABLES[e.t]; raw.run(`INSERT OR REPLACE INTO ${e.t}(${t.cols.map(c => c[0]).join(',')}) VALUES (${t.cols.map(() => '?').join(',')})`, norm(e.row)); }
+      raw.run('DELETE FROM _chg');
+      deferredBuf.push(...send); pending.n = deferredBuf.length; pending.seq++;
+      await putEntry({ bytes: raw.export(), version: entry.version + 0.001, stamp: entry.stamp, fetchedAt: Date.now() });   // a hair newer than the sheet, so a refresh already in flight can never replace it
+      execCtx.waitUntil(sleep(120).then(() => flushDeferred(env)));
+      return;
+    }
     // background writes (audit log, e-mail log, sign-in timestamps) are batched into ONE sheet call a moment later,
     // or ride along with the next real save, so they never queue in front of a user's save
     if (db.lazy || send.every(o => LAZY_TABLES.has(o.t))) {
@@ -85,7 +113,7 @@ export async function openDb(env, execCtx) {
     try { r = await callScript(env, { action: 'apply', ops: [...piggy, ...send] }); }
     catch (e) {
       lazyBuf.push(...piggy);
-      if (e.extra?.code === 'conflict') await putEntry(await reloadEntry(env)).catch(() => {});   // our copy was stale: refresh it
+      if (e.extra?.code === 'conflict') { await flushDeferred(env).catch(() => {}); await putEntry(await reloadEntry(env)).catch(() => {}); }   // our copy was stale: refresh it
       throw e;
     }
     if (!ok) return;
@@ -95,7 +123,7 @@ export async function openDb(env, execCtx) {
     }
     raw.run('DELETE FROM _chg');
     let skipped = 0, known = 0;                         // versions between my copy and my write: were they only our own background writes?
-    for (let v = entry.version + 1; v < r.version; v++) { skipped++; if (harmless.has(v)) known++; }
+    for (let v = Math.floor(entry.version) + 1; v < r.version; v++) { skipped++; if (harmless.has(v)) known++; }
     if (skipped === known) await putEntry({ bytes: raw.export(), version: r.version, stamp: r.stamp, fetchedAt: Date.now() });
     else await putEntry(await reloadEntry(env));        // someone else saved at the same moment: take a fresh copy so nothing is missing
   };

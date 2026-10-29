@@ -23,6 +23,7 @@ export function parseCookies(req) {
 export async function sessionUser(ctx, kind) {
   const p = await readSession(ctx.env, parseCookies(ctx.req)[COOKIE[kind]]);
   if (!p || p.k !== kind) return null;
+  (ctx.sess ||= {})[kind] = p;
   if (kind === 'officer') {
     const o = await ctx.db.get('SELECT * FROM officers WHERE id=? AND active=1', p.id);
     return o && o.passcode_hash && fingerprint(o.passcode_hash) === p.v ? o : null;

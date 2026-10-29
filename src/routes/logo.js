@@ -7,6 +7,7 @@ const MAX_B64 = 42000;   // a sheet cell holds up to 50,000 characters
 const clog = (ctx, action, detail) => log(ctx.db, 'college', ctx.college.name, null, action, detail, ctx.ip);
 
 route('PUT', '/api/college/logo', 'college', async ctx => {
+  ctx.db.deferred = true;
   const mime = String(ctx.body.mime || ''), data = String(ctx.body.data || '');
   if (!/^image\/(png|jpeg|webp)$/.test(mime)) throw bad('Please choose a PNG, JPG or WebP picture');
   if (data.length < 100 || !/^[A-Za-z0-9+/=]+$/.test(data)) throw bad('That picture could not be read. Try another one.');
@@ -18,6 +19,7 @@ route('PUT', '/api/college/logo', 'college', async ctx => {
   return { ok: true, logo_v: at };
 });
 route('DELETE', '/api/college/logo', 'college', async ctx => {
+  ctx.db.deferred = true;
   await ctx.db.run('UPDATE colleges SET logo=NULL,logo_mime=NULL,logo_at=NULL WHERE id=?', ctx.college.id);
   await clog(ctx, 'logo_remove', 'Logo removed');
   return { ok: true };

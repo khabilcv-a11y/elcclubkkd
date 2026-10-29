@@ -348,7 +348,7 @@ route('POST', '/api/staff/password', STAFF, async ctx => {
   if (!(await verifySecret(String(ctx.body.current || ''), a.pass))) throw bad('Current password is incorrect');
   const newHash = await hashSecret(checkPw(ctx.body.next));
   await ctx.db.run('UPDATE admins SET pass=? WHERE id=?', newHash, ctx.user.id);
-  await issueSession(ctx, 'staff', { id: ctx.user.id, pass: newHash }, 8);   // keep this browser signed in; other sessions end
+  await issueSession(ctx, 'staff', { id: ctx.user.id, pass: newHash }, 12);   // keep this browser signed in; other sessions end
   await slog(ctx, 'password_change', null);
   return { ok: true };
 });

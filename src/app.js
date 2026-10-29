@@ -1,6 +1,7 @@
 // The portal's request handling: public + sign-in routes, then the college and staff routes. Runs inside the Portal object.
 import { openDb, log } from './lib/db.js';
 import { routes, route, guardCheck, COOKIE, setCookie, sessionUser, issueSession, whoIs } from './lib/router.js';
+import { signSession } from './lib/session.js';
 import { HttpError, verifySecret, normPasscode, hashSecret, reqStr, str, phone, emailOk, nowIso } from './lib/util.js';
 import { featureMap, guardedFeature, isFeature } from './lib/features.js';
 import { publicBoard } from './lib/stats.js';
@@ -46,7 +47,7 @@ route('POST', '/api/public/school-signup', null, async ctx => {
   const id = await ctx.db.insert('INSERT INTO colleges(name,short_name,address,phone,email,coordinator,passcode_hash,passcode_sent_at,active,created_at,kind) VALUES (?,?,?,?,?,?,?,?,1,?,?)',
     name, name.slice(0, 40), reqStr(b.address, 'Address', 300), phone(b.phone), mail, reqStr(b.coordinator, 'Teacher in charge', 100), h, nowIso(), nowIso(), 'school');
   await log(ctx.db, 'school', name, null, 'school_signup', 'School signed up', ctx.ip);
-  await issueSession(ctx, 'college', { id, passcode_hash: h }, 12);
+  await issueSession(ctx, 'college', { id, passcode_hash: h }, 24);
   return { ok: true };
 });
 
@@ -62,7 +63,7 @@ route('POST', '/api/auth/college', null, async ctx => {
   await ctx.clearThrottle(key);
   await ctx.db.run('UPDATE colleges SET last_login_at=? WHERE id=?', new Date().toISOString(), c.id);
   await log(ctx.db, 'college', c.name, null, 'login', 'College signed in', ctx.ip);
-  await issueSession(ctx, 'college', c, 12);
+  await issueSession(ctx, 'college', c, 24);
   ctx.db.lazy = true;                       // don't make the user wait for the "last login" write
   return { ok: true };
 });
@@ -73,7 +74,7 @@ route('POST', '/api/college/password', 'college', async ctx => {
   const h = await hashSecret(next, 20000);
   await ctx.db.run('UPDATE colleges SET passcode_hash=?,passcode_plain=NULL,passcode_sent_at=? WHERE id=?', h, new Date().toISOString(), ctx.college.id);
   await log(ctx.db, 'college', ctx.college.name, null, 'password_change', 'College changed its own password', ctx.ip);
-  await issueSession(ctx, 'college', { ...ctx.college, passcode_hash: h }, 12);
+  await issueSession(ctx, 'college', { ...ctx.college, passcode_hash: h }, 24);
   return { ok: true };
 });
 // schools have no prior list to pick from: they sign in with the email they registered with
@@ -89,9 +90,17 @@ route('POST', '/api/auth/school', null, async ctx => {
   await ctx.clearThrottle(key);
   await ctx.db.run('UPDATE colleges SET last_login_at=? WHERE id=?', new Date().toISOString(), c.id);
   await log(ctx.db, 'school', c.name, null, 'login', 'School signed in', ctx.ip);
-  await issueSession(ctx, 'college', c, 12);
+  await issueSession(ctx, 'college', c, 24);
   ctx.db.lazy = true;
   return { ok: true };
+});
+// "Stay signed in": renew whichever session this browser holds
+route('POST', '/api/session/extend', null, async ctx => {
+  for (const kind of ['college', 'officer', 'staff']) {
+    const u = await sessionUser(ctx, kind), p = ctx.sess?.[kind];
+    if (u && p) { const hrs = p.hrs || (kind === 'staff' ? 12 : 24); setCookie(ctx, COOKIE[kind], await signSession(ctx.env, { k: kind, id: p.id, v: p.v, hours: hrs }), hrs * 3600); ctx.sessLeft = hrs * 3600; return { ok: true }; }
+  }
+  throw new HttpError(401, 'Your session has ended. Please sign in again.');
 });
 route('POST', '/api/auth/college/logout', null, async ctx => {
   const c = await sessionUser(ctx, 'college');
@@ -111,7 +120,7 @@ route('POST', '/api/auth/staff', null, async ctx => {
   await ctx.clearThrottle(key);
   await ctx.db.run('UPDATE admins SET last_login_at=? WHERE id=?', new Date().toISOString(), a.id);
   await log(ctx.db, 'staff', a.username, a.role, 'login', 'Signed in', ctx.ip);
-  await issueSession(ctx, 'staff', a, 8);
+  await issueSession(ctx, 'staff', a, 12);
   ctx.db.lazy = true;
   return { ok: true };
 });
@@ -147,6 +156,13 @@ export async function handle(req, env, execCtx, extra) {
       params: Object.fromEntries(r.keys.map((k, i) => [k, decodeURIComponent(m[i + 1])])), query: Object.fromEntries(url.searchParams),
       ip: req.headers.get('cf-connecting-ip') || 'local', body: await readBody(req) };
     await guardCheck(r.guard, ctx);
+    // rolling session: while someone is working, quietly renew the cookie so they are not signed out mid-task
+    const skind = ctx.college ? 'college' : ctx.officer ? 'officer' : ctx.user ? 'staff' : null, sp = skind && ctx.sess?.[skind];
+    if (sp) {
+      const hrs = sp.hrs || (skind === 'staff' ? 12 : 24);
+      if (Date.now() - (sp.iat || 0) > 10 * 60000) { setCookie(ctx, COOKIE[skind], await signSession(env, { k: skind, id: sp.id, v: sp.v, hours: hrs }), hrs * 3600); ctx.sessLeft = hrs * 3600; }
+      else ctx.sessLeft = Math.round((sp.exp - Date.now()) / 1000);
+    }
     const aud = ctx.college ? (ctx.college.kind === 'school' ? 'school' : 'college') : ctx.user ? 'staff' : ctx.officer ? 'officer' : null;
     const fk = aud && guardedFeature(url.pathname, aud);
     if (fk) {
@@ -157,6 +173,7 @@ export async function handle(req, env, execCtx, extra) {
     ok = true;
     await db.finish(true);                    // save changed rows to the Google Sheet (waits only if real data changed)
     const headers = new Headers(SEC);
+    if (ctx.sessLeft != null) headers.set('X-Session-Left', String(ctx.sessLeft));
     for (const c of ctx.cookies) headers.append('Set-Cookie', c);
     if (out.__raw) {
       for (const [k, v] of Object.entries(out.headers || {})) headers.set(k, v);

@@ -30,6 +30,7 @@ route('GET', '/api/college/desk', 'college', async ctx => {
 route('GET', '/api/college/desk/summary', 'college', ctx => ctx.db.get('SELECT COALESCE(SUM(registrations),0) registrations,COUNT(*) days FROM desk_days WHERE college_id=?', ctx.college.id));
 
 route('PUT', '/api/college/desk', 'college', async ctx => {
+  ctx.db.deferred = true;
   const b = ctx.body, id = ctx.college.id, date = checkDate(b.date);
   const registrations = int(b.registrations, 'Registrations made', { max: 100000 }), volunteers = int(b.volunteers, 'Volunteers present at the help desk', { max: 5000 }), notes = str(b.notes, 400), now = nowIso();
   const r = await ctx.db.run('UPDATE desk_days SET registrations=?,volunteers=?,notes=?,updated_at=? WHERE college_id=? AND date=?', registrations, volunteers, notes, now, id, date);
@@ -39,6 +40,7 @@ route('PUT', '/api/college/desk', 'college', async ctx => {
 });
 
 route('POST', '/api/college/desk/activity', 'college', async ctx => {
+  ctx.db.deferred = true;
   const b = ctx.body, id = ctx.college.id, date = checkDate(b.date);
   const activity = String(b.activity || '');
   if (!ACTIVITIES.includes(activity)) throw bad('Choose an activity');
@@ -58,6 +60,7 @@ route('POST', '/api/college/desk/activity', 'college', async ctx => {
   return { ok: true, added };
 });
 route('DELETE', '/api/college/desk/activity/:id', 'college', async ctx => {
+  ctx.db.deferred = true;
   const r = await ctx.db.run('DELETE FROM activity_log WHERE id=? AND college_id=?', Number(ctx.params.id), ctx.college.id);
   if (!r.changes) throw new HttpError(404, 'Not found');
   return { ok: true };

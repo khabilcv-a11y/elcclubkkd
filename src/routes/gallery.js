@@ -13,10 +13,27 @@ const clog = (ctx, action, detail) => log(ctx.db, 'college', ctx.college.name, n
 const slog = (ctx, action, detail) => log(ctx.db, 'staff', ctx.user.username, ctx.user.role, action, detail, ctx.ip);
 const safe = s => String(s || '').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Unnamed';
 
+// Drive is slow (a second or more per picture), so pictures already fetched are kept in memory and small thumbnails live in the sheet itself.
+const imgCache = new Map(), inflight = new Map(); let imgBytes = 0;
+const IMG_CACHE_MAX = 24 * 1024 * 1024;
+async function driveBytes(env, driveId, mime) {
+  const hit = imgCache.get(driveId);
+  if (hit) { imgCache.delete(driveId); imgCache.set(driveId, hit); return hit; }
+  if (!inflight.has(driveId)) inflight.set(driveId, (async () => {
+    const f = await driveGet(env, driveId), bytes = Uint8Array.from(atob(f.data), ch => ch.charCodeAt(0)), rec = { bytes, mime: mime || f.mime };
+    imgCache.set(driveId, rec); imgBytes += bytes.length;
+    for (const [k, v] of imgCache) { if (imgBytes <= IMG_CACHE_MAX) break; imgCache.delete(k); imgBytes -= v.bytes.length; }
+    return rec;
+  })().finally(() => inflight.delete(driveId)));
+  return inflight.get(driveId);
+}
 async function imageResponse(ctx, row, scope) {
-  const f = await driveGet(ctx.env, row.drive_id);
-  const bytes = Uint8Array.from(atob(f.data), ch => ch.charCodeAt(0));
-  return { __raw: true, bytes, headers: { 'Content-Type': row.mime || f.mime || 'image/jpeg', 'Cache-Control': scope === 'public' ? 'public, max-age=86400' : 'private, max-age=3600' } };
+  const rec = await driveBytes(ctx.env, row.drive_id, row.mime);
+  return { __raw: true, bytes: rec.bytes, headers: { 'Content-Type': row.mime || rec.mime || 'image/jpeg', 'Cache-Control': scope === 'public' ? 'public, max-age=604800, immutable' : 'private, max-age=86400, immutable' } };
+}
+async function thumbResponse(ctx, row, scope) {
+  if (!row.thumb) return imageResponse(ctx, row, scope);          // photos saved before thumbnails existed
+  return { __raw: true, bytes: Uint8Array.from(atob(row.thumb), ch => ch.charCodeAt(0)), headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': scope === 'public' ? 'public, max-age=604800, immutable' : 'private, max-age=604800, immutable' } };
 }
 const LIST = 'id,title,description,activity,event_date,orientation,visible,created_at';
 
@@ -26,6 +43,7 @@ route('GET', '/api/college/gallery', 'college', async ctx => ({
   activities: GALLERY_ACTIVITIES, today: todayStr(), institution: ctx.college.name,
 }));
 route('POST', '/api/college/gallery', 'college', async ctx => {
+  ctx.db.deferred = true;
   const b = ctx.body, c = ctx.college;
   if (!/^image\/(jpeg|png|webp)$/.test(b.mime || '')) throw bad('The picture must be a JPG, PNG or WebP image');
   const data = String(b.data || '');
@@ -39,8 +57,8 @@ route('POST', '/api/college/gallery', 'college', async ctx => {
   const folder = `${safe(c.name)}/${safe(activity)}${earlier ? '/' + date : ''}`;
   const ext = b.mime.split('/')[1].replace('jpeg', 'jpg');
   const up = await driveUpload(ctx.env, { name: `${date}_${safe(title).slice(0, 40)}_${Date.now()}.${ext}`, mime: b.mime, data, folder });
-  const id = await ctx.db.insert('INSERT INTO gallery(college_id,title,description,activity,event_date,drive_id,mime,size,orientation,visible,created_at) VALUES (?,?,?,?,?,?,?,?,?,1,?)',
-    c.id, title, description, activity, date, up.id, b.mime, Math.round(data.length * 0.75), orientation, nowIso());
+  const id = await ctx.db.insert('INSERT INTO gallery(college_id,title,description,activity,event_date,drive_id,mime,size,orientation,visible,created_at,thumb) VALUES (?,?,?,?,?,?,?,?,?,1,?,?)',
+    c.id, title, description, activity, date, up.id, b.mime, Math.round(data.length * 0.75), orientation, nowIso(), /^[A-Za-z0-9+/=]+$/.test(String(b.thumb || '')) && String(b.thumb).length <= 42000 ? String(b.thumb) : null);
   await clog(ctx, 'gallery_add', `${activity}: ${title}`);
   return { ok: true, id, folder };
 });
@@ -49,7 +67,13 @@ route('GET', '/api/college/gallery/:id/image', 'college', async ctx => {
   if (!g) throw new HttpError(404, 'Photo not found');
   return imageResponse(ctx, g, 'private');
 });
+route('GET', '/api/college/gallery/:id/thumb', 'college', async ctx => {
+  const g = await ctx.db.get('SELECT * FROM gallery WHERE id=? AND college_id=?', Number(ctx.params.id), ctx.college.id);
+  if (!g) throw new HttpError(404, 'Photo not found');
+  return thumbResponse(ctx, g, 'private');
+});
 route('DELETE', '/api/college/gallery/:id', 'college', async ctx => {
+  ctx.db.deferred = true;
   const g = await ctx.db.get('SELECT * FROM gallery WHERE id=? AND college_id=?', Number(ctx.params.id), ctx.college.id);
   if (!g) throw new HttpError(404, 'Photo not found');
   await ctx.db.run('DELETE FROM gallery WHERE id=?', g.id);
@@ -71,7 +95,19 @@ route('GET', '/api/public/album/:id/image', null, async ctx => {
   return imageResponse(ctx, g, 'public');
 });
 
+route('GET', '/api/public/album/:id/thumb', null, async ctx => {
+  await albumOn(ctx);
+  const g = await ctx.db.get('SELECT g.* FROM gallery g JOIN colleges c ON c.id=g.college_id AND c.active=1 WHERE g.id=? AND g.visible=1', Number(ctx.params.id));
+  if (!g) throw new HttpError(404, 'Photo not found');
+  return thumbResponse(ctx, g, 'public');
+});
+
 // ---------- staff moderation ----------
+route('GET', '/api/staff/gallery/:id/thumb', 'staff', async ctx => {
+  const g = await ctx.db.get('SELECT * FROM gallery WHERE id=?', Number(ctx.params.id));
+  if (!g) throw new HttpError(404, 'Photo not found');
+  return thumbResponse(ctx, g, 'private');
+});
 route('GET', '/api/staff/gallery', 'staff', async ctx => {
   const s = await scopeOf(ctx);
   const rows = await ctx.db.all(`SELECT g.id,g.college_id,g.title,g.description,g.activity,g.event_date,g.orientation,g.visible,g.created_at,c.name college FROM gallery g JOIN colleges c ON c.id=g.college_id ORDER BY g.id DESC LIMIT 300`);

@@ -136,7 +136,18 @@ function wireCanvas() {
 async function frameBlob() {
   const F = FRAME[ED.orient], cv = document.createElement('canvas'); cv.width = F.w; cv.height = F.h;
   drawFrame(cv.getContext('2d'), 1, { ...ED, exporting: true }, await artwork());
-  return new Promise(res => cv.toBlob(res, 'image/jpeg', 0.9));
+  return new Promise(res => cv.toBlob(res, 'image/jpeg', 0.85));
+}
+// a small picture kept in the sheet so galleries open instantly
+async function thumbB64(blob) {
+  const im = await createImageBitmap(blob);
+  for (const [w, q] of [[520, 0.7], [440, 0.65], [360, 0.6], [300, 0.55]]) {
+    const cv = document.createElement('canvas'); cv.width = w; cv.height = Math.round(w * im.height / im.width);
+    cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
+    const out = cv.toDataURL('image/jpeg', q).split(',')[1];
+    if (out.length <= 40000) return out;
+  }
+  return null;
 }
 const needPhoto = () => { if (!ED.slot.img) throw new Error('Add a photo first'); };
 const slug = s => String(s || 'photo').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
@@ -145,8 +156,10 @@ actions.frameDownload = async () => {
 };
 const toB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = () => rej(new Error('Could not read the picture')); r.readAsDataURL(blob); });
 forms.saveFrame = async f => {
-  needPhoto(); const v = fd(f), blob = await frameBlob();
-  await api('/api/college/gallery', 'POST', { title: v.title, description: v.description, activity: v.activity, activity_other: v.activity_other, event_date: v.event_date, orientation: ED.orient, mime: 'image/jpeg', name: `${slug(v.title)}.jpg`, data: await toB64(blob) });
+  needPhoto(); const v = fd(f);
+  const box = $('[data-err]', f); if (box) box.innerHTML = '<div class="alert info">Saving your photo. This can take a few seconds, please keep this window open…</div>';
+  const blob = await frameBlob(), thumb = await thumbB64(blob);
+  await api('/api/college/gallery', 'POST', { thumb, title: v.title, description: v.description, activity: v.activity, activity_other: v.activity_other, event_date: v.event_date, orientation: ED.orient, mime: 'image/jpeg', name: `${slug(v.title)}.jpg`, data: await toB64(blob) });
   f.closest('.overlay').close(); ED = null; toast('Saved to your gallery'); reloadCol();
 };
 
@@ -155,7 +168,7 @@ let GAL = null;
 async function pgGallery(el) {
   GAL = await api('/api/college/gallery');
   show(el, html`${pageHead('Gallery', 'Make framed photos of your events, keep them here, and share them. They also appear on the public home page.', html`<button class="btn primary" data-act="newFrame">${icon('crop')} Make a framed photo</button>`, 'Campus to booth')}
-    ${GAL.items.length ? html`<div class="galgrid">${GAL.items.map(g => html`<article class="galcard rv"><img src="/api/college/gallery/${g.id}/image" alt="${g.title}" loading="lazy"><div class="galbody"><h3>${g.title}</h3><div class="small muted">${g.activity} · ${fdate(g.event_date)}</div>${g.description ? html`<p class="small">${g.description}</p>` : ''}
+    ${GAL.items.length ? html`<div class="galgrid">${GAL.items.map(g => html`<article class="galcard rv"><img src="/api/college/gallery/${g.id}/thumb" alt="${g.title}" loading="lazy" decoding="async"><div class="galbody"><h3>${g.title}</h3><div class="small muted">${g.activity} · ${fdate(g.event_date)}</div>${g.description ? html`<p class="small">${g.description}</p>` : ''}
         <div class="row gap-s" style="margin-top:10px"><a class="btn sm secondary" href="/api/college/gallery/${g.id}/image" download="elc-${slug(g.title)}.jpg">${icon('download')} Download</a><button class="btn sm green" data-act="shareGal" data-id="${g.id}">${icon('share')} WhatsApp</button><button class="btn sm danger" data-act="delGal" data-id="${g.id}" aria-label="Delete ${g.title}">${icon('trash')}</button></div></div></article>`)}</div>`
       : html`<div class="card">${empty('No photos yet', 'Tap "Make a framed photo", add your photo, type the activity title and save it here.', 'image')}</div>`}`);
 }

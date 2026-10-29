@@ -92,7 +92,7 @@ function albumSection() {
 function startAlbum() {
   clearInterval(albumTimer); const st = $('#cfstage'); if (!st) return;
   albumList = ALBUM.slice(0, 12);
-  st.innerHTML = albumList.map((g, i) => `<figure class="cf-card" data-i="${i}" data-act="cfGo" aria-label="${esc(g.college)}: ${esc(g.title)}"><div class="bg" data-src="/api/public/album/${g.id}/image"></div><img data-src="/api/public/album/${g.id}/image" alt="${esc(g.title)}, ${esc(g.college)}" draggable="false"></figure>`).join('');
+  st.innerHTML = albumList.map((g, i) => `<figure class="cf-card" data-i="${i}" data-act="cfGo" aria-label="${esc(g.college)}: ${esc(g.title)}"><div class="bg" data-src="/api/public/album/${g.id}/thumb"></div><img data-src="/api/public/album/${g.id}/thumb" data-full="/api/public/album/${g.id}/image" alt="${esc(g.title)}, ${esc(g.college)}" draggable="false"></figure>`).join('');
   setAlbum(0);
   const box = $('#cf'); let paused = false, x0 = null;
   box.addEventListener('mouseenter', () => { paused = true; }); box.addEventListener('mouseleave', () => { paused = false; });
@@ -109,6 +109,7 @@ function setAlbum(i) {
     c.dataset.o = Math.abs(o) > 1 ? (o < 0 ? 'xl' : 'xr') : String(o);
     if (Math.abs(o) <= 2) { const im = $('img', c), bg = $('.bg', c); if (im && im.dataset.src) { im.src = im.dataset.src; delete im.dataset.src; } if (bg && bg.dataset.src) { bg.style.backgroundImage = 'url(' + bg.dataset.src + ')'; delete bg.dataset.src; } }
     c.setAttribute('aria-hidden', o === 0 ? 'false' : 'true');
+    if (o === 0) { const im = $('img', c); if (im && im.dataset.full) { const full = im.dataset.full; delete im.dataset.full; const pre = new Image(); pre.onload = () => { im.src = full; }; pre.src = full; } }
   });
   const g = albumList[albumAt], cap = $('#cfcap');
   cap.classList.remove('in'); void cap.offsetWidth;

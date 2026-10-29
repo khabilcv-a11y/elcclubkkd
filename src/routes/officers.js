@@ -92,7 +92,7 @@ route('POST', '/api/auth/officer', null, async ctx => {
   await ctx.clearThrottle(key);
   await ctx.db.run('UPDATE officers SET last_login_at=? WHERE id=?', nowIso(), o.id);
   await log(ctx.db, 'officer', o.name, null, 'login', 'Officer signed in', ctx.ip);
-  await issueSession(ctx, 'officer', o, 12);
+  await issueSession(ctx, 'officer', o, 24);
   ctx.db.lazy = true;
   return { ok: true };
 });

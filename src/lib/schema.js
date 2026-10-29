@@ -50,7 +50,7 @@ export const TABLES = {
     ['activity', 'TEXT', { nn: 1 }], ['activity_other', 'TEXT'], ['name', 'TEXT', { nn: 1 }], ['contact', 'TEXT'], ['created_at', 'TEXT']] },
   // photos made with the frame editor (files live in Google Drive)
   gallery: { pk: ['id'], cols: [['id', 'INTEGER'], ['college_id', 'INTEGER', { nn: 1, ref: ['colleges', 'CASCADE'] }], ['title', 'TEXT', { nn: 1 }], ['description', 'TEXT'], ['activity', 'TEXT'],
-    ['event_date', 'TEXT'], ['drive_id', 'TEXT', { nn: 1 }], ['mime', 'TEXT'], ['size', 'INTEGER'], ['orientation', 'TEXT'], ['visible', 'INTEGER', { nn: 1, def: 1 }], ['created_at', 'TEXT']] },
+    ['event_date', 'TEXT'], ['drive_id', 'TEXT', { nn: 1 }], ['mime', 'TEXT'], ['size', 'INTEGER'], ['orientation', 'TEXT'], ['visible', 'INTEGER', { nn: 1, def: 1 }], ['created_at', 'TEXT'], ['thumb', 'TEXT']] },
   outbox: { pk: ['id'], cols: [['id', 'INTEGER'], ['ts', 'TEXT'], ['to_addr', 'TEXT'], ['subject', 'TEXT'], ['body', 'TEXT'], ['status', 'TEXT'], ['error', 'TEXT']] },
 };
 export const TABLE_NAMES = Object.keys(TABLES);

@@ -6,7 +6,7 @@ const ROLE = { super_admin: 'Super admin', admin: 'Admin', intern: 'Intern' };
 const isSuper = () => SU.user.role === 'super_admin', isOps = () => SU.user.role !== 'intern', isIntern = () => SU.user.role === 'intern';
 const app = $('#app');
 
-setUnauth(() => { SU = null; renderLogin(); });
+setUnauth(() => { SU = null; renderLogin(); toast('Your session ended. Please sign in again.', true); });
 
 async function boot() {
   try { SU = await api('/api/staff/me'); } catch { SU = null; }

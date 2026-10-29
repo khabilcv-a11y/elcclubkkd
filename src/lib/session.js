@@ -6,7 +6,7 @@ const key = env => crypto.subtle.importKey('raw', enc.encode('session:' + env.SC
 
 // v = fingerprint of the credential, so changing a password/passcode signs old sessions out
 export async function signSession(env, { k, id, v, hours }) {
-  const body = b64(enc.encode(JSON.stringify({ k, id, v, exp: Date.now() + hours * 36e5 })));
+  const body = b64(enc.encode(JSON.stringify({ k, id, v, iat: Date.now(), hrs: hours, exp: Date.now() + hours * 36e5 })));
   return `${body}.${b64(await crypto.subtle.sign('HMAC', await key(env), enc.encode(body)))}`;
 }
 export async function readSession(env, token) {

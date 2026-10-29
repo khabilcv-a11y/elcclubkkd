@@ -91,9 +91,34 @@ async function api(path, method = 'GET', body) {
   busy(1);
   try { return await apiCall(path, method, body); } finally { busy(-1); }
 }
+// ---------- session watch: quiet renewal while someone works, a warning 3 minutes before it ends ----------
+let SESS_END = 0, SESS_TOTAL = 0, sessTimer = null, warnTimer = null, lastTouch = Date.now();
+['pointerdown', 'keydown', 'touchstart'].forEach(ev => addEventListener(ev, () => { lastTouch = Date.now(); }, { passive: true }));
+function sessSeen(left) {
+  SESS_END = Date.now() + left * 1000; SESS_TOTAL = Math.max(SESS_TOTAL, left);
+  if (!sessTimer) sessTimer = setInterval(sessTick, 15000);
+  if (left > 190) hideSessWarn();
+}
+function sessClear() { SESS_END = 0; SESS_TOTAL = 0; hideSessWarn(); }
+function sessTick() {
+  if (!SESS_END) return; const left = (SESS_END - Date.now()) / 1000;
+  if (left > 0 && Date.now() - lastTouch < 5 * 60000 && left < SESS_TOTAL * 0.6) { apiCall('/api/session/extend', 'POST').catch(() => {}); return; }   // still working: renew quietly
+  if (left > 0 && left <= 180) showSessWarn(); else if (left <= 0) { hideSessWarn(); SESS_END = 0; onUnauth({ status: 401 }); }
+}
+function showSessWarn() {
+  if (document.getElementById('sessWarn')) return;
+  const el = document.createElement('div'); el.id = 'sessWarn'; el.setAttribute('role', 'alertdialog'); el.setAttribute('aria-live', 'assertive'); el.setAttribute('aria-label', 'Session about to end');
+  el.innerHTML = '<b>Your session is about to end</b><p>You will be signed out in <b id="sessLeft"></b> because there has been no activity.</p><div class="row"><button class="btn primary sm" data-act="sessStay">Stay signed in</button><button class="btn ghost sm" data-act="signout">Sign out</button></div>';
+  document.body.append(el);
+  const paint = () => { const s = Math.max(0, Math.round((SESS_END - Date.now()) / 1000)), t = document.getElementById('sessLeft'); if (t) t.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+  paint(); warnTimer = setInterval(paint, 1000); el.querySelector('[data-act=sessStay]').focus();
+}
+function hideSessWarn() { clearInterval(warnTimer); document.getElementById('sessWarn')?.remove(); }
 async function apiCall(path, method, body) {
   const r = await fetch(path, { method, headers: body ? { 'Content-Type': 'application/json' } : (method === 'GET' ? {} : { 'Content-Type': 'application/json' }),
     body: body ? JSON.stringify(body) : (method === 'GET' ? undefined : '{}'), credentials: 'same-origin' });
+  const left = r.headers.get('X-Session-Left'); if (left) sessSeen(Number(left));
+  if (/\/logout$/.test(path)) sessClear();
   if (!r.ok) {
     let d = {}; try { d = await r.json(); } catch {}
     const e = new Error(d.error || `Request failed (${r.status})`); e.status = r.status; e.data = d; throw e;
@@ -159,7 +184,8 @@ document.addEventListener('submit', async e => {
   finally { if (btn) btn.disabled = false; }
 });
 let onUnauth = () => {};
-const setUnauth = fn => { onUnauth = fn; };
+const setUnauth = fn => { onUnauth = e => { sessClear(); fn(e); }; };
+actions.sessStay = async () => { await apiCall('/api/session/extend', 'POST'); hideSessWarn(); toast('You are still signed in'); };
 function handleErr(err) { if (err.status === 401) return onUnauth(err); toast(err.message || 'Something went wrong', true); }
 const fd = form => Object.fromEntries(new FormData(form).entries());
 actions.closeModal = el => el.closest('.overlay').close();

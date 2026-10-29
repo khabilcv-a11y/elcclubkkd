@@ -87,6 +87,8 @@ async function fetchFresh(env, since, prepareSheet) {
 // saved to the object's own (free) storage so it survives the object being put to sleep. Command-line scripts keep it in memory only.
 let mem = null, backend = null, savedBytes = null;
 export const setBackend = b => { backend = b; };
+export const pending = { n: 0, seq: 0 };   // seq counts data-entry saves; a refresh that began before one is thrown away      // changes acknowledged to the user but still on their way to the sheet
+export const hooks = {};              // hooks.flush is set by db.js
 async function save(e) {
   e = { ...e, schema: SCHEMA_VER };
   mem = e;
@@ -112,11 +114,14 @@ export async function getEntry(env, execCtx) {
     return loading;
   }
   if (Date.now() - e.fetchedAt > STALE_MS) {
+    if (pending.n > 0) { const bumped = { ...e, fetchedAt: Date.now() }; mem = bumped; return bumped; }   // never replace our copy with the sheet's while saves are still travelling
     const claimed = { ...e, fetchedAt: Date.now() };          // claim the refresh so parallel requests don't repeat it
     mem = claimed;
+    const seq0 = pending.seq;
     execCtx.waitUntil((async () => {
       try {
         const f = await fetchFresh(env, e.stamp);
+        if (pending.n > 0 || pending.seq !== seq0) { if (mem) mem = { ...mem, fetchedAt: Date.now() }; return; }   // a save happened meanwhile: this snapshot is older than our copy
         await putEntry(f.same ? { ...e, fetchedAt: Date.now() } : { bytes: f.bytes, version: f.version, stamp: f.stamp, fetchedAt: Date.now() });
       } catch (err) { console.error('background refresh failed', err.message); }
     })());
@@ -131,9 +136,11 @@ export async function putEntry(e) {
 }
 // Scheduled keep-warm: check the sheet for changes (also picks up hand-edits) even when nobody is using the site.
 export async function refreshNow(env) {
+  if (pending.n > 0) { await hooks.flush?.(env); return 'flushing'; }
   const cur = await current();
   if (!cur) { await putEntry(await reloadEntry(env)); return 'loaded'; }
-  const f = await fetchFresh(env, cur.stamp);
+  const seq0 = pending.seq, f = await fetchFresh(env, cur.stamp);
+  if (pending.n > 0 || pending.seq !== seq0) return 'skipped';
   if (f.same) { await putEntry({ ...cur, fetchedAt: Date.now() }); return 'unchanged'; }
   await putEntry({ bytes: f.bytes, version: f.version, stamp: f.stamp, fetchedAt: Date.now() });
   return 'updated';
