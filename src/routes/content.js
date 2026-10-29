@@ -3,6 +3,7 @@ import { route, whoIs, assertCollege, scopeOf } from '../lib/router.js';
 import { log } from '../lib/db.js';
 import { driveUpload, driveGet, driveDelete, driveConfigured } from '../lib/drive.js';
 import { HttpError, bad, nowIso, todayStr, str, reqStr, isDate } from '../lib/util.js';
+import { featureMap } from '../lib/features.js';
 
 const OPS = ['super_admin', 'admin'];
 const slog = (ctx, action, detail) => log(ctx.db, 'staff', ctx.user.username, ctx.user.role, action, detail, ctx.ip);
@@ -102,11 +103,17 @@ route('DELETE', '/api/staff/resources/:id', OPS, async ctx => {
 });
 
 // ---------------- issues raised by colleges ----------------
-const CATEGORIES = ['Village allotment', 'Volunteers / students', 'Attendance or data correction', 'Village officer', 'Portal / technical problem', 'Other'];
-route('GET', '/api/issue-categories', null, () => CATEGORIES);
+// campaign topics; the village topics return only if the village programme is switched back on
+const CAMPAIGN_CATEGORIES = ['Enrolment numbers', 'Help desk or volunteers', 'Photos or gallery', 'Login or password', 'Portal / technical problem', 'Other'];
+const VILLAGE_CATEGORIES = ['Village allotment', 'Attendance or data correction', 'Village officer'];
+async function categories(db) {
+  const f = await featureMap(db), village = f.college.villages;
+  return village ? [...CAMPAIGN_CATEGORIES.slice(0, -1), ...VILLAGE_CATEGORIES, 'Other'] : CAMPAIGN_CATEGORIES;
+}
+route('GET', '/api/issue-categories', null, ctx => categories(ctx.db));
 route('POST', '/api/college/issues', 'college', async ctx => {
   const b = ctx.body, now = nowIso();
-  const category = CATEGORIES.includes(b.category) ? b.category : 'Other';
+  const category = (await categories(ctx.db)).includes(b.category) ? b.category : 'Other';
   const id = await ctx.db.insert('INSERT INTO issues(college_id,category,subject,message,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?)',
     ctx.college.id, category, reqStr(b.subject, 'Subject', 140), reqStr(b.message, 'Please describe the issue', 2000), 'open', now, now);
   await log(ctx.db, 'college', ctx.college.name, null, 'issue_raise', category, ctx.ip);
