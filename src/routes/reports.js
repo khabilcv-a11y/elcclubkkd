@@ -3,6 +3,8 @@
 import { route, scopeOf } from '../lib/router.js';
 import { log } from '../lib/db.js';
 import { HttpError, csv, nowIso } from '../lib/util.js';
+import { ENROL_DATASETS, enrolReport } from './campaign.js';
+import { DESK_DATASETS, deskReport } from './desk.js';
 
 const slog = (ctx, action, detail) => log(ctx.db, 'staff', ctx.user.username, ctx.user.role, action, detail, ctx.ip);
 const att = a => (a === 1 ? 'Present' : a === 0 ? 'Absent' : 'Not marked');
@@ -121,6 +123,8 @@ const ISSUE_COLS = [T('created', 'Raised on'), T('college', 'College'), T('categ
 
 async function build(ctx, type, q) {
   if (type === 'allotments') return { title: 'Colleges & villages (master list)', cols: ALLOT_COLS, rows: await allotmentRows(ctx, q) };
+  if (ENROL_DATASETS.some(d => d.key === type)) return enrolReport(ctx, type, q);
+  if (DESK_DATASETS.some(d => d.key === type)) return deskReport(ctx, type, q);
   if (type === 'issues') return { title: 'Issues raised', cols: ISSUE_COLS, rows: await issueRows(ctx, q) };
   const ds = DATASETS[type];
   if (!ds) throw new HttpError(404, 'Unknown report');
@@ -132,7 +136,7 @@ route('GET', '/api/staff/report-options', 'staff', async ctx => {
   const [colleges, villages] = await Promise.all([ctx.db.all('SELECT id,name FROM colleges WHERE active=1 ORDER BY name'), ctx.db.all('SELECT id,name,taluk,lsgi FROM villages ORDER BY name')]);
   const vs = villages.filter(v => !s || s.villages.has(v.id));
   return { colleges: colleges.filter(c => !s || s.colleges.has(c.id)), villages: vs.map(v => ({ id: v.id, name: v.name })), taluks: [...new Set(vs.map(v => v.taluk).filter(Boolean))].sort(),
-    datasets: [...Object.entries(DATASETS).map(([key, d]) => ({ key, title: d.title })), { key: 'allotments', title: 'Colleges & villages (master list)' }, { key: 'issues', title: 'Issues raised' }] };
+    datasets: [...ENROL_DATASETS, ...DESK_DATASETS, { key: 'issues', title: 'Issues raised' }, ...Object.entries(DATASETS).map(([key, d]) => ({ key, title: d.title })), { key: 'allotments', title: 'Colleges & villages (master list)' }] };
 });
 
 route('GET', '/api/staff/reports/:type', 'staff', async ctx => {

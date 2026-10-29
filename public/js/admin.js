@@ -10,26 +10,29 @@ setUnauth(() => { SU = null; renderLogin(); });
 
 async function boot() {
   try { SU = await api('/api/staff/me'); } catch { SU = null; }
+  await loadFeatures();
   window.addEventListener('hashchange', route);
   route();
 }
-const PAGES = () => ({ dashboard: pgDashboard, colleges: pgColleges, villages: pgVillages, allot: pgAllot, ...(isOps() ? { officers: pgOfficers, notices: pgNotices, resources: pgResources } : {}),
+const STAFF_FEATURED = ['colleges', 'schools', 'enrol', 'desk', 'gallery', 'issues', 'notices', 'resources', 'reports', 'villages', 'allot', 'officers', 'requests', 'cert'];
+const PAGES = () => ({ dashboard: pgDashboard, colleges: pgColleges, schools: pgSchools, enrol: apEnrol, ...(typeof apDesk === 'function' ? { desk: apDesk } : {}), ...(typeof apGallery === 'function' ? { gallery: apGallery } : {}), ...(isSuper() ? { features: apFeatures } : {}), villages: pgVillages, allot: pgAllot, ...(isOps() ? { officers: pgOfficers, notices: pgNotices, resources: pgResources } : {}),
   requests: pgRequests, cert: pgCert, issues: pgIssues, reports: pgReports, ...(isSuper() ? { team: pgTeam, logs: pgLogs } : {}) });
 const TITLES = { dashboard: 'Dashboard', colleges: 'Colleges', villages: 'Villages', allot: 'Allotments', officers: 'Village officers', requests: 'Change requests', cert: 'Certification', issues: 'Help desk issues', notices: 'Announcements',
-  resources: 'Resource centre', reports: 'Reports & exports', team: 'Team', logs: 'Activity log' };
+  resources: 'Resource centre', reports: 'Reports & exports', team: 'Team', logs: 'Activity log', schools: 'Schools', enrol: 'Enrolment drive', desk: 'Help desk reports', gallery: 'Gallery', features: 'Access control' };
 
 async function route() {
   if (!SU) return renderLogin();
-  let page = location.hash.replace(/^#\/?/, '').split('/')[0] || 'dashboard';
-  if (!PAGES()[page]) page = 'dashboard';
+  let page = location.hash.replace(/^#\/?/, '').split('/')[0] || (feat('staff', 'enrol') ? 'enrol' : 'dashboard');
+  if (!PAGES()[page] || (STAFF_FEATURED.includes(page) && !feat('staff', page))) page = feat('staff', 'enrol') ? 'enrol' : 'dashboard';
   try { DASH = (await api('/api/staff/dashboard')); } catch (e) { if (e.status === 401) return; }
   const t = DASH?.totals || {};
-  const nav = [{ group: 'Overview', items: [{ id: 'dashboard', label: 'Dashboard', icon: 'grid' }] },
-    { group: 'Manage', items: [{ id: 'colleges', label: 'Colleges', icon: 'building' }, { id: 'villages', label: 'Villages', icon: 'map-pin' }, { id: 'allot', label: 'Allotments', icon: 'link' }, ...(isOps() ? [{ id: 'officers', label: 'Village officers', icon: 'landmark' }] : [])] },
-    { group: 'Operations', items: [{ id: 'requests', label: 'Change requests', icon: 'refresh', count: t.pending_requests }, { id: 'cert', label: 'Certification', icon: 'certificate', count: t.awaiting_ack }, { id: 'issues', label: 'Help desk', icon: 'help', count: t.open_issues },
+  const navAll = [{ group: 'Campus to booth', items: [{ id: 'enrol', label: 'Enrolment drive', icon: 'target' }, { id: 'desk', label: 'Help desk reports', icon: 'clipboard' }, { id: 'gallery', label: 'Gallery', icon: 'image' }] },
+    { group: 'Manage', items: [{ id: 'colleges', label: 'Colleges', icon: 'building' }, { id: 'schools', label: 'Schools', icon: 'book' }, { id: 'villages', label: 'Villages', icon: 'map-pin' }, { id: 'allot', label: 'Allotments', icon: 'link' }, ...(isOps() ? [{ id: 'officers', label: 'Village officers', icon: 'landmark' }] : [])] },
+    { group: 'Operations', items: [{ id: 'requests', label: 'Change requests', icon: 'refresh', count: t.pending_requests }, { id: 'cert', label: 'Certification', icon: 'certificate', count: t.awaiting_ack }, { id: 'issues', label: 'Help desk issues', icon: 'help', count: t.open_issues },
       ...(isOps() ? [{ id: 'notices', label: 'Announcements', icon: 'megaphone' }, { id: 'resources', label: 'Resources', icon: 'book' }] : [])] },
-    { group: 'Insights', items: [{ id: 'reports', label: 'Reports & exports', icon: 'chart' }] },
-    ...(isOps() ? [{ group: 'Administration', items: [...(isSuper() ? [{ id: 'team', label: 'Team', icon: 'users' }, { id: 'logs', label: 'Activity log', icon: 'shield' }] : [])] }] : [])];
+    { group: 'Insights', items: [{ id: 'dashboard', label: 'Dashboard', icon: 'grid' }, { id: 'reports', label: 'Reports & exports', icon: 'chart' }] },
+    ...(isOps() ? [{ group: 'Administration', items: [...(isSuper() ? [{ id: 'team', label: 'Team', icon: 'users' }, { id: 'features', label: 'Access control', icon: 'settings' }, { id: 'logs', label: 'Activity log', icon: 'shield' }] : [])] }] : [])];
+  const nav = navAll.map(g => ({ ...g, items: g.items.filter(i => (!STAFF_FEATURED.includes(i.id) || feat('staff', i.id)) && PAGES()[i.id]) })).filter(g => g.items.length);
   const extra = html`${isSuper() && SU.sheet_url ? html`<a class="btn secondary sm" href="${SU.sheet_url}" target="_blank" rel="noopener">${icon('external')}<span>Open Google Sheet</span></a>` : ''}<button class="btn ghost sm" data-act="pw" aria-label="Change password">${icon('key')}</button>`;
   show(app, consoleShell({ product: 'Staff console', who: SU.user.name, role: ROLE[SU.user.role], nav, active: page, base: '#', content: html`<div id="pg"><div class="loading"><div class="spin"></div></div></div>`, extra }));
   document.title = TITLES[page] + ' · Staff console';
@@ -74,10 +77,11 @@ async function pgDashboard(el) {
 }
 
 // ---------- colleges ----------
-async function pgColleges(el) {
-  const list = await api('/api/staff/colleges'); window.__colleges = list;
-  show(el, html`${pageHead('Colleges', `${list.length} Electoral Literacy Club${list.length === 1 ? '' : 's'}.`, html`${isOps() ? html`<button class="btn primary" data-act="addCollege">${icon('plus')} Add college</button>` : ''}<button class="btn secondary" data-act="bulkPass">${icon('key')} Set default for new colleges</button>${isSuper() ? html`<button class="btn secondary" data-act="resetAll">${icon('refresh')} Reset ALL to default</button>` : ''}`, 'Manage')}
-        <div class="card pad0"><div class="filterbar">${searchBox('q', 'Search colleges…')}<label class="f"><span class="sr">Filter</span><select id="cf"><option value="">All colleges</option><option value="nopass">No password yet</option><option value="inactive">Inactive</option></select></label></div>
+async function pgColleges(el, kind = 'college') {
+  const school = kind === 'school', W = school ? 'school' : 'college';
+  const list = await api('/api/staff/colleges?kind=' + kind); window.__colleges = list; window.__ckind = kind;
+  show(el, html`${pageHead(school ? 'Schools' : 'Colleges', school ? `${list.length} school${list.length === 1 ? '' : 's'} registered.` : `${list.length} Electoral Literacy Club${list.length === 1 ? '' : 's'}.`, html`${isOps() ? html`<button class="btn primary" data-act="addCollege">${icon('plus')} Add ${W}</button>` : ''}${school ? '' : html`<button class="btn secondary" data-act="bulkPass">${icon('key')} Set default for new colleges</button>`}${isSuper() && !school ? html`<button class="btn secondary" data-act="resetAll">${icon('refresh')} Reset ALL to default</button>` : ''}`, 'Manage')}
+        <div class="card pad0"><div class="filterbar">${searchBox('q', 'Search ${W}s…')}<label class="f"><span class="sr">Filter</span><select id="cf"><option value="">All ${W}s</option><option value="nopass">No password yet</option><option value="inactive">Inactive</option></select></label></div>
     ${list.length ? tbl(['College', 'Contact', '#Villages', '#Students', '#Registered', 'Password', ''], list.map(c => html`<tr class="rowq" data-f="${!c.passcode_sent_at ? 'nopass' : ''} ${c.active ? '' : 'inactive'}"><td><b>${c.name}</b>${c.active ? '' : html` ${badge('inactive', 'grey')}`}<div class="small muted">${c.lsgi || ''}${c.address ? ` · ${c.address}` : ''}</div></td>
       <td class="small">${icon('phone')} ${c.phone}<br>${icon('mail')} ${c.email}${c.coordinator ? html`<br>${icon('user')} ${c.coordinator}` : ''}</td><td class="num">${c.stats?.villages ?? 0}</td><td class="num">${c.stats?.volunteers ?? 0}</td><td class="num">${n(c.stats?.registered ?? 0)}</td>
       <td>${c.passcode ? html`<div class="row gap-s nowrap"><code style="font-weight:800;letter-spacing:.06em">${c.passcode}</code><button class="btn ghost sm" data-act="copyPass" data-id="${c.id}" title="Copy passcode" aria-label="Copy passcode">${icon('clipboard')}</button><button class="btn ghost sm" data-act="copyMsg" data-id="${c.id}" title="Copy full login message (for WhatsApp)" aria-label="Copy login message">${icon('mail')}</button></div>` : c.passcode_sent_at ? badge('Changed by college', 'ok') : badge('Not set', 'warn')}${c.last_login_at ? html`<div class="xs muted">Last sign-in ${ago(c.last_login_at)}</div>` : ''}</td>
@@ -85,7 +89,7 @@ async function pgColleges(el) {
   const apply = () => { const v = $('#q').value.toLowerCase(), f = $('#cf').value; $$('.rowq').forEach(r => r.classList.toggle('hide', !((!v || r.textContent.toLowerCase().includes(v)) && (!f || r.dataset.f.includes(f))))); };
   $('#q')?.addEventListener('input', apply); $('#cf')?.addEventListener('change', apply);
 }
-const collegeForm = c => html`<form data-form="college" data-id="${c?.id || ''}" class="stack-s"><div class="formgrid"><label class="f"><span>College name *</span><input type="text" name="name" value="${c?.name || ''}" required maxlength="160"></label>
+const collegeForm = c => html`<form data-form="college" data-id="${c?.id || ''}" class="stack-s"><input type="hidden" name="kind" value="${window.__ckind || 'college'}"><div class="formgrid"><label class="f"><span>College name *</span><input type="text" name="name" value="${c?.name || ''}" required maxlength="160"></label>
   <label class="f"><span>Short name (shown on the leaderboard)</span><input type="text" name="short_name" value="${c?.short_name || ''}" maxlength="40"></label></div>
   <label class="f"><span>Address *</span><textarea name="address" required maxlength="300">${c?.address || ''}</textarea></label>
   <div class="formgrid"><label class="f"><span>Contact number *</span><input type="tel" name="phone" value="${c?.phone || ''}" required></label><label class="f"><span>Email *</span><input type="email" name="email" value="${c?.email || ''}" required></label>
@@ -307,8 +311,8 @@ actions.delRes = async el => { if (!await confirmBox('Delete this resource? Anyo
 
 // ---------- reports & exports ----------
 const RF = { daily: ['college', 'taluk', 'village', 'lsgi', 'dates', 'attendance', 'verified', 'ack', 'q'], students: ['college', 'taluk', 'village', 'dates', 'q'], colleges: ['college', 'taluk', 'dates', 'q'],
-  villages: ['college', 'taluk', 'village', 'lsgi', 'dates', 'ack', 'q'], allotments: ['college', 'taluk', 'village', 'lsgi', 'ack', 'q'], issues: ['college', 'status', 'dates', 'q'] };
-let REP = { type: 'daily', filters: {}, sort: '', dir: 'asc', cols: null }, OPTS = null;
+  villages: ['college', 'taluk', 'village', 'lsgi', 'dates', 'ack', 'q'], allotments: ['college', 'taluk', 'village', 'lsgi', 'ack', 'q'], issues: ['college', 'status', 'dates', 'q'], enrol_inst: ['college', 'kind', 'q'], desk_inst: ['college', 'kind', 'dates', 'q'], desk: ['college', 'kind', 'dates', 'q'], activities: ['college', 'kind', 'dates', 'q'], activity_summary: ['college', 'kind', 'dates'], enrol_dept: ['college', 'kind', 'q'], enrol: ['college', 'kind', 'q'] };
+let REP = { type: 'enrol_inst', filters: {}, sort: '', dir: 'asc', cols: null }, OPTS = null;
 async function pgReports(el) {
   OPTS ||= await api('/api/staff/report-options');
   show(el, html`${pageHead('Reports & exports', 'Choose a report, narrow it with filters, sort it, pick the columns, then download as CSV (opens in Excel) or print.', '', 'Insights')}
@@ -325,7 +329,7 @@ function repFilters() {
     ${want.includes('dates') ? html`<label class="f"><span>From</span><input type="date" name="from" value="${f.from || ''}"></label><label class="f"><span>To</span><input type="date" name="to" value="${f.to || ''}"></label>` : ''}
     ${want.includes('attendance') ? sel('attendance', 'Attendance', [['present', 'Present'], ['absent', 'Absent'], ['not_marked', 'Not marked']]) : ''}${want.includes('verified') ? sel('verified', 'Officer check', [['yes', 'Verified'], ['no', 'Disputed'], ['pending', 'Not verified']]) : ''}
     ${want.includes('ack') ? sel('ack', 'Certification', [['acknowledged', 'Certified'], ['submitted', 'Awaiting officer'], ['none', 'In progress']]) : ''}${want.includes('status') ? sel('status', 'Status', [['open', 'Open'], ['in_progress', 'In progress'], ['resolved', 'Resolved']]) : ''}
-    ${want.includes('q') ? html`<label class="f"><span>Search</span><input type="search" name="q" value="${f.q || ''}" placeholder="Any text"></label>` : ''}`;
+    ${want.includes('kind') ? sel('kind', 'Type', [['college', 'Colleges'], ['school', 'Schools']]) : ''}${want.includes('q') ? html`<label class="f"><span>Search</span><input type="search" name="q" value="${f.q || ''}" placeholder="Any text"></label>` : ''}`;
 }
 const repQuery = (extra = {}) => { const p = new URLSearchParams(); Object.entries(REP.filters).forEach(([k, v]) => { if (v) p.set(k, v); }); if (REP.sort) { p.set('sort', REP.sort); p.set('dir', REP.dir); } if (REP.cols) p.set('cols', REP.cols.join(',')); Object.entries(extra).forEach(([k, v]) => p.set(k, v)); return p.toString(); };
 async function loadReport() {

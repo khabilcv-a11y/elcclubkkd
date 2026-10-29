@@ -8,18 +8,19 @@ const ME = { kind: null, name: '' };   // who is signed in on this browser (set 
 function publicShell(inner, active = '') {
   const signed = ME.kind ? html`<a class="btn primary sm" href="#/${ME.kind === 'college' ? 'me' : 'officer'}">${icon('grid')} My workspace</a><button class="btn secondary sm" data-act="logoutAny">Sign out</button>`
     : html`<div class="dropdown"><button class="btn primary sm" data-act="dropdown" aria-haspopup="true" aria-expanded="false">Sign in ${icon('chevron-down')}</button>
-      <div class="menu" role="menu"><a href="#/login/college" role="menuitem">${icon('building')}<span>College coordinator<small>Passcode from the district office</small></span></a>
-        <a href="#/login/officer" role="menuitem">${icon('landmark')}<span>Village officer<small>Verify attendance and certify</small></span></a>
+      <div class="menu" role="menu"><a href="#/login/college" role="menuitem">${icon('building')}<span>College coordinator<small>Password from the district office</small></span></a>
+        <a href="#/login/school" role="menuitem">${icon('book')}<span>School<small>Sign in or register your school</small></span></a>
+        ${feat('public', 'officer_login') ? html`<a href="#/login/officer" role="menuitem">${icon('landmark')}<span>Village officer<small>Verify attendance and certify</small></span></a>` : ''}
         <a href="/admin" role="menuitem">${icon('shield')}<span>Staff console<small>Admins and interns</small></span></a></div></div>`;
   return html`<header class="pubbar"><div class="wrap">
       <a class="brand" href="#/" aria-label="SWEEP Kozhikode home"><img src="${LOGO.district}" alt="District Administration Kozhikode" style="height:38px"><span class="sep"></span><img src="${LOGO.sweepDark}" alt="SWEEP Kozhikode" style="height:34px"></a>
       <nav class="pubnav" aria-label="Main"><a class="l hide-m" href="#/" ${active === 'home' ? 'aria-current="page"' : ''}>Home</a><a class="l hide-m" href="#/board" ${active === 'board' ? 'aria-current="page"' : ''}>Display board</a>
-        <a class="l hide-m" href="#/" data-act="go" data-to="villagemap">Village map</a><a class="l hide-m" href="#/" data-act="go" data-to="resources">Resources</a>${signed}</nav></div></header>
+        ${feat('public', 'map') ? html`<a class="l hide-m" href="#/" data-act="go" data-to="villagemap">Village map</a>` : html`<a class="l hide-m" href="#/" data-act="go" data-to="campus">Campus to booth</a>`}<a class="l hide-m" href="#/" data-act="go" data-to="resources">Resources</a>${signed}</nav></div></header>
     <main id="main" tabindex="-1" class="page-in">${inner}</main>
     <footer class="foot"><div class="wrap"><div class="logos"><img src="${LOGO.district}" alt="District Administration Kozhikode"><span class="sep"></span><img src="${LOGO.sweepDark}" alt="SWEEP Kozhikode"><span class="sep"></span><img src="${LOGO.nvlb}" alt="No voter to be left behind" style="height:62px"></div>
       <div class="cols"><div><img src="${LOGO.sweepWhite}" alt="SWEEP Kozhikode" style="height:46px;margin-bottom:10px"><p class="small">Systematic Voters' Education and Electoral Participation, Kozhikode. Electoral Literacy Clubs enrolling every eligible young voter, village by village.</p></div>
-        <div><h4>Explore</h4><p class="small"><a href="#/board">Display board</a><br><a href="#/" data-act="go" data-to="villagemap">Village map</a><br><a href="#/" data-act="go" data-to="resources">Resource centre</a></p></div>
-        <div><h4>For participants</h4><p class="small"><a href="#/login/college">College coordinators</a><br><a href="#/login/officer">Village officers</a><br><a href="/admin">Staff console</a></p></div>
+        <div><h4>Explore</h4><p class="small"><a href="#/board">Display board</a><br>${feat('public', 'map') ? html`<a href="#/" data-act="go" data-to="villagemap">Village map</a><br>` : ''}<a href="#/" data-act="go" data-to="resources">Resource centre</a></p></div>
+        <div><h4>For participants</h4><p class="small"><a href="#/login/college">College coordinators</a><br><a href="#/login/school">Schools</a><br>${feat('public', 'officer_login') ? html`<a href="#/login/officer">Village officers</a><br>` : ''}<a href="/admin">Staff console</a></p></div>
         <div><h4>Check your own enrolment</h4><p class="small">Not on the electoral roll yet? Apply with Form 6 on the Election Commission's <a href="https://voters.eci.gov.in" target="_blank" rel="noopener">Voters' Service Portal</a> or call <b>1950</b>.</p></div></div>
       <div class="legal"><span>© District Administration, Kozhikode</span><span>Built for the Electoral Literacy Club programme</span></div></div></footer>`;
 }
@@ -36,29 +37,35 @@ async function loadPublic() {
 async function renderHome() {
   if (!BOARD) show($('#app'), publicShell(html`<div class="loading"><div class="spin"></div>Loading the latest numbers…</div>`, 'home'));
   try { await loadPublic(); } catch (e) { return show($('#app'), publicShell(html`<div class="wrap section"><div class="alert err">Couldn't load the numbers: ${e.message}</div></div>`, 'home')); }
-  const t = BOARD.totals, ins = BOARD.insights;
+  const t = BOARD.totals, ins = BOARD.insights, C = BOARD.campus, vil = feat('public', 'map');
+  ALBUM = feat('public', 'album') ? await api('/api/public/album').catch(() => []) : [];
   show($('#app'), publicShell(html`
   <section class="hero"><div class="wrap"><div>
       <span class="eyebrow"><span class="live"></span> Live from the field · updated every few seconds</span>
       <h1>No voter to be <em>left behind.</em></h1>
-      <p class="lead">Student volunteers from Electoral Literacy Clubs across Kozhikode are going village to village, helping every eligible young person join the electoral roll. Follow the movement live.</p>
-      <div class="row"><a class="btn accent lg" href="#/board">${icon('chart')} Open display board</a><button class="btn outline-light lg" data-act="go" data-to="villagemap">${icon('map-pin')} See villages on the map</button></div></div>
+      <p class="lead">${vil ? 'Student volunteers from Electoral Literacy Clubs across Kozhikode are going village to village, helping every eligible young person join the electoral roll. Follow the movement live.' : 'From campus to booth: Electoral Literacy Clubs in colleges and schools across Kozhikode are getting every eligible student onto the electoral roll. Follow the progress live.'}</p>
+      <div class="row"><a class="btn accent lg" href="#/board">${icon('chart')} Open display board</a>${vil ? html`<button class="btn outline-light lg" data-act="go" data-to="villagemap">${icon('map-pin')} See villages on the map</button>` : html`<a class="btn outline-light lg" href="#/login/school">${icon('book')} Schools: join the drive</a>`}</div></div>
     <div class="hero-card"><img src="${LOGO.nvlb}" alt="No voter to be left behind: two students checking a voting machine"></div></div></section>
   <div class="wrap"><div class="hero-stats rv" role="list" aria-label="Headline numbers">
-    <div role="listitem"><div class="v" data-count="${t.registered}">0</div><div class="l">New voters enrolled</div></div>
+    ${vil ? html`<div role="listitem"><div class="v" data-count="${t.registered}">0</div><div class="l">New voters enrolled</div></div>
     <div role="listitem"><div class="v" data-count="${t.volunteers}">0</div><div class="l">Student volunteers involved</div></div>
     <div role="listitem"><div class="v" data-count="${t.colleges}">0</div><div class="l">Participating colleges</div></div>
-    <div role="listitem"><div class="v" data-count="${t.addressed}">0</div><div class="l">People reached</div></div></div></div>
+    <div role="listitem"><div class="v" data-count="${t.addressed}">0</div><div class="l">People reached</div></div>` : html`<div role="listitem"><div class="v" data-count="${C.totals.registered}">0</div><div class="l">Students registered</div></div>
+    <div role="listitem"><div class="v" data-count="${C.desk.registrations}">0</div><div class="l">Registrations at help desks</div></div>
+    <div role="listitem"><div class="v" data-count="${C.colleges + C.schools}">0</div><div class="l">Colleges and schools</div></div>
+    <div role="listitem"><div class="v">${C.totals.pct == null ? '—' : C.totals.pct + '%'}</div><div class="l">Eligible students covered</div></div>`}</div></div>
 
   ${ANN.length ? html`<section class="section" id="notices"><div class="wrap"><div class="section-head"><div><h2>Announcements</h2><p>Latest updates from the district election office.</p></div></div>
     <div class="grid g2">${ANN.slice(0, 4).map(a => html`<article class="notice rv ${a.pinned ? 'pinned' : ''}"><h3>${a.pinned ? html`${icon('pin')} ` : ''}${a.title}</h3>${a.body ? html`<p>${a.body}</p>` : ''}<div class="when">${fdt(a.created_at)}</div></article>`)}</div></div></section>` : ''}
 
-  <section class="section" id="villagemap"><div class="wrap"><div class="section-head"><div><h2>Where our volunteers are working</h2><p>${t.villages_active} of ${t.villages_total} village offices have students present in the field, and ${t.villages_registered} have voters registered. Select a village to see its progress.</p></div>
+  ${campusSection(C)}
+  ${ALBUM.length ? albumSection() : ''}
+  ${vil ? html`<section class="section" id="villagemap"><div class="wrap"><div class="section-head"><div><h2>Where our volunteers are working</h2><p>${t.villages_active} of ${t.villages_total} village offices have students present in the field, and ${t.villages_registered} have voters registered. Select a village to see its progress.</p></div>
     <div class="chips" id="mapfilter" role="group" aria-label="Filter villages"></div></div>
     <div class="map-wrap rv"><div id="map" role="application" aria-label="Map of Kozhikode villages with ELC activity"></div><div class="map-side"><label class="f"><span class="sr">Search villages</span><input type="search" id="vq" placeholder="Search a village or college…"></label><div id="vlist" role="list"></div></div></div>
-    <div class="legend"><span><i style="background:#0a9f4c"></i>Voters registered</span><span><i style="background:#f7861d"></i>Students present</span><span><i style="background:#8b92b0"></i>Allotted</span><span><i style="background:#fff"></i>Not yet allotted</span></div></div></section>
+    <div class="legend"><span><i style="background:#0a9f4c"></i>Voters registered</span><span><i style="background:#f7861d"></i>Students present</span><span><i style="background:#8b92b0"></i>Allotted</span><span><i style="background:#fff"></i>Not yet allotted</span></div></div></section>` : ''}
 
-  <section class="section" id="insights"><div class="wrap"><div class="section-head"><div><h2>Insights</h2><p>What the numbers say about the drive so far.</p></div></div>
+  ${vil ? html`<section class="section" id="insights"><div class="wrap"><div class="section-head"><div><h2>Insights</h2><p>What the numbers say about the drive so far.</p></div></div>
     <div class="insights">${insightCards(ins, t)}</div>
     <div class="grid g2" style="margin-top:16px"><div class="card rv"><div class="card-head"><h3>Enrolment by taluk</h3></div><div class="bars" id="taluks"></div></div>
       <div class="card rv"><div class="card-head"><h3>Voters enrolled per field day</h3><span class="small muted">last ${BOARD.trend.length} active days</span></div><div id="trend"></div></div></div></div></section>
@@ -66,12 +73,54 @@ async function renderHome() {
   <section class="section" id="leaderboard"><div class="wrap"><div class="section-head"><div><h2>Leaderboard</h2><p>Points for every voter enrolled, person reached, volunteer-day worked and village certified.</p></div><a class="btn secondary" href="#/board">Full display board ${icon('arrow-right')}</a></div>
     <div id="podium"></div><div class="board" id="lb"></div></div></section>
 
-  <section class="section" id="colleges"><div class="wrap"><div class="section-head"><div><h2>Participating colleges <span class="badge">${t.colleges}</span></h2><p>Every Electoral Literacy Club on the programme.</p></div><label class="f" style="margin:0;min-width:240px"><span class="sr">Search colleges</span><input type="search" id="cq" placeholder="Search colleges…"></label></div><div class="collegegrid" id="cg"></div><div class="pager" id="cgpager"></div></div></section>
+` : ''}
+  <section class="section" id="colleges"><div class="wrap"><div class="section-head"><div><h2>${vil ? 'Participating colleges' : 'Participating colleges and schools'} <span class="badge">${vil ? t.colleges : C.colleges + C.schools}</span></h2><p>Every institution on the programme.</p></div><label class="f" style="margin:0;min-width:240px"><span class="sr">Search colleges</span><input type="search" id="cq" placeholder="Search colleges…"></label></div><div class="collegegrid" id="cg"></div><div class="pager" id="cgpager"></div></div></section>
 
   <section class="section"><div class="wrap grid g2">
-    <div><div class="section-head"><div><h2>Live activity</h2></div></div><div class="card rv"><ul class="feed" id="feed"></ul></div></div>
+    ${vil ? html`<div><div class="section-head"><div><h2>Live activity</h2></div></div><div class="card rv"><ul class="feed" id="feed"></ul></div></div>` : ''}
     <div id="resources"><div class="section-head"><div><h2>Resource centre</h2></div></div><div class="stack-s" id="reslist"></div></div></div></section>`, 'home'));
-  paintHome(); wireMap(); $('#main').focus({ preventScroll: true });
+  paintHome(); paintCampus(); wireMap(); startAlbum(); $('#main').focus({ preventScroll: true });
+}
+
+let ALBUM = [], albumTimer = null, albumAt = 0;
+function albumSection() {
+  return html`<section class="section" id="album"><div class="wrap"><div class="section-head"><div><h2>Moments from the campaign</h2><p>Photos from help desks, flash mobs, class-to-class campaigns and more, shared by colleges and schools.</p></div></div>
+    <div class="album rv" role="region" aria-roledescription="carousel" aria-label="Campaign photo album"><div class="album-stage" id="albstage"></div>
+      <button class="album-btn prev" data-act="albPrev" aria-label="Previous photo">${icon('arrow-left')}</button><button class="album-btn next" data-act="albNext" aria-label="Next photo">${icon('arrow-right')}</button>
+      <div class="album-dots" id="albdots" aria-hidden="true"></div></div></div></section>`;
+}
+function showAlbum(i) {
+  const st = $('#albstage'); if (!st || !ALBUM.length) return;
+  albumAt = (i + ALBUM.length) % ALBUM.length; const g = ALBUM[albumAt];
+  const slide = document.createElement('figure'); slide.className = 'album-slide ' + g.orientation;
+  slide.innerHTML = `<img src="/api/public/album/${g.id}/image" alt="${esc(g.title)}, ${esc(g.college)}"><figcaption><b>${esc(g.college)}</b><span>${esc(g.title)}</span><small>${esc(g.activity)}</small></figcaption>`;
+  st.append(slide); requestAnimationFrame(() => slide.classList.add('in'));
+  [...st.children].slice(0, -1).forEach(old => { old.classList.remove('in'); setTimeout(() => old.remove(), 900); });
+  show($('#albdots'), html`${ALBUM.slice(0, 12).map((_, k) => html`<i class="${k === albumAt % 12 ? 'on' : ''}"></i>`)}`);
+}
+function startAlbum() {
+  clearInterval(albumTimer); if (!$('#albstage')) return;
+  showAlbum(0);
+  const stage = $('#album'); let paused = false;
+  stage.addEventListener('mouseenter', () => { paused = true; }); stage.addEventListener('mouseleave', () => { paused = false; });
+  if (!reduced() && ALBUM.length > 1) albumTimer = setInterval(() => { if (!paused && document.getElementById('albstage')) showAlbum(albumAt + 1); }, 5500);
+}
+actions.albNext = () => showAlbum(albumAt + 1);
+actions.albPrev = () => showAlbum(albumAt - 1);
+
+function campusSection(C) {
+  const T = C.totals;
+  return html`<section class="section" id="campus"><div class="wrap"><div class="section-head"><div><h2>Campus to booth</h2><p>The target is 100%: every eligible student in every college and school on the electoral roll.</p></div></div>
+    <div class="card rv campus-top"><div class="row between" style="align-items:flex-end;gap:16px"><div><div class="campus-big">${T.pct == null ? '—' : T.pct + '%'}</div><div class="muted">of eligible students are registered</div></div>
+      <div class="campus-facts"><div><b>${n(T.registered)}</b><span>registered</span></div><div><b>${n(T.balance)}</b><span>still to cover</span></div><div><b>${n(T.ineligible)}</b><span>under 17</span></div><div><b>${T.reporting}</b><span>institutions reporting</span></div></div></div>
+      ${progress(T.pct || 0, 'green')}</div>
+    <h3 style="margin:22px 0 10px">Ranking by share of eligible students registered</h3><div class="board" id="cboard"></div></div></section>`;
+}
+function paintCampus() {
+  const C = BOARD.campus; if (!$('#cboard')) return;
+  const list = C.institutions.filter(i => i.strength > 0).sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1) || b.registered - a.registered).slice(0, 10);
+  show($('#cboard'), list.length ? html`${list.map((c, i) => html`<div class="lbrow rv ${i < 3 ? 'r' + (i + 1) : ''}" style="grid-template-columns:44px minmax(160px,2.4fr) minmax(140px,2fr) minmax(90px,1fr)"><div class="rank">${i + 1}</div><div class="nm">${c.name}<small>${c.kind === 'school' ? 'School' : 'College'}</small></div>
+    <div>${progress(c.pct || 0, c.pct >= 100 ? 'green' : 'saffron')}</div><div class="c"><b>${c.pct == null ? '—' : c.pct + '%'}</b><small style="display:block">${n(c.registered)} of ${n(c.eligible)}</small></div></div>`)}` : empty('The first numbers are coming in', 'Colleges and schools share their enrolment numbers through the department link.', 'chart'));
 }
 
 function insightCards(i, t) {
@@ -159,10 +208,10 @@ function paintColleges(keepPage) {
   keepPage = keepPage === true;
   const q = ($('#cq')?.value || '').toLowerCase();
   if (!keepPage) cgPage = 0;
-  const cs = [...BOARD.colleges].sort((a, b) => a.name.localeCompare(b.name)).filter(c => !q || c.name.toLowerCase().includes(q));
+  const cs = (feat('public', 'map') ? [...BOARD.colleges] : BOARD.campus.institutions.map(i => ({ ...i, villages: 0 }))).sort((a, b) => a.name.localeCompare(b.name)).filter(c => !q || c.name.toLowerCase().includes(q));
   const pages = Math.max(1, Math.ceil(cs.length / CG_PAGE)); cgPage = Math.min(cgPage, pages - 1);
   const shown = cs.slice(cgPage * CG_PAGE, cgPage * CG_PAGE + CG_PAGE);
-  show($('#cg'), cs.length ? html`${shown.map(c => html`<div class="cg rv"><span class="lt">${initials(c.short_name)}</span><div class="grow"><b>${c.name}</b><small>${c.villages} village${c.villages === 1 ? '' : 's'} · ${n(c.registered)} enrolled</small></div></div>`)}` : empty('No college matches', '', 'search'));
+  show($('#cg'), cs.length ? html`${shown.map(c => html`<div class="cg rv"><span class="lt">${initials(c.short_name)}</span><div class="grow"><b>${c.name}</b><small>${feat('public', 'map') ? `${c.villages} village${c.villages === 1 ? '' : 's'} · ${n(c.registered)} enrolled` : `${c.kind === 'school' ? 'School' : 'College'} · ${c.pct == null ? 'not reported yet' : c.pct + '% covered'}`}</small></div></div>`)}` : empty('No college matches', '', 'search'));
   show($('#cgpager'), pages > 1 ? html`<button class="btn secondary sm" data-act="cgPrev" ${cgPage === 0 ? 'disabled' : ''}>${icon('arrow-left')} Previous</button><span class="small muted" aria-live="polite">Colleges ${cgPage * CG_PAGE + 1}–${Math.min(cs.length, cgPage * CG_PAGE + CG_PAGE)} of ${cs.length} · page ${cgPage + 1} of ${pages}</span><button class="btn secondary sm" data-act="cgNext" ${cgPage >= pages - 1 ? 'disabled' : ''}>Next ${icon('arrow-right')}</button>` : '');
 }
 actions.cgPrev = () => { cgPage--; paintColleges(true); $('#colleges')?.scrollIntoView({ block: 'start', behavior: reduced() ? 'auto' : 'smooth' }); };
@@ -201,7 +250,8 @@ actions.tv = () => { const d = document.documentElement; if (document.fullscreen
 
 // ---------- sign-in pages ----------
 async function renderLogin(role = 'college') {
-  const roles = [['college', 'College', 'building'], ['officer', 'Village officer', 'landmark'], ['staff', 'Staff', 'shield']];
+  const roles = [['college', 'College', 'building'], ['school', 'School', 'book'], ...(feat('public', 'officer_login') ? [['officer', 'Village officer', 'landmark']] : []), ['staff', 'Staff', 'shield']];
+  if (role === 'officer' && !feat('public', 'officer_login')) role = 'college';
   show($('#app'), publicShell(html`<div class="loginpage"><div class="logincard"><div class="lg"><img src="${LOGO.sweepDark}" alt="SWEEP Kozhikode"></div>
     <h1>Sign in</h1><p class="sub">Choose how you take part in the programme.</p>
     <nav class="rolepick" aria-label="Sign in as">${roles.map(([k, l, ic]) => k === 'staff' ? html`<a href="/admin">${icon(ic)}${l}</a>` : html`<a href="#/login/${k}" ${role === k ? 'aria-current="page"' : ''}>${icon(ic)}${l}</a>`)}</nav>
@@ -213,10 +263,10 @@ async function renderLogin(role = 'college') {
         <label class="f"><span>Passcode</span><input name="passcode" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="e.g. K7M2-9XQP" required style="letter-spacing:.08em;font-weight:600;text-transform:uppercase"></label><div data-err></div>
         <button class="btn primary lg" type="submit" style="width:100%">Sign in</button><p class="hint center">Your passcode is shared by the district office. Not listed? Ask them to add you.</p></form>`);
     } else {
-      const list = await api('/api/public/colleges');
-      show($('#lc'), html`<form data-form="loginCollege" class="stack-s">${comboField('college_id', 'Your college', 'Start typing your college name…', list.map(c => ({ id: c.id, label: c.name, sub: '' })))}
+      const school = role === 'school', list = await api(school ? '/api/public/schools' : '/api/public/colleges');
+      show($('#lc'), html`<form data-form="loginCollege" class="stack-s">${comboField('college_id', school ? 'Your school' : 'Your college', school ? 'Start typing your school name…' : 'Start typing your college name…', list.map(c => ({ id: c.id, label: c.name, sub: '' })))}
         <label class="f"><span>Password</span><input name="passcode" type="password" autocomplete="current-password" required></label><div data-err></div>
-        <button class="btn primary lg" type="submit" style="width:100%">Sign in</button><p class="hint center">First time? Use the starting password shared by the district office, then change it from your workspace.</p></form>`);
+        <button class="btn primary lg" type="submit" style="width:100%">Sign in</button><p class="hint center">${school ? html`New school? <a href="#/school-signup">Register here</a>.` : 'First time? Use the starting password shared by the district office, then change it from your workspace.'}</p></form>`);
     }
     wireCombo($('#lc'));
   } catch (e) { show($('#lc'), html`<div class="alert err">${e.message}</div>`); }

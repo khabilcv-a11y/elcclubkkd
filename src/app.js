@@ -1,8 +1,8 @@
 // The portal's request handling: public + sign-in routes, then the college and staff routes. Runs inside the Portal object.
 import { openDb, log } from './lib/db.js';
 import { routes, route, guardCheck, COOKIE, setCookie, sessionUser, issueSession, whoIs } from './lib/router.js';
-import { HttpError, verifySecret, normPasscode } from './lib/util.js';
-import { hashSecret } from './lib/util.js';
+import { HttpError, verifySecret, normPasscode, hashSecret, reqStr, str, phone, emailOk, nowIso } from './lib/util.js';
+import { featureMap, guardedFeature, isFeature } from './lib/features.js';
 import { publicBoard } from './lib/stats.js';
 import './routes/college.js';
 import './routes/admin.js';
@@ -10,6 +10,9 @@ import './routes/officers.js';
 import './routes/officer.js';
 import './routes/content.js';
 import './routes/reports.js';
+import './routes/campaign.js';
+import './routes/desk.js';
+import './routes/gallery.js';
 
 // ---------- public + auth routes ----------
 let boardCache = { at: 0, data: null };
@@ -25,7 +28,24 @@ route('GET', '/api/whoami', null, async ctx => {
   const u = await sessionUser(ctx, 'staff');
   return u ? { kind: 'staff', name: u.name } : { kind: null, name: null };
 });
-route('GET', '/api/public/colleges', null, ctx => ctx.db.all('SELECT id,name FROM colleges WHERE active=1 ORDER BY name'));
+route('GET', '/api/public/colleges', null, ctx => ctx.db.all("SELECT id,name FROM colleges WHERE active=1 AND COALESCE(kind,'college')<>'school' ORDER BY name"));
+route('GET', '/api/public/schools', null, ctx => ctx.db.all("SELECT id,name FROM colleges WHERE active=1 AND kind='school' ORDER BY name"));
+
+// a school that has not formed an ELC yet signs itself up and chooses its own password
+route('POST', '/api/public/school-signup', null, async ctx => {
+  if (!(await featureMap(ctx.db)).public.school_signup) throw new HttpError(403, 'School sign-up is closed right now.');
+  await ctx.throttle(`su:${ctx.ip}`, 6, 3600000);
+  const b = ctx.body, name = reqStr(b.name, 'School name', 160).replace(/\s+/g, ' ');
+  const pw = String(b.password || '');
+  if (pw.length < 8) throw new HttpError(400, 'Choose a password of at least 8 characters');
+  if (await ctx.db.get('SELECT 1 x FROM colleges WHERE lower(name)=lower(?)', name)) throw new HttpError(409, 'A school or college with this name is already registered. Try signing in instead, or ask the district office.');
+  const h = await hashSecret(pw, 20000);
+  const id = await ctx.db.insert('INSERT INTO colleges(name,short_name,address,phone,email,coordinator,passcode_hash,passcode_sent_at,active,created_at,kind) VALUES (?,?,?,?,?,?,?,?,1,?,?)',
+    name, name.slice(0, 40), reqStr(b.address, 'Address', 300), phone(b.phone), emailOk(b.email, 'School email'), reqStr(b.coordinator, 'Teacher in charge', 100), h, nowIso(), nowIso(), 'school');
+  await log(ctx.db, 'school', name, null, 'school_signup', 'School signed up', ctx.ip);
+  await issueSession(ctx, 'college', { id, passcode_hash: h }, 12);
+  return { ok: true };
+});
 
 route('POST', '/api/auth/college', null, async ctx => {
   const id = Number(ctx.body.college_id), key = `c:${ctx.ip}:${id}`;
@@ -107,6 +127,12 @@ export async function handle(req, env, execCtx, extra) {
       params: Object.fromEntries(r.keys.map((k, i) => [k, decodeURIComponent(m[i + 1])])), query: Object.fromEntries(url.searchParams),
       ip: req.headers.get('cf-connecting-ip') || 'local', body: await readBody(req) };
     await guardCheck(r.guard, ctx);
+    const aud = ctx.college ? (ctx.college.kind === 'school' ? 'school' : 'college') : ctx.user ? 'staff' : ctx.officer ? 'officer' : null;
+    const fk = aud && guardedFeature(url.pathname, aud);
+    if (fk) {
+      const [fa, fid] = fk.split('.');
+      if (!isFeature(fk) || !(await featureMap(db))[fa][fid]) throw new HttpError(403, 'This section is switched off for now.');
+    }
     const out = (await r.handler(ctx)) ?? { ok: true };
     ok = true;
     await db.finish(true);                    // save changed rows to the Google Sheet (waits only if real data changed)

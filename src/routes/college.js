@@ -83,7 +83,7 @@ route('GET', '/api/college/overview', 'college', async ctx => {
     delete out.lat; delete out.lng; return out;
   });
   return {
-    college: { id: c.id, name: c.name, short_name: c.short_name, address: c.address, phone: c.phone, email: c.email, coordinator: c.coordinator, lsgi: c.lsgi },
+    college: { id: c.id, kind: c.kind === 'school' ? 'school' : 'college', name: c.name, short_name: c.short_name, address: c.address, phone: c.phone, email: c.email, coordinator: c.coordinator, lsgi: c.lsgi },
     stats: stats.find(s => s.id === c.id), assignments, requests, days, pool, today: todayStr(),
     photos_enabled: driveConfigured(ctx.env),
   };

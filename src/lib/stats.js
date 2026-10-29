@@ -70,6 +70,17 @@ export async function publicBoard(db) {
     return { id: v.id, name: v.name, taluk: v.taluk || 'Other', lsgi: v.lsgi, lat: v.lat, lng: v.lng, college: v.college || null, status,
       days: t.days, present: t.present, addressed: t.addressed, registered: t.registered };
   });
+  const [enrolRows, deskTot, insts] = await Promise.all([
+    db.all('SELECT college_id id,SUM(strength) strength,SUM(registered) registered,SUM(ineligible) ineligible FROM enrol_classes GROUP BY college_id'),
+    db.get('SELECT COALESCE(SUM(registrations),0) regs,COALESCE(SUM(volunteers),0) vols,COUNT(DISTINCT college_id) colleges FROM desk_days'),
+    db.all("SELECT id,name,short_name,COALESCE(kind,'college') kind FROM colleges WHERE active=1 ORDER BY name")]);
+  const em = new Map(enrolRows.map(r => [r.id, r]));
+  const campusList = insts.map(c => { const e = em.get(c.id) || { strength: 0, registered: 0, ineligible: 0 }, eligible = Math.max(0, e.strength - e.ineligible);
+    return { id: c.id, name: c.name, short_name: c.short_name || c.name, kind: c.kind, strength: e.strength, registered: e.registered, ineligible: e.ineligible, eligible, balance: Math.max(0, eligible - e.registered), pct: eligible ? Math.min(100, Math.round(e.registered * 100 / eligible)) : null }; });
+  const ct = campusList.reduce((t, c) => ({ strength: t.strength + c.strength, registered: t.registered + c.registered, ineligible: t.ineligible + c.ineligible }), { strength: 0, registered: 0, ineligible: 0 });
+  ct.eligible = Math.max(0, ct.strength - ct.ineligible); ct.balance = Math.max(0, ct.eligible - ct.registered); ct.pct = ct.eligible ? Math.min(100, Math.round(ct.registered * 100 / ct.eligible)) : null;
+  ct.reporting = campusList.filter(c => c.strength > 0).length;
+  const campus = { totals: ct, institutions: campusList, colleges: campusList.filter(c => c.kind !== 'school').length, schools: campusList.filter(c => c.kind === 'school').length, desk: { registrations: deskTot.regs, volunteers: deskTot.vols, reporting: deskTot.colleges } };
   const sum = k => colleges.reduce((n, c) => n + c[k], 0);
   const tal = new Map();
   for (const v of villages) {
@@ -102,6 +113,6 @@ export async function publicBoard(db) {
     },
     taluks: [...tal.values()].sort((a, b) => b.registered - a.registered),
     feed: feedRaw.filter(f => f.present > 0).slice(0, 8),
-    colleges, villages, trend, awards, formula: SCORE_FORMULA, today,
+    campus, colleges, villages, trend, awards, formula: SCORE_FORMULA, today,
   };
 }

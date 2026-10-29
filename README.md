@@ -105,3 +105,13 @@ Also included: announcements (to everyone / colleges / officers), a college help
 - If two people change the very same record at the same instant, the second save is refused with "changed by someone else, refresh" rather than silently overwriting.
 - Sessions are signed cookies valid 8 h (staff) / 12 h (college). Changing a password or re-pushing a passcode signs the old sessions out.
 - Starter villages (`src/lib/villages.js`) have **approximate** coordinates; correct them and add officer contacts in Staff → Villages. Distances are straight-line.
+
+## Campus to booth drive
+
+The portal now runs the drive to bring every eligible student onto the electoral roll (target: 100%).
+
+- **Enrolment drive.** A college or school creates one link (Enrolment drive page) and shares it with its department coordinators. The link identifies the institution. A coordinator opens it, types the department, adds the classes with *total students, already registered, under 17*, and submits. The institution sees a department table with totals; the district console shows each institution and expands to its departments and classes. Reports: Reports and exports, "Enrolment by college / school", "by department", "by class".
+- **Help desk daily report.** Each day an institution records registrations made and volunteers present, and adds volunteers of other activities (Flash Mob, Class to Class Campaign, Game Zone, Other with a custom name). Names used before are suggested. Reports: "Help desk totals", "day by day", "Volunteers in other activities", "Activities summary".
+- **Gallery and photo frames.** Colleges and schools make framed photos (crop, pinch and zoom, institution name, landscape or portrait JPG), save them to their gallery with a description, download, delete or share on WhatsApp. Saved photos appear in a moving album on the public home page (staff can hide any photo). In Drive they are filed as `College / Activity /` and, when the same activity is held again, `College / Activity / date /`. **After updating, paste the new `Code.local.gs` into Apps Script and deploy a new version** (it adds the nested folders).
+- **Schools.** Schools without an ELC register themselves (home page, Sign in, School) and choose their own password. They get the same workspace as colleges (enrolment drive, daily report, gallery).
+- **Access control.** The super admin can switch sections on or off for colleges, schools, staff and the public page (Administration, Access control). The village programme sections start switched off.

@@ -3,7 +3,10 @@
 const TOURS = {
   college: name => [
     { title: `Welcome, ${name}`, text: 'This one-minute tour shows what you can do here. You can skip it now and replay it any time with the Tour button at the top.' },
-    { sel: 'a.nav[href="#/me/home"]', title: 'Home', text: 'Your progress at a glance: villages, field days staffed, people reached and voters registered.' },
+    { sel: 'a.nav[href="#/me/home"]', title: 'Home', text: 'Your progress at a glance, with quick links to everything below.' },
+    { sel: 'a.nav[href="#/me/enrol"]', title: 'Enrolment drive', text: 'Create one link and share it with your department coordinators. They add their classes and numbers (total students, registered, under 17) and everything adds up here, with the balance still to cover. The target is 100%.' },
+    { sel: 'a.nav[href="#/me/desk"]', title: 'Daily report', text: 'Each day, record how many registrations your help desk made and how many volunteers were present. Add volunteers of other activities too; names you used before are suggested.' },
+    { sel: 'a.nav[href="#/me/gallery"]', title: 'Gallery', text: 'Make framed photos of your events: add a photo, fit it in the frame, type the institution name and event title, then download it or save it here. Saved photos can be shared on WhatsApp and appear on the home page.' },
     { sel: 'a.nav[href="#/me/students"]', title: 'Students', text: 'Add your volunteers one by one, or paste a whole list copied from Excel or WhatsApp (name, then mobile number). Every village needs 2 students a day.' },
     { sel: 'a.nav[href="#/me/villages"]', title: 'My villages', text: 'The villages allotted to you, with the village office address, contact and distance. You can request a change if a village is not workable.' },
     { sel: 'a.nav[href="#/me/schedule"]', title: 'Schedule', text: 'Create the 15 field days for each village in one tap; students are shared out in shifts. Afterwards you can change any day: its date, village, students and a remark; add or remove days; or move the whole schedule.' },
@@ -26,7 +29,11 @@ const TOURS = {
   ],
   staff: (name, role) => [
     { title: `Welcome, ${name}`, text: `You are signed in as ${role}. This tour covers the options you have. Replay it any time with the Tour button.` },
-    { sel: 'a.nav[href="#/dashboard"]', title: 'Dashboard', text: 'District totals, items needing attention (requests, certifications, issues) and the club standings.' },
+    { sel: 'a.nav[href="#/enrol"]', title: 'Enrolment drive', text: 'Every college and school with its students, registered, under-17 and balance to cover. Open an institution to see its departments and classes.' },
+    { sel: 'a.nav[href="#/desk"]', title: 'Help desk reports', text: 'Registrations and volunteers reported from the help desks each day, with totals for every institution.' },
+    { sel: 'a.nav[href="#/gallery"]', title: 'Gallery', text: 'Photos made by colleges and schools. Hide a photo from the public home page or delete it.' },
+    { sel: 'a.nav[href="#/schools"]', title: 'Schools', text: 'Schools that registered themselves. You can reset a school password here.' },
+    { sel: 'a.nav[href="#/dashboard"]', title: 'Dashboard', text: 'District totals and items needing attention.' },
     { sel: 'a.nav[href="#/colleges"]', title: 'Colleges', text: 'Add or edit colleges, search and filter them. Every college starts with the default password; use Reset password to give it back, then share the login by WhatsApp.' },
     { sel: 'a.nav[href="#/villages"]', title: 'Villages', text: 'The village list with office address, contact and map position.' },
     { sel: 'a.nav[href="#/allot"]', title: 'Allotments', text: 'Give each village to one college. A village can belong to only one college.' },
@@ -38,6 +45,7 @@ const TOURS = {
     { sel: 'a.nav[href="#/resources"]', title: 'Resources', text: 'Upload guides and forms for colleges and officers.' },
     { sel: 'a.nav[href="#/reports"]', title: 'Reports and exports', text: 'Pick a report, filter and sort it, choose columns, then print a formatted page or download CSV.' },
     { sel: 'a.nav[href="#/team"]', title: 'Team', text: 'Add staff and interns. Interns see only the colleges and villages you assign. Use Share login to give someone a new password.' },
+    { sel: 'a.nav[href="#/features"]', title: 'Access control', text: 'Switch sections on or off for colleges, schools, staff and the public page. Switched-off sections disappear and stop working.' },
     { sel: 'a.nav[href="#/logs"]', title: 'Activity log', text: 'Every sign-in and management action, for accountability.' },
     { sel: '[data-act=tour]', title: 'That is it', text: 'Press Tour whenever you want to see this again.' },
   ],
@@ -78,7 +86,7 @@ function tourDraw() {
 }
 function startTour(kind, who, role) {
   if (tour) tourEnd();
-  const steps = (TOURS[kind] || (() => []))(who, role);
+  const steps = (TOURS[kind] || (() => []))(who, role).filter(s => !s.sel || !s.sel.startsWith('a.nav') || document.querySelector(s.sel));   // skip sections that are switched off
   if (!steps.length) return;
   const root = document.createElement('div'); root.className = 'tour';
   root.innerHTML = '<div class="tour-spot"></div><div class="tour-card" role="dialog" aria-modal="true" aria-labelledby="tour-h"></div>';

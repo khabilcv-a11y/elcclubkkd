@@ -9,12 +9,15 @@ async function renderCollege(page = 'home') {
   if (!COL) show($('#app'), html`<div class="loading"><div class="spin"></div>Opening your workspace…</div>`);
   try { [COL, CANN] = await Promise.all([api('/api/college/overview'), api('/api/announcements').catch(() => [])]); } catch (e) { return handleErr(e); }
   const unread = CANN.filter(a => !seenIds().includes(a.id)).length;
-  const nav = [{ group: 'Daily work', items: [{ id: 'home', label: 'Home', icon: 'home' }, { id: 'log', label: 'Daily log', icon: 'clipboard' }, { id: 'schedule', label: 'Schedule', icon: 'calendar' }, { id: 'students', label: 'Students', icon: 'users' }] },
+  const aud = COL.college.kind === 'school' ? 'school' : 'college', ok = id => feat(aud, id);
+  const nav = [{ group: 'Campus to booth', items: [{ id: 'home', label: 'Home', icon: 'home' }, { id: 'enrol', label: 'Enrolment drive', icon: 'target' }, { id: 'desk', label: 'Daily report', icon: 'clipboard' }, { id: 'gallery', label: 'Gallery', icon: 'image' }].filter(i => ok(i.id)) },
+    { group: 'Village work', items: [{ id: 'log', label: 'Daily log', icon: 'clipboard' }, { id: 'schedule', label: 'Schedule', icon: 'calendar' }, { id: 'students', label: 'Students', icon: 'users' }].filter(i => ok(i.id)) },
     { group: 'Programme', items: [{ id: 'villages', label: 'My villages', icon: 'map-pin' }, { id: 'notices', label: 'Announcements', icon: 'megaphone', count: unread }, { id: 'help', label: 'Help desk', icon: 'help' }, { id: 'resources', label: 'Resources', icon: 'book' }, { id: 'report', label: 'Reports', icon: 'chart' }] }];
-  const pages = { home: pgHome, log: pgLog, schedule: pgSchedule, students: pgStudents, villages: pgVillages, notices: pgNotices, help: pgHelp, resources: pgResources, report: pgReport };
-  if (!pages[page]) page = 'home';
-  show($('#app'), consoleShell({ product: COL.college.short_name || COL.college.name, who: COL.college.coordinator || COL.college.short_name || 'Coordinator', role: 'College coordinator', nav, active: page, base: '#/me', content: html`<div id="pg"></div>` }));
-  document.title = ({ home: 'Home', log: 'Daily log', schedule: 'Schedule', students: 'Students', villages: 'My villages', notices: 'Announcements', help: 'Help desk', resources: 'Resources', report: 'Reports' }[page]) + ' · ' + (COL.college.short_name || 'College');
+  const navFiltered = nav.map(g => ({ ...g, items: g.items.filter(i => ok(i.id)) })).filter(g => g.items.length);
+  const pages = { enrol: pgEnrol, ...(typeof pgDesk === 'function' ? { desk: pgDesk } : {}), ...(typeof pgGallery === 'function' ? { gallery: pgGallery } : {}), home: pgHome, log: pgLog, schedule: pgSchedule, students: pgStudents, villages: pgVillages, notices: pgNotices, help: pgHelp, resources: pgResources, report: pgReport };
+  if (!pages[page] || !ok(page)) page = 'home';
+  show($('#app'), consoleShell({ product: COL.college.short_name || COL.college.name, who: COL.college.coordinator || COL.college.short_name || 'Coordinator', role: aud === 'school' ? 'School coordinator' : 'College coordinator', nav: navFiltered, active: page, base: '#/me', content: html`<div id="pg"></div>` }));
+  document.title = ({ enrol: 'Enrolment drive', desk: 'Daily report', gallery: 'Gallery', home: 'Home', log: 'Daily log', schedule: 'Schedule', students: 'Students', villages: 'My villages', notices: 'Announcements', help: 'Help desk', resources: 'Resources', report: 'Reports' }[page]) + ' · ' + (COL.college.short_name || 'College');
   await pages[page]($('#pg'));
   announce(document.title);
 }
@@ -25,6 +28,7 @@ const staffed = d => d.volunteers.filter(v => v.name).length >= 2;
 
 // ---------- Home ----------
 async function pgHome(el) {
+  if (!feat(COL.college.kind === 'school' ? 'school' : 'college', 'villages')) return pgHomeCampaign(el);
   const c = COL, s = c.stats, V = c.assignments.length, need = 2 * V, have = c.pool.filter(p => p.active).length;
   const done = c.days.filter(marked).length, total = c.days.length, perVillage = V * 15;
   const todayDays = c.days.filter(d => d.date === c.today), todoToday = todayDays.filter(d => !marked(d) && !villageOf(d.village_id)?.locked);

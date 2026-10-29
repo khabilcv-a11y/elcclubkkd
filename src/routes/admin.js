@@ -49,14 +49,15 @@ function collegeBody(b) {
 }
 route('GET', '/api/staff/colleges', STAFF, async ctx => {
   const s = await scopeOf(ctx);
-  const [stats, rows] = await Promise.all([collegeStats(ctx.db), ctx.db.all('SELECT id,name,short_name,address,phone,email,coordinator,lat,lng,lsgi,passcode_sent_at,passcode_plain AS passcode,last_login_at,active FROM colleges ORDER BY name')]);
+  const [stats, rows] = await Promise.all([collegeStats(ctx.db), ctx.db.all('SELECT id,name,short_name,address,phone,email,coordinator,lat,lng,lsgi,passcode_sent_at,passcode_plain AS passcode,last_login_at,active,kind FROM colleges ORDER BY name')]);
+  const kind = ctx.query.kind === 'school' ? 'school' : ctx.query.kind === 'college' ? 'college' : null;
   const m = new Map(stats.map(c => [c.id, c]));
-  return rows.filter(c => !s || s.colleges.has(c.id)).map(c => ({ ...c, stats: m.get(c.id) || null }));
+  return rows.filter(c => (!s || s.colleges.has(c.id)) && (!kind || (c.kind === 'school' ? 'school' : 'college') === kind)).map(c => ({ ...c, kind: c.kind === 'school' ? 'school' : 'college', stats: m.get(c.id) || null }));
 });
 route('POST', '/api/staff/colleges', OPS, async ctx => {
   const o = collegeBody(ctx.body);
-  const id = await ctx.db.insert('INSERT INTO colleges(name,short_name,address,phone,email,coordinator,lat,lng,lsgi,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
-    o.name, o.short_name, o.address, o.phone, o.email, o.coordinator, o.lat, o.lng, o.lsgi, nowIso());
+  const id = await ctx.db.insert('INSERT INTO colleges(name,short_name,address,phone,email,coordinator,lat,lng,lsgi,created_at,kind) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+    o.name, o.short_name, o.address, o.phone, o.email, o.coordinator, o.lat, o.lng, o.lsgi, nowIso(), ctx.body.kind === 'school' ? 'school' : 'college');
   await slog(ctx, 'college_add', o.name);
   const { code } = await pushPasscode(ctx, id);
   return { ok: true, id, code };
@@ -101,7 +102,7 @@ route('POST', '/api/staff/colleges/:id/passcode', STAFF, async ctx => {
 route('POST', '/api/staff/passcodes/bulk', STAFF, async ctx => {
   const s = await scopeOf(ctx);
   const all = ctx.body.all === true;      // true = reset every active college to the default password
-  const ids = (await ctx.db.all(all ? 'SELECT id FROM colleges WHERE active=1' : 'SELECT id FROM colleges WHERE active=1 AND passcode_sent_at IS NULL')).map(r => r.id).filter(id => !s || s.colleges.has(id));
+  const ids = (await ctx.db.all(all ? "SELECT id FROM colleges WHERE active=1 AND COALESCE(kind,'college')<>'school'" : "SELECT id FROM colleges WHERE active=1 AND COALESCE(kind,'college')<>'school' AND passcode_sent_at IS NULL")).map(r => r.id).filter(id => !s || s.colleges.has(id));
   const results = [];
   for (const id of ids) results.push(await pushPasscode(ctx, id));
   return { results };

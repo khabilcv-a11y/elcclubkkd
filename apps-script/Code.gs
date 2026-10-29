@@ -185,9 +185,15 @@ function apply(ops) {
 function readCount(sh) { return Math.max(sh.getLastRow() - 1, 0); }
 
 // ---------- photos in Drive ----------
-function folderFor(name) {
-  var root = DriveApp.getFolderById(PHOTO_FOLDER_ID), it = root.getFoldersByName(name);
-  return it.hasNext() ? it.next() : root.createFolder(name);
+function folderFor(path) {
+  var cur = DriveApp.getFolderById(PHOTO_FOLDER_ID);
+  String(path).split('/').forEach(function (part) {
+    part = part.trim();
+    if (!part) return;
+    var it = cur.getFoldersByName(part);
+    cur = it.hasNext() ? it.next() : cur.createFolder(part);
+  });
+  return cur;
 }
 function upload(req) {
   if (PHOTO_FOLDER_ID.indexOf('PASTE') === 0) return { error: 'PHOTO_FOLDER_ID is not set in the Apps Script' };

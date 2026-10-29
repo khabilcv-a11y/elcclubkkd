@@ -76,6 +76,9 @@ export async function openDb(env, execCtx) {
       if (!flushScheduled) { flushScheduled = true; execCtx.waitUntil(sleep(1500).then(() => flushLazy(env))); }
       return;
     }
+    // a background update (e.g. a sign-in time) queued earlier carries an older copy of its row: drop it when this save rewrites the same row
+    const fresh = new Set(send.filter(o => o.op !== 'i').map(o => o.t + '|' + JSON.stringify(o.pk)));
+    for (let i = lazyBuf.length - 1; i >= 0; i--) if (lazyBuf[i].op === 'u' && fresh.has(lazyBuf[i].t + '|' + JSON.stringify(lazyBuf[i].pk))) lazyBuf.splice(i, 1);
     const piggy = [];
     for (let i = lazyBuf.length - 1; i >= 0; i--) if (lazyBuf[i].op === 'i' && LAZY_TABLES.has(lazyBuf[i].t)) piggy.unshift(...lazyBuf.splice(i, 1));
     let r;

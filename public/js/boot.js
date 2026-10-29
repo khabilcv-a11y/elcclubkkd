@@ -8,10 +8,12 @@ const TITLES = { '': 'SWEEP Kozhikode · Electoral Literacy Clubs', board: 'Disp
 
 async function route() {
   const [seg, a, b] = location.hash.replace(/^#\/?/, '').split('/');
-  clearInterval(boardTimer);
+  clearInterval(boardTimer); if (typeof albumTimer !== 'undefined') clearInterval(albumTimer);
   window.scrollTo(0, 0);
   document.title = (TITLES[seg || ''] || TITLES['']) + (seg ? ' · SWEEP Kozhikode' : '');
   if (seg === 'ack') return renderAck(a);
+  if (seg === 'dept') return renderDept(a);
+  if (seg === 'school-signup') return renderSchoolSignup();
   if (seg === 'officer-login') return renderLogin('officer');
   if (seg === 'login') return ME.kind ? (location.hash = ME.kind === 'college' ? '#/me' : '#/officer') : renderLogin(a || 'college');
   if (seg === 'me') return ME.kind === 'college' ? renderCollege(a || 'home') : (location.hash = '#/login/college');
@@ -26,7 +28,7 @@ actions.signout = async () => {
 
 (async () => {
   setUnauth(() => { ME.kind = null; location.hash = '#/login'; toast('Your session ended. Please sign in again.', true); });
-  await detectMe();
+  await Promise.all([detectMe(), loadFeatures()]);
   window.addEventListener('hashchange', route);
   route();
 })();

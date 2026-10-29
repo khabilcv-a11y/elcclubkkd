@@ -10,7 +10,7 @@ function html(strings, ...vals) {
   const f = v => v instanceof Raw ? v.s : Array.isArray(v) ? v.map(f).join('') : esc(v);
   return raw(strings.reduce((o, s, i) => o + s + (i < vals.length ? f(vals[i]) : ''), ''));
 }
-const show = (el, tpl) => { el.innerHTML = tpl instanceof Raw ? tpl.s : esc(tpl); reveal(el); };
+const show = (el, tpl) => { if (!el) return; el.innerHTML = tpl instanceof Raw ? tpl.s : esc(tpl); reveal(el); };
 
 const n = v => (v == null ? '—' : Number(v).toLocaleString('en-IN'));
 const pct = v => (v == null ? '—' : v + '%');
@@ -25,6 +25,10 @@ const initials = s => String(s || '?').split(/\s+/).filter(Boolean).slice(0, 2).
 
 // ---------- icons (outline, 24px grid) ----------
 const ICONS = {
+  target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
+  share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 10.7l6.8-4M8.6 13.3l6.8 4"/>',
+  image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-8 9"/>',
+  crop: '<path d="M6 2v14a2 2 0 002 2h14M2 6h14a2 2 0 012 2v14"/>',
   home: '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>',
   users: '<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14.5c2.4 0 4 1.8 4 4.5"/>',
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/>',
@@ -236,6 +240,11 @@ function initA11y() {
 }
 document.addEventListener('DOMContentLoaded', () => { applyA11y(); initA11y(); });
 if (document.readyState !== 'loading') { applyA11y(); initA11y(); }
+
+// section switches set by the super admin (loaded once at start)
+let FEAT = null;
+async function loadFeatures() { try { FEAT = await api('/api/features'); } catch { FEAT = null; } }
+const feat = (aud, id) => !FEAT || FEAT[aud]?.[id] !== false;
 
 // Student certificates for one certified village (data from /certificates/...): preview in a dialog, print them all at once
 function showCertificates(d) {
