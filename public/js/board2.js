@@ -1,6 +1,21 @@
 'use strict';
 // ---- Campus to booth on the public site: ranking (podium + cards), display board, photo gallery page ----
 const rankedCampus = list => list.filter(i => i.strength > 0 && i.pct != null).sort((a, b) => b.pct - a.pct || b.registered - a.registered || a.name.localeCompare(b.name));
+// "Help desk" is shown once: the category is only added when it says something different from the title
+const albumMeta = g => [g.activity && String(g.activity).toLowerCase() !== String(g.title || '').toLowerCase() ? g.activity : '', g.event_date ? fdate(g.event_date) : ''].filter(Boolean).join(' · ');
+const albumName = (g, size = 30) => html`<b class="withav">${g.logo_v ? avatar(g.college_id, g.logo_v, g.college, size) : ''}${g.college}</b>`;
+function openLightbox(list, start) {
+  const m = modal(html`<div id="lbx"></div>`, { wide: true }); let at = start;
+  const paintBox = () => {
+    const g = list[at];
+    show($('#lbx', m), html`<figure class="lightbox"><img src="/api/public/album/${g.id}/image" alt="${g.title}, ${g.college}"><figcaption>${albumName(g, 36)}<span>${g.title}</span>${albumMeta(g) ? html`<small>${albumMeta(g)}</small>` : ''}</figcaption></figure>
+      <div class="row between lbnav"><button class="btn secondary" data-lb="-1" aria-label="Previous photo">${icon('arrow-left')} Previous</button><span class="small muted">${at + 1} of ${list.length}</span><button class="btn secondary" data-lb="1" aria-label="Next photo">Next ${icon('arrow-right')}</button><button class="btn primary" data-act="closeModal">Close</button></div>`);
+  };
+  const go = d => { at = (at + d + list.length) % list.length; paintBox(); };
+  m.addEventListener('click', e => { const b = e.target.closest('[data-lb]'); if (b) go(Number(b.dataset.lb)); });
+  const key = e => { if (!document.body.contains(m)) return document.removeEventListener('keydown', key); if (e.key === 'ArrowRight') go(1); else if (e.key === 'ArrowLeft') go(-1); };
+  document.addEventListener('keydown', key); paintBox();
+}
 const kindLabel = i => (i.kind === 'school' ? 'School' : 'College');
 
 function podiumHtml(top) {
@@ -51,16 +66,12 @@ async function renderPublicGallery() {
   if (!feat('public', 'album')) { location.hash = '#/'; return; }
   show($('#app'), publicShell(html`<div class="wrap section"><div class="loading"><div class="spin"></div>Loading the photos…</div></div>`, 'gallery'));
   let items = []; try { items = await api('/api/public/album?all=1'); } catch (e) { return show($('#app'), publicShell(html`<div class="wrap section"><div class="alert err">${e.message}</div></div>`, 'gallery')); }
-  window.__pubgal = items;
+  window.__pubgal = items; window.__pubgalList = items;
   show($('#app'), publicShell(html`<div class="wrap" style="padding-top:26px">${pageHead('Photo gallery', 'Moments from the Campus to booth drive, shared by colleges and schools.', html`<a class="btn secondary" href="#/">${icon('home')} Home</a>`, 'Electoral Literacy Clubs')}
     <div class="row between" style="margin-bottom:14px"><span class="small muted">${items.length} photo${items.length === 1 ? '' : 's'}</span><label class="f" style="margin:0;min-width:240px"><span class="sr">Search photos</span><input type="search" id="gq" placeholder="Search by college or activity…" value="${esc(GALQ)}"></label></div>
     <div id="pgrid"></div></div>`, 'gallery'));
-  const paint = () => { const q = GALQ.toLowerCase(), list = items.filter(g => !q || [g.college, g.title, g.activity].some(x => String(x || '').toLowerCase().includes(q)));
-    show($('#pgrid'), list.length ? html`<div class="pgrid">${list.map(g => html`<button class="pcard rv" data-act="viewPhoto" data-id="${g.id}" aria-label="Open photo: ${g.title}, ${g.college}"><img src="/api/public/album/${g.id}/image" alt="${g.title}, ${g.college}" loading="lazy"><span class="cap"><b class="withav">${avatar(g.college_id, g.logo_v, g.college, 24)}${g.college}</b><span>${g.title}</span><small>${g.activity} · ${fdate(g.event_date)}</small></span></button>`)}</div>` : empty('No photos yet', 'Photos appear here as colleges and schools share them.', 'image')); };
+  const paint = () => { const q = GALQ.toLowerCase(), list = items.filter(g => !q || [g.college, g.title, g.activity].some(x => String(x || '').toLowerCase().includes(q))); window.__pubgalList = list;
+    show($('#pgrid'), list.length ? html`<div class="pgrid">${list.map(g => html`<button class="pcard rv" data-act="viewPhoto" data-id="${g.id}" aria-label="Open photo: ${g.title}, ${g.college}"><img src="/api/public/album/${g.id}/image" alt="${g.title}, ${g.college}" loading="lazy"><span class="cap">${albumName(g, 24)}<span>${g.title}</span>${albumMeta(g) ? html`<small>${albumMeta(g)}</small>` : ''}</span></button>`)}</div>` : empty('No photos yet', 'Photos appear here as colleges and schools share them.', 'image')); };
   paint(); $('#gq').addEventListener('input', e => { GALQ = e.target.value; paint(); });
 }
-actions.viewPhoto = el => {
-  const g = window.__pubgal.find(x => x.id === Number(el.dataset.id));
-  modal(html`<figure class="lightbox"><img src="/api/public/album/${g.id}/image" alt="${g.title}, ${g.college}"><figcaption><b class="withav">${avatar(g.college_id, g.logo_v, g.college, 30)}${g.college}</b><span>${g.title}</span><small>${g.activity} · ${fdate(g.event_date)}</small></figcaption></figure>
-    <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn secondary" data-act="closeModal">Close</button></div>`, { wide: true });
-};
+actions.viewPhoto = el => { const list = window.__pubgalList || window.__pubgal; openLightbox(list, Math.max(0, list.findIndex(x => x.id === Number(el.dataset.id)))); };

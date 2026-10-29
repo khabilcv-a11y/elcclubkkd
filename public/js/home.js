@@ -99,7 +99,7 @@ function startAlbum() {
   box.addEventListener('focusin', () => { paused = true; }); box.addEventListener('focusout', () => { paused = false; });
   box.addEventListener('keydown', e => { if (e.key === 'ArrowRight') setAlbum(albumAt + 1); else if (e.key === 'ArrowLeft') setAlbum(albumAt - 1); });
   box.addEventListener('pointerdown', e => { x0 = e.clientX; }); box.addEventListener('pointerup', e => { if (x0 != null && Math.abs(e.clientX - x0) > 45) { setAlbum(albumAt + (e.clientX < x0 ? 1 : -1)); box.dataset.swiped = '1'; setTimeout(() => { delete box.dataset.swiped; }, 50); } x0 = null; });
-  if (!reduced() && albumList.length > 1) albumTimer = setInterval(() => { if (!paused && document.getElementById('cfstage')) setAlbum(albumAt + 1); }, 4800);
+  if (!reduced() && albumList.length > 1) albumTimer = setInterval(() => { if (!paused && !document.querySelector('.overlay') && document.getElementById('cfstage')) setAlbum(albumAt + 1); }, 4800);
 }
 function setAlbum(i) {
   const cards = $$('#cfstage .cf-card'), N = cards.length; if (!N) return;
@@ -112,12 +112,12 @@ function setAlbum(i) {
   });
   const g = albumList[albumAt], cap = $('#cfcap');
   cap.classList.remove('in'); void cap.offsetWidth;
-  cap.innerHTML = `<b class="withav">${g.logo_v ? `<img class="av" src="${logoUrl(g.college_id, g.logo_v)}" alt="" style="width:34px;height:34px">` : ''}${esc(g.college)}</b><span>${esc(g.title)}</span><small>${esc(g.activity)}${g.event_date ? ' · ' + fdate(g.event_date) : ''}</small>`; cap.classList.add('in');
+  cap.innerHTML = `<b class="withav">${g.logo_v ? `<img class="av" src="${logoUrl(g.college_id, g.logo_v)}" alt="" style="width:34px;height:34px">` : ''}${esc(g.college)}</b><span>${esc(g.title)}</span>${albumMeta(g) ? `<small>${esc(albumMeta(g))}</small>` : ''}`; cap.classList.add('in');
   show($('#cfdots'), html`${albumList.map((_, k) => html`<i class="${k === albumAt ? 'on' : ''}"></i>`)}`);
 }
 actions.albNext = () => setAlbum(albumAt + 1);
 actions.albPrev = () => setAlbum(albumAt - 1);
-actions.cfGo = el => { if ($('#cf')?.dataset.swiped) return; const k = Number(el.dataset.i); if (k !== albumAt) setAlbum(k); };
+actions.cfGo = el => { if ($('#cf')?.dataset.swiped) return; const k = Number(el.dataset.i); if (k !== albumAt) setAlbum(k); else openLightbox(albumList, k); };
 
 function campusSection(C) {
   const T = C.totals;
