@@ -6,12 +6,12 @@ const kindLabel = i => (i.kind === 'school' ? 'School' : 'College');
 function podiumHtml(top) {
   if (!top.length) return '';
   const order = top.length >= 3 ? [1, 0, 2] : top.map((_, k) => k);
-  return html`<div class="podium cpod" style="grid-template-columns:repeat(${top.length},1fr);max-width:${top.length * 380}px;margin-inline:auto">${order.map(k => { const c = top[k]; return html`<div class="pod p${k + 1} rv"><div class="m">${k + 1}</div><h3>${c.name}</h3><small>${kindLabel(c)}</small>
+  return html`<div class="podium cpod" style="grid-template-columns:repeat(${top.length},1fr);max-width:${top.length * 380}px;margin-inline:auto">${order.map(k => { const c = top[k]; return html`<div class="pod p${k + 1} rv"><div class="m">${k + 1}</div>${avatar(c.id, c.logo_v, c.name, 56)}<h3>${c.name}</h3><small>${kindLabel(c)}</small>
       <div class="sc">${c.pct}%</div><div class="pbar">${progress(c.pct, c.pct >= 100 ? 'green' : 'saffron')}</div><div class="small muted"><b>${n(c.registered)}</b> registered</div></div>`; })}</div>`;
 }
 function rankRows(list, from) {
   return html`${list.map((c, i) => html`<div class="lbrow rv" style="grid-template-columns:44px minmax(160px,2.4fr) minmax(130px,2fr) minmax(100px,1fr)"><div class="rank">${from + i + 1}</div>
-    <div class="nm">${c.name}<small>${kindLabel(c)}${c.status === 'active' ? ' · active this week' : ''}</small></div>
+    <div class="nm nmav">${avatar(c.id, c.logo_v, c.name, 38)}<span>${c.name}<small>${kindLabel(c)}${c.status === 'active' ? ' · active this week' : ''}</small></span></div>
     <div>${progress(c.pct, c.pct >= 100 ? 'green' : 'saffron')}<small class="muted">${c.pct}% covered</small></div>
     <div class="c"><b>${n(c.registered)}</b><small style="display:block">registered</small></div></div>`)}`;
 }
@@ -56,11 +56,11 @@ async function renderPublicGallery() {
     <div class="row between" style="margin-bottom:14px"><span class="small muted">${items.length} photo${items.length === 1 ? '' : 's'}</span><label class="f" style="margin:0;min-width:240px"><span class="sr">Search photos</span><input type="search" id="gq" placeholder="Search by college or activity…" value="${esc(GALQ)}"></label></div>
     <div id="pgrid"></div></div>`, 'gallery'));
   const paint = () => { const q = GALQ.toLowerCase(), list = items.filter(g => !q || [g.college, g.title, g.activity].some(x => String(x || '').toLowerCase().includes(q)));
-    show($('#pgrid'), list.length ? html`<div class="pgrid">${list.map(g => html`<button class="pcard rv" data-act="viewPhoto" data-id="${g.id}" aria-label="Open photo: ${g.title}, ${g.college}"><img src="/api/public/album/${g.id}/image" alt="${g.title}, ${g.college}" loading="lazy"><span class="cap"><b>${g.college}</b><span>${g.title}</span><small>${g.activity} · ${fdate(g.event_date)}</small></span></button>`)}</div>` : empty('No photos yet', 'Photos appear here as colleges and schools share them.', 'image')); };
+    show($('#pgrid'), list.length ? html`<div class="pgrid">${list.map(g => html`<button class="pcard rv" data-act="viewPhoto" data-id="${g.id}" aria-label="Open photo: ${g.title}, ${g.college}"><img src="/api/public/album/${g.id}/image" alt="${g.title}, ${g.college}" loading="lazy"><span class="cap"><b class="withav">${avatar(g.college_id, g.logo_v, g.college, 24)}${g.college}</b><span>${g.title}</span><small>${g.activity} · ${fdate(g.event_date)}</small></span></button>`)}</div>` : empty('No photos yet', 'Photos appear here as colleges and schools share them.', 'image')); };
   paint(); $('#gq').addEventListener('input', e => { GALQ = e.target.value; paint(); });
 }
 actions.viewPhoto = el => {
   const g = window.__pubgal.find(x => x.id === Number(el.dataset.id));
-  modal(html`<figure class="lightbox"><img src="/api/public/album/${g.id}/image" alt="${g.title}, ${g.college}"><figcaption><b>${g.college}</b><span>${g.title}</span><small>${g.activity} · ${fdate(g.event_date)}</small></figcaption></figure>
+  modal(html`<figure class="lightbox"><img src="/api/public/album/${g.id}/image" alt="${g.title}, ${g.college}"><figcaption><b class="withav">${avatar(g.college_id, g.logo_v, g.college, 30)}${g.college}</b><span>${g.title}</span><small>${g.activity} · ${fdate(g.event_date)}</small></figcaption></figure>
     <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn secondary" data-act="closeModal">Close</button></div>`, { wide: true });
 };

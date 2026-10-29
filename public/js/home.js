@@ -112,7 +112,7 @@ function setAlbum(i) {
   });
   const g = albumList[albumAt], cap = $('#cfcap');
   cap.classList.remove('in'); void cap.offsetWidth;
-  cap.innerHTML = `<b>${esc(g.college)}</b><span>${esc(g.title)}</span><small>${esc(g.activity)}${g.event_date ? ' · ' + fdate(g.event_date) : ''}</small>`; cap.classList.add('in');
+  cap.innerHTML = `<b class="withav">${g.logo_v ? `<img class="av" src="${logoUrl(g.college_id, g.logo_v)}" alt="" style="width:34px;height:34px">` : ''}${esc(g.college)}</b><span>${esc(g.title)}</span><small>${esc(g.activity)}${g.event_date ? ' · ' + fdate(g.event_date) : ''}</small>`; cap.classList.add('in');
   show($('#cfdots'), html`${albumList.map((_, k) => html`<i class="${k === albumAt ? 'on' : ''}"></i>`)}`);
 }
 actions.albNext = () => setAlbum(albumAt + 1);
@@ -216,7 +216,7 @@ function paintColleges(keepPage) {
   const cs = (feat('public', 'map') ? [...BOARD.colleges] : BOARD.campus.institutions.map(i => ({ ...i, villages: 0 }))).sort((a, b) => a.name.localeCompare(b.name)).filter(c => !q || c.name.toLowerCase().includes(q));
   const pages = Math.max(1, Math.ceil(cs.length / CG_PAGE)); cgPage = Math.min(cgPage, pages - 1);
   const shown = cs.slice(cgPage * CG_PAGE, cgPage * CG_PAGE + CG_PAGE);
-  show($('#cg'), cs.length ? html`${shown.map(c => html`<div class="cg rv"><span class="lt">${initials(c.short_name)}</span><div class="grow"><b>${c.name}</b><small>${feat('public', 'map') ? `${c.villages} village${c.villages === 1 ? '' : 's'} · ${n(c.registered)} enrolled` : `${c.kind === 'school' ? 'School' : 'College'} · ${c.pct == null ? 'not started' : c.pct + '% covered'}${c.status === 'active' ? ' · active' : ''}`}</small></div></div>`)}` : empty('No college matches', '', 'search'));
+  show($('#cg'), cs.length ? html`${shown.map(c => html`<div class="cg rv">${c.logo_v ? avatar(c.id, c.logo_v, c.name, 36) : html`<span class="lt">${initials(c.short_name)}</span>`}<div class="grow"><b>${c.name}</b><small>${feat('public', 'map') ? `${c.villages} village${c.villages === 1 ? '' : 's'} · ${n(c.registered)} enrolled` : `${c.kind === 'school' ? 'School' : 'College'} · ${c.pct == null ? 'not started' : c.pct + '% covered'}${c.status === 'active' ? ' · active' : ''}`}</small></div></div>`)}` : empty('No college matches', '', 'search'));
   show($('#cgpager'), pages > 1 ? html`<button class="btn secondary sm" data-act="cgPrev" ${cgPage === 0 ? 'disabled' : ''}>${icon('arrow-left')} Previous</button><span class="small muted" aria-live="polite">Colleges ${cgPage * CG_PAGE + 1}–${Math.min(cs.length, cgPage * CG_PAGE + CG_PAGE)} of ${cs.length} · page ${cgPage + 1} of ${pages}</span><button class="btn secondary sm" data-act="cgNext" ${cgPage >= pages - 1 ? 'disabled' : ''}>Next ${icon('arrow-right')}</button>` : '');
 }
 actions.cgPrev = () => { cgPage--; paintColleges(true); $('#colleges')?.scrollIntoView({ block: 'start', behavior: reduced() ? 'auto' : 'smooth' }); };

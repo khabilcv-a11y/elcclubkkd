@@ -16,7 +16,7 @@ async function renderCollege(page = 'home') {
   const navFiltered = nav.map(g => ({ ...g, items: g.items.filter(i => ok(i.id)) })).filter(g => g.items.length);
   const pages = { enrol: pgEnrol, ...(typeof pgDesk === 'function' ? { desk: pgDesk } : {}), ...(typeof pgGallery === 'function' ? { gallery: pgGallery } : {}), home: pgHome, log: pgLog, schedule: pgSchedule, students: pgStudents, villages: pgVillages, notices: pgNotices, help: pgHelp, resources: pgResources, report: pgReport };
   if (!pages[page] || !ok(page)) page = 'home';
-  show($('#app'), consoleShell({ product: COL.college.short_name || COL.college.name, who: COL.college.coordinator || COL.college.short_name || 'Coordinator', role: aud === 'school' ? 'School coordinator' : 'College coordinator', nav: navFiltered, active: page, base: '#/me', content: html`<div id="pg"></div>` }));
+  show($('#app'), consoleShell({ product: COL.college.short_name || COL.college.name, who: COL.college.coordinator || COL.college.short_name || 'Coordinator', avatarUrl: COL.college.logo_v ? logoUrl(COL.college.id, COL.college.logo_v) : '', role: aud === 'school' ? 'School coordinator' : 'College coordinator', nav: navFiltered, active: page, base: '#/me', content: html`<div id="pg"></div>` }));
   document.title = ({ enrol: 'Enrolment drive', desk: 'Daily report', gallery: 'Gallery', home: 'Home', log: 'Daily log', schedule: 'Schedule', students: 'Students', villages: 'My villages', notices: 'Announcements', help: 'Help desk', resources: 'Resources', report: 'Reports' }[page]) + ' · ' + (COL.college.short_name || 'College');
   await pages[page]($('#pg'));
   announce(document.title);

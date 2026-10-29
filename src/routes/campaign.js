@@ -55,9 +55,9 @@ route('PUT', '/api/college/enrol', 'college', async ctx => {
 // ---------- district view ----------
 route('GET', '/api/staff/enrol', 'staff', async ctx => {
   const s = await scopeOf(ctx), kind = ctx.query.kind === 'school' ? 'school' : ctx.query.kind === 'college' ? 'college' : null;
-  const [cs, rows] = await Promise.all([ctx.db.all('SELECT id,name,short_name,kind,coordinator,phone FROM colleges WHERE active=1 ORDER BY name'), ctx.db.all('SELECT * FROM enrol_classes')]);
+  const [cs, rows] = await Promise.all([ctx.db.all('SELECT id,name,short_name,kind,coordinator,phone,logo_at FROM colleges WHERE active=1 ORDER BY name'), ctx.db.all('SELECT * FROM enrol_classes')]);
   const by = new Map(rows.filter(r => r.dept === TOTAL_DEPT).map(r => [r.college_id, r]));
-  const out = cs.filter(c => (!s || s.colleges.has(c.id)) && (!kind || kindOf(c) === kind)).map(c => { const r = by.get(c.id); return { id: c.id, name: c.name, kind: kindOf(c), coordinator: c.coordinator, phone: c.phone, updated_at: r ? r.updated_at : null, totals: tally(r ? [r] : []) }; });
+  const out = cs.filter(c => (!s || s.colleges.has(c.id)) && (!kind || kindOf(c) === kind)).map(c => { const r = by.get(c.id); return { id: c.id, name: c.name, kind: kindOf(c), logo_v: c.logo_at || null, coordinator: c.coordinator, phone: c.phone, updated_at: r ? r.updated_at : null, totals: tally(r ? [r] : []) }; });
   return { institutions: out, totals: tally(out.filter(i => by.has(i.id)).map(i => i.totals)), reporting: out.filter(i => by.has(i.id)).length };
 });
 

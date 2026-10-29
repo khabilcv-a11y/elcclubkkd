@@ -62,7 +62,7 @@ route('DELETE', '/api/college/gallery/:id', 'college', async ctx => {
 async function albumOn(ctx) { if (!(await featureMap(ctx.db)).public.album) throw new HttpError(404, 'Not available'); }
 route('GET', '/api/public/album', null, async ctx => {
   await albumOn(ctx);
-  return ctx.db.all(`SELECT g.id,g.title,g.activity,g.event_date,g.orientation,c.name college FROM gallery g JOIN colleges c ON c.id=g.college_id AND c.active=1 WHERE g.visible=1 ORDER BY g.id DESC LIMIT ${ctx.query.all ? 300 : 40}`);
+  return ctx.db.all(`SELECT g.id,g.title,g.activity,g.event_date,g.orientation,c.id college_id,c.logo_at logo_v,c.name college FROM gallery g JOIN colleges c ON c.id=g.college_id AND c.active=1 WHERE g.visible=1 ORDER BY g.id DESC LIMIT ${ctx.query.all ? 300 : 40}`);
 });
 route('GET', '/api/public/album/:id/image', null, async ctx => {
   await albumOn(ctx);

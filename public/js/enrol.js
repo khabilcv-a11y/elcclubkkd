@@ -62,8 +62,42 @@ async function pgHomeCampaign(el) {
     ['desk', 'clipboard', 'Daily help-desk report', ds ? `${n(ds.registrations)} registrations · ${ds.days} day${ds.days === 1 ? '' : 's'} reported` : 'Record registrations and volunteers each day'], ['gallery', 'camera', 'Gallery and photo frames', 'Make framed photos of your events and share them']]
     .filter(([id]) => feat(school ? 'school' : 'college', id));
   show(el, html`${pageHead(`Welcome, ${COL.college.short_name || COL.college.name}`, 'Campus to booth: bring every eligible student onto the electoral roll.', '', school ? 'School workspace' : 'College workspace')}
+    ${COL.college.logo_v ? '' : html`<div class="card" style="margin-bottom:16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap">${avatar(COL.college.id, null, COL.college.name, 48)}<div class="grow"><b>Add your ${school ? 'school' : 'college'} logo</b><div class="small muted">It will appear next to your name on the public ranking, gallery and album.</div></div><button class="btn primary" data-act="logoModal">${icon('image')} Add logo</button></div>`}
     <div class="card" style="margin-bottom:16px"><b>${t.pct == null ? 'Start by entering your total numbers' : t.pct + '% of eligible students registered'}</b><div class="small muted">${t.pct == null ? 'Target: 100%' : `${n(t.registered)} registered · ${n(t.balance)} still to cover · target 100%`}</div>${progress(t.pct || 0, t.pct >= 100 ? 'green' : 'saffron')}</div>
     ${enrolKpis(t)}
     <div class="grid g3" style="margin-top:16px">${tiles.map(([id, ic, ti, sub]) => html`<a class="card rv hometile" href="#/me/${id}" style="text-decoration:none;color:inherit"><span class="kpi" style="padding:0;border:0;box-shadow:none"><span class="ico" style="position:static;width:42px;height:42px">${icon(ic)}</span></span><h3 style="margin:10px 0 4px">${ti}</h3><p class="small muted">${sub}</p></a>`)}</div>
     ${CANN.length ? html`<h3 style="margin:22px 0 8px">Latest announcements</h3><div class="stack-s">${CANN.slice(0, 3).map(a => html`<article class="notice ${a.pinned ? 'pinned' : ''}"><h3>${a.title}</h3>${a.body ? html`<p>${a.body}</p>` : ''}<div class="when">${fdt(a.created_at)}</div></article>`)}</div>` : ''}`);
 }
+
+// ---------- the college's logo ----------
+let LOGO_NEW = null;
+async function logoPrepare(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error("That file isn't a readable picture")); i.src = url; });
+    for (const [size, q] of [[192, 0.85], [192, 0.7], [160, 0.7], [128, 0.65], [96, 0.6]]) {
+      const cv = document.createElement('canvas'); cv.width = cv.height = size; const c = cv.getContext('2d');
+      const k = Math.min(size * 0.92 / img.width, size * 0.92 / img.height); c.drawImage(img, (size - img.width * k) / 2, (size - img.height * k) / 2, img.width * k, img.height * k);
+      let out = cv.toDataURL('image/webp', q);
+      if (!out.startsWith('data:image/webp')) { c.globalCompositeOperation = 'destination-over'; c.fillStyle = '#fff'; c.fillRect(0, 0, size, size); out = cv.toDataURL('image/jpeg', q); }
+      const b64 = out.split(',')[1];
+      if (b64.length <= 40000) return { mime: out.slice(5, out.indexOf(';')), data: b64, url: out };
+    }
+    throw new Error('That picture is too detailed. Try a simpler logo.');
+  } finally { URL.revokeObjectURL(url); }
+}
+actions.logoModal = () => {
+  LOGO_NEW = null; const has = !!COL.college.logo_v;
+  modal(html`<h2>Your logo</h2><p class="small muted" style="margin-bottom:12px">Your logo appears next to your name on the public ranking, the photo gallery and album, and in your workspace.</p>
+    <div class="logoprev" id="logoprev">${avatar(COL.college.id, COL.college.logo_v, COL.college.name, 120)}</div>
+    <div class="row" style="justify-content:center;margin:12px 0 4px"><label class="btn secondary">${icon('image')} Choose a picture<input type="file" id="logofile" accept="image/*" hidden></label></div>
+    <p class="hint center">Square or round logos look best. The picture is resized for you.</p><div id="logoerr"></div>
+    <div class="row" style="justify-content:space-between;margin-top:14px"><div>${has ? html`<button class="btn danger" data-act="logoRemove">Remove logo</button>` : ''}</div><div class="row"><button class="btn secondary" data-act="closeModal">Cancel</button><button class="btn primary" id="logosave" data-act="logoSave" disabled>Save logo</button></div></div>`);
+  $('#logofile').addEventListener('change', async e => {
+    const f = e.target.files[0]; if (!f) return; $('#logoerr').innerHTML = '';
+    try { LOGO_NEW = await logoPrepare(f); $('#logoprev').innerHTML = `<img class="av" src="${LOGO_NEW.url}" alt="" style="width:120px;height:120px">`; $('#logosave').disabled = false; }
+    catch (err) { LOGO_NEW = null; $('#logosave').disabled = true; $('#logoerr').innerHTML = `<div class="alert err" role="alert">${esc(err.message)}</div>`; }
+  });
+};
+actions.logoSave = async el => { if (!LOGO_NEW) return; el.disabled = true; try { await api('/api/college/logo', 'PUT', { mime: LOGO_NEW.mime, data: LOGO_NEW.data }); el.closest('.overlay').close(); toast('Logo saved'); reloadCol(); } catch (e) { el.disabled = false; $('#logoerr').innerHTML = `<div class="alert err" role="alert">${esc(e.message)}</div>`; } };
+actions.logoRemove = async el => { await api('/api/college/logo', 'DELETE'); el.closest('.overlay').close(); toast('Logo removed'); reloadCol(); };

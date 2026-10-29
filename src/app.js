@@ -13,6 +13,7 @@ import './routes/reports.js';
 import './routes/campaign.js';
 import './routes/desk.js';
 import './routes/gallery.js';
+import './routes/logo.js';
 
 // ---------- public + auth routes ----------
 let boardCache = { at: 0, data: null };

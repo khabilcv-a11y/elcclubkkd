@@ -114,7 +114,7 @@ const pctOf = (a, b) => (b ? Math.min(100, Math.round(a * 100 / b)) : null);
 export async function campusStats(db) {
   const today = todayStr(), since = addDays(today, -6);
   const [insts, enrol, desk, acts, photos, trend] = await Promise.all([
-    db.all("SELECT id,name,short_name,COALESCE(kind,'college') kind,coordinator,phone FROM colleges WHERE active=1 ORDER BY name"),
+    db.all("SELECT id,name,short_name,COALESCE(kind,'college') kind,coordinator,phone,logo_at FROM colleges WHERE active=1 ORDER BY name"),
     db.all('SELECT college_id id,SUM(strength) strength,SUM(registered) registered,SUM(ineligible) ineligible,COUNT(DISTINCT dept) depts,COUNT(*) classes,MAX(updated_at) last FROM enrol_classes GROUP BY college_id'),
     db.all('SELECT college_id id,COUNT(*) days,SUM(registrations) regs,SUM(volunteers) vols,MAX(date) last FROM desk_days GROUP BY college_id'),
     db.all('SELECT college_id id,COUNT(*) n,MAX(date) last FROM activity_log GROUP BY college_id'),
@@ -126,7 +126,7 @@ export async function campusStats(db) {
     const e = E.get(c.id) || { strength: 0, registered: 0, ineligible: 0, depts: 0, classes: 0, last: '' }, d = D.get(c.id) || { days: 0, regs: 0, vols: 0, last: '' }, a = A.get(c.id) || { n: 0, last: '' }, p = P.get(c.id) || { n: 0, last: '' };
     const eligible = Math.max(0, e.strength - e.ineligible), last = [String(e.last || '').slice(0, 10), d.last || '', a.last || '', p.last || ''].sort().at(-1) || '';
     const started = e.strength > 0 || d.days > 0 || a.n > 0 || p.n > 0;
-    return { id: c.id, name: c.name, short_name: c.short_name || c.name, kind: c.kind, coordinator: c.coordinator, phone: c.phone,
+    return { id: c.id, name: c.name, short_name: c.short_name || c.name, kind: c.kind, coordinator: c.coordinator, phone: c.phone, logo_v: c.logo_at || null,
       strength: e.strength, registered: e.registered, ineligible: e.ineligible, eligible, balance: Math.max(0, eligible - e.registered), pct: pctOf(e.registered, eligible),
       depts: e.depts, classes: e.classes, desk_days: d.days, desk_regs: d.regs || 0, desk_vols: d.vols || 0, activity: a.n, photos: p.n,
       last_active: last, status: !started ? 'new' : last >= since ? 'active' : 'quiet' };
