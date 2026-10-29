@@ -15,7 +15,7 @@ function publicShell(inner, active = '') {
   return html`<header class="pubbar"><div class="wrap">
       <a class="brand" href="#/" aria-label="SWEEP Kozhikode home"><img src="${LOGO.district}" alt="District Administration Kozhikode" style="height:38px"><span class="sep"></span><img src="${LOGO.sweepDark}" alt="SWEEP Kozhikode" style="height:34px"></a>
       <nav class="pubnav" aria-label="Main"><a class="l hide-m" href="#/" ${active === 'home' ? 'aria-current="page"' : ''}>Home</a><a class="l hide-m" href="#/board" ${active === 'board' ? 'aria-current="page"' : ''}>Display board</a>
-        ${feat('public', 'map') ? html`<a class="l hide-m" href="#/" data-act="go" data-to="villagemap">Village map</a>` : html`<a class="l hide-m" href="#/" data-act="go" data-to="campus">Campus to booth</a>`}<a class="l hide-m" href="#/" data-act="go" data-to="resources">Resources</a>${signed}</nav></div></header>
+        ${feat('public', 'map') ? html`<a class="l hide-m" href="#/" data-act="go" data-to="villagemap">Village map</a>` : html`<a class="l hide-m" href="#/" data-act="go" data-to="campus">Campus to booth</a>`}${feat('public', 'album') ? html`<a class="l hide-m" href="#/gallery" ${active === 'gallery' ? 'aria-current="page"' : ''}>Gallery</a>` : ''}<a class="l hide-m" href="#/" data-act="go" data-to="resources">Resources</a>${signed}</nav></div></header>
     <main id="main" tabindex="-1" class="page-in">${inner}</main>
     <footer class="foot"><div class="wrap"><div class="logos"><img src="${LOGO.district}" alt="District Administration Kozhikode"><span class="sep"></span><img src="${LOGO.sweepDark}" alt="SWEEP Kozhikode"><span class="sep"></span><img src="${LOGO.nvlb}" alt="No voter to be left behind" style="height:62px"></div>
       <div class="cols"><div><img src="${LOGO.sweepWhite}" alt="SWEEP Kozhikode" style="height:46px;margin-bottom:10px"><p class="small">Systematic Voters' Education and Electoral Participation, Kozhikode. Electoral Literacy Clubs enrolling every eligible young voter, village by village.</p></div>
@@ -51,9 +51,9 @@ async function renderHome() {
     <div role="listitem"><div class="v" data-count="${t.volunteers}">0</div><div class="l">Student volunteers involved</div></div>
     <div role="listitem"><div class="v" data-count="${t.colleges}">0</div><div class="l">Participating colleges</div></div>
     <div role="listitem"><div class="v" data-count="${t.addressed}">0</div><div class="l">People reached</div></div>` : html`<div role="listitem"><div class="v" data-count="${C.totals.registered}">0</div><div class="l">Students registered</div></div>
-    <div role="listitem"><div class="v" data-count="${C.desk.registrations}">0</div><div class="l">Registrations at help desks</div></div>
+    <div role="listitem"><div class="v">${C.totals.pct == null ? '—' : C.totals.pct + '%'}</div><div class="l">Coverage of eligible students</div></div>
     <div role="listitem"><div class="v">${C.totals.active}<span class="of">/${C.totals.institutions}</span></div><div class="l">Active colleges and schools</div></div>
-    <div role="listitem"><div class="v">${C.totals.pct == null ? '—' : C.totals.pct + '%'}</div><div class="l">Total coverage of eligible students</div></div>`}</div></div>
+    <div role="listitem"><div class="v" data-count="${C.totals.institutions}">0</div><div class="l">Colleges and schools joined</div></div></div></div>`}</div></div>
 
   ${ANN.length ? html`<section class="section" id="notices"><div class="wrap"><div class="section-head"><div><h2>Announcements</h2><p>Latest updates from the district election office.</p></div></div>
     <div class="grid g2">${ANN.slice(0, 4).map(a => html`<article class="notice rv ${a.pinned ? 'pinned' : ''}"><h3>${a.pinned ? html`${icon('pin')} ` : ''}${a.title}</h3>${a.body ? html`<p>${a.body}</p>` : ''}<div class="when">${fdt(a.created_at)}</div></article>`)}</div></div></section>` : ''}
@@ -82,39 +82,50 @@ async function renderHome() {
   paintHome(); paintCampus(); wireMap(); startAlbum(); $('#main').focus({ preventScroll: true });
 }
 
-let ALBUM = [], albumTimer = null, albumAt = 0;
+let ALBUM = [], albumTimer = null, albumAt = 0, albumList = [];
 function albumSection() {
-  return html`<section class="section" id="album"><div class="wrap"><div class="section-head"><div><h2>Moments from the campaign</h2><p>Photos from help desks, flash mobs, class-to-class campaigns and more, shared by colleges and schools.</p></div></div>
-    <div class="album rv" role="region" aria-roledescription="carousel" aria-label="Campaign photo album"><div class="album-stage" id="albstage"></div>
-      <button class="album-btn prev" data-act="albPrev" aria-label="Previous photo">${icon('arrow-left')}</button><button class="album-btn next" data-act="albNext" aria-label="Next photo">${icon('arrow-right')}</button>
-      <div class="album-dots" id="albdots" aria-hidden="true"></div></div></div></section>`;
-}
-function showAlbum(i) {
-  const st = $('#albstage'); if (!st || !ALBUM.length) return;
-  albumAt = (i + ALBUM.length) % ALBUM.length; const g = ALBUM[albumAt];
-  const slide = document.createElement('figure'); slide.className = 'album-slide ' + g.orientation;
-  slide.innerHTML = `<img src="/api/public/album/${g.id}/image" alt="${esc(g.title)}, ${esc(g.college)}"><figcaption><b>${esc(g.college)}</b><span>${esc(g.title)}</span><small>${esc(g.activity)}</small></figcaption>`;
-  st.append(slide); requestAnimationFrame(() => slide.classList.add('in'));
-  [...st.children].slice(0, -1).forEach(old => { old.classList.remove('in'); setTimeout(() => old.remove(), 900); });
-  show($('#albdots'), html`${ALBUM.slice(0, 12).map((_, k) => html`<i class="${k === albumAt % 12 ? 'on' : ''}"></i>`)}`);
+  return html`<section class="section" id="album"><div class="wrap"><div class="section-head"><div><h2>Moments from the campaign</h2><p>Photos from help desks, flash mobs, class-to-class campaigns and more, shared by colleges and schools.</p></div><a class="btn secondary" href="#/gallery">See all photos ${icon('arrow-right')}</a></div></div>
+    <div class="cf" id="cf" role="region" aria-roledescription="carousel" aria-label="Campaign photo album" tabindex="0"><div class="cf-stage" id="cfstage"></div>
+      <button class="cf-btn prev" data-act="albPrev" aria-label="Previous photo">${icon('arrow-left')}</button><button class="cf-btn next" data-act="albNext" aria-label="Next photo">${icon('arrow-right')}</button></div>
+    <div class="cf-cap" id="cfcap" aria-live="polite"></div><div class="cf-dots" id="cfdots" aria-hidden="true"></div></section>`;
 }
 function startAlbum() {
-  clearInterval(albumTimer); if (!$('#albstage')) return;
-  showAlbum(0);
-  const stage = $('#album'); let paused = false;
-  stage.addEventListener('mouseenter', () => { paused = true; }); stage.addEventListener('mouseleave', () => { paused = false; });
-  if (!reduced() && ALBUM.length > 1) albumTimer = setInterval(() => { if (!paused && document.getElementById('albstage')) showAlbum(albumAt + 1); }, 5500);
+  clearInterval(albumTimer); const st = $('#cfstage'); if (!st) return;
+  albumList = ALBUM.slice(0, 12);
+  st.innerHTML = albumList.map((g, i) => `<figure class="cf-card" data-i="${i}" data-act="cfGo" aria-label="${esc(g.college)}: ${esc(g.title)}"><div class="bg" data-src="/api/public/album/${g.id}/image"></div><img data-src="/api/public/album/${g.id}/image" alt="${esc(g.title)}, ${esc(g.college)}" draggable="false"></figure>`).join('');
+  setAlbum(0);
+  const box = $('#cf'); let paused = false, x0 = null;
+  box.addEventListener('mouseenter', () => { paused = true; }); box.addEventListener('mouseleave', () => { paused = false; });
+  box.addEventListener('focusin', () => { paused = true; }); box.addEventListener('focusout', () => { paused = false; });
+  box.addEventListener('keydown', e => { if (e.key === 'ArrowRight') setAlbum(albumAt + 1); else if (e.key === 'ArrowLeft') setAlbum(albumAt - 1); });
+  box.addEventListener('pointerdown', e => { x0 = e.clientX; }); box.addEventListener('pointerup', e => { if (x0 != null && Math.abs(e.clientX - x0) > 45) { setAlbum(albumAt + (e.clientX < x0 ? 1 : -1)); box.dataset.swiped = '1'; setTimeout(() => { delete box.dataset.swiped; }, 50); } x0 = null; });
+  if (!reduced() && albumList.length > 1) albumTimer = setInterval(() => { if (!paused && document.getElementById('cfstage')) setAlbum(albumAt + 1); }, 4800);
 }
-actions.albNext = () => showAlbum(albumAt + 1);
-actions.albPrev = () => showAlbum(albumAt - 1);
+function setAlbum(i) {
+  const cards = $$('#cfstage .cf-card'), N = cards.length; if (!N) return;
+  albumAt = ((i % N) + N) % N;
+  cards.forEach((c, k) => {
+    let o = k - albumAt; if (o > N / 2) o -= N; if (o < -N / 2) o += N;
+    c.dataset.o = Math.abs(o) > 1 ? (o < 0 ? 'xl' : 'xr') : String(o);
+    if (Math.abs(o) <= 2) { const im = $('img', c), bg = $('.bg', c); if (im && im.dataset.src) { im.src = im.dataset.src; delete im.dataset.src; } if (bg && bg.dataset.src) { bg.style.backgroundImage = 'url(' + bg.dataset.src + ')'; delete bg.dataset.src; } }
+    c.setAttribute('aria-hidden', o === 0 ? 'false' : 'true');
+  });
+  const g = albumList[albumAt], cap = $('#cfcap');
+  cap.classList.remove('in'); void cap.offsetWidth;
+  cap.innerHTML = `<b>${esc(g.college)}</b><span>${esc(g.title)}</span><small>${esc(g.activity)}${g.event_date ? ' · ' + fdate(g.event_date) : ''}</small>`; cap.classList.add('in');
+  show($('#cfdots'), html`${albumList.map((_, k) => html`<i class="${k === albumAt ? 'on' : ''}"></i>`)}`);
+}
+actions.albNext = () => setAlbum(albumAt + 1);
+actions.albPrev = () => setAlbum(albumAt - 1);
+actions.cfGo = el => { if ($('#cf')?.dataset.swiped) return; const k = Number(el.dataset.i); if (k !== albumAt) setAlbum(k); };
 
 function campusSection(C) {
   const T = C.totals;
   return html`<section class="section" id="campus"><div class="wrap"><div class="section-head"><div><h2>Campus to booth</h2><p>The target is 100%: every eligible student in every college and school on the electoral roll.</p></div><a class="btn secondary" href="#/board">Full display board ${icon('arrow-right')}</a></div>
     <div class="card rv campus-top"><div class="row between" style="align-items:flex-end;gap:16px"><div><div class="campus-big">${T.pct == null ? '—' : T.pct + '%'}</div><div class="muted">total coverage of eligible students</div></div>
-      <div class="campus-facts"><div><b>${n(T.registered)}</b><span>registered</span></div><div><b>${n(T.balance)}</b><span>still to cover</span></div><div><b>${n(T.ineligible)}</b><span>under 17</span></div><div><b>${T.active}/${T.institutions}</b><span>active this week</span></div></div></div>
+      <div class="campus-facts"><div><b>${n(T.registered)}</b><span>students registered</span></div><div><b>${T.active}/${T.institutions}</b><span>active this week</span></div></div></div>
       ${progress(T.pct || 0, 'green')}</div>
-    <h3 style="margin:22px 0 10px">College and school ranking</h3><div class="tabs" role="tablist" aria-label="Rank by" id="ctabs" style="margin-bottom:12px"></div><div class="board" id="cboard" data-limit="10"></div></div></section>`;
+    <h3 style="margin:26px 0 12px">Leading colleges and schools</h3><div id="cpodium"></div><div class="board" id="cboard" data-limit="10"></div></div></section>`;
 }
 
 function insightCards(i, t) {
@@ -257,11 +268,15 @@ async function renderLogin(role = 'college') {
       show($('#lc'), html`<form data-form="loginOfficer" class="stack-s">${comboField('officer_id', 'Your name', 'Start typing your name or village…', list.map(o => ({ id: o.id, label: o.name, sub: o.villages || '' })))}
         <label class="f"><span>Passcode</span><input name="passcode" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="e.g. K7M2-9XQP" required style="letter-spacing:.08em;font-weight:600;text-transform:uppercase"></label><div data-err></div>
         <button class="btn primary lg" type="submit" style="width:100%">Sign in</button><p class="hint center">Your passcode is shared by the district office. Not listed? Ask them to add you.</p></form>`);
+    } else if (role === 'school') {
+      show($('#lc'), html`<form data-form="loginSchool" class="stack-s"><label class="f"><span>School email</span><input name="email" type="email" required autocomplete="username" placeholder="The email you registered with"></label>
+        <label class="f"><span>Password</span><input name="password" type="password" autocomplete="current-password" required></label><div data-err></div>
+        <button class="btn primary lg" type="submit" style="width:100%">Sign in</button><p class="hint center">New school? <a href="#/school-signup">Register here</a>. Colleges: use the College tab.</p></form>`);
     } else {
-      const school = role === 'school', list = await api(school ? '/api/public/schools' : '/api/public/colleges');
+      const school = false, list = await api('/api/public/colleges');
       show($('#lc'), html`<form data-form="loginCollege" class="stack-s">${comboField('college_id', school ? 'Your school' : 'Your college', school ? 'Start typing your school name…' : 'Start typing your college name…', list.map(c => ({ id: c.id, label: c.name, sub: '' })))}
         <label class="f"><span>Password</span><input name="passcode" type="password" autocomplete="current-password" required></label><div data-err></div>
-        <button class="btn primary lg" type="submit" style="width:100%">Sign in</button><p class="hint center">${school ? html`New school? <a href="#/school-signup">Register here</a>.` : 'First time? Use the starting password shared by the district office, then change it from your workspace.'}</p></form>`);
+        <button class="btn primary lg" type="submit" style="width:100%">Sign in</button><p class="hint center">First time? Use the starting password shared by the district office, then change it from your workspace. Schools: use the School tab.</p></form>`);
     }
     wireCombo($('#lc'));
   } catch (e) { show($('#lc'), html`<div class="alert err">${e.message}</div>`); }
@@ -301,5 +316,6 @@ function wireCombo(root) {
   input.setCustomValidity('Choose from the suggestions');
   input.focus();
 }
+forms.loginSchool = async f => { await api('/api/auth/school', 'POST', fd(f)); await detectMe(); toast('Welcome, ' + ME.name); location.hash = '#/me'; };
 forms.loginCollege = async f => { if (!fd(f).college_id) throw new Error('Pick your college from the suggestions'); await api('/api/auth/college', 'POST', fd(f)); await detectMe(); toast('Welcome, ' + ME.name); location.hash = '#/me'; };
 forms.loginOfficer = async f => { if (!fd(f).officer_id) throw new Error('Pick your name from the suggestions'); await api('/api/auth/officer', 'POST', fd(f)); await detectMe(); toast('Welcome, ' + ME.name); location.hash = '#/officer'; };

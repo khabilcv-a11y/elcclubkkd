@@ -4,7 +4,7 @@ const TOURS = {
   college: name => [
     { title: `Welcome, ${name}`, text: 'This one-minute tour shows what you can do here. You can skip it now and replay it any time with the Tour button at the top.' },
     { sel: 'a.nav[href="#/me/home"]', title: 'Home', text: 'Your progress at a glance, with quick links to everything below.' },
-    { sel: 'a.nav[href="#/me/enrol"]', title: 'Enrolment drive', text: 'Create one link and share it with your department coordinators. They add their classes and numbers (total students, registered, under 17) and everything adds up here, with the balance still to cover. The target is 100%.' },
+    { sel: 'a.nav[href="#/me/enrol"]', title: 'Enrolment drive', text: 'Enter your total numbers: total students, how many are already registered, and how many are not eligible yet. The balance still to cover is worked out for you. Keep them up to date; the target is 100%.' },
     { sel: 'a.nav[href="#/me/desk"]', title: 'Daily report', text: 'Each day, record how many registrations your help desk made and how many volunteers were present. Add volunteers of other activities too; names you used before are suggested.' },
     { sel: 'a.nav[href="#/me/gallery"]', title: 'Gallery', text: 'Make framed photos of your events: add a photo, fit it in the frame, type the institution name and event title, then download it or save it here. Saved photos can be shared on WhatsApp and appear on the home page.' },
     { sel: 'a.nav[href="#/me/students"]', title: 'Students', text: 'Add your volunteers one by one, or paste a whole list copied from Excel or WhatsApp (name, then mobile number). Every village needs 2 students a day.' },
@@ -29,7 +29,7 @@ const TOURS = {
   ],
   staff: (name, role) => [
     { title: `Welcome, ${name}`, text: `You are signed in as ${role}. This tour covers the options you have. Replay it any time with the Tour button.` },
-    { sel: 'a.nav[href="#/enrol"]', title: 'Enrolment drive', text: 'Every college and school with its students, registered, under-17 and balance to cover. Open an institution to see its departments and classes.' },
+    { sel: 'a.nav[href="#/enrol"]', title: 'Enrolment drive', text: 'Every college and school with its total students, registered, not eligible yet and balance to cover, as entered by the institution itself.' },
     { sel: 'a.nav[href="#/desk"]', title: 'Help desk reports', text: 'Registrations and volunteers reported from the help desks each day, with totals for every institution.' },
     { sel: 'a.nav[href="#/gallery"]', title: 'Gallery', text: 'Photos made by colleges and schools. Hide a photo from the public home page or delete it.' },
     { sel: 'a.nav[href="#/schools"]', title: 'Schools', text: 'Schools that registered themselves. You can reset a school password here.' },

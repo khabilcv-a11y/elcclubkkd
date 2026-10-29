@@ -39,9 +39,11 @@ route('POST', '/api/public/school-signup', null, async ctx => {
   const pw = String(b.password || '');
   if (pw.length < 8) throw new HttpError(400, 'Choose a password of at least 8 characters');
   if (await ctx.db.get('SELECT 1 x FROM colleges WHERE lower(name)=lower(?)', name)) throw new HttpError(409, 'A school or college with this name is already registered. Try signing in instead, or ask the district office.');
+  const mail = emailOk(b.email, 'School email').toLowerCase();
+  if (await ctx.db.get("SELECT 1 x FROM colleges WHERE kind='school' AND lower(email)=?", mail)) throw new HttpError(409, 'A school is already registered with this email. Try signing in instead.');
   const h = await hashSecret(pw, 20000);
   const id = await ctx.db.insert('INSERT INTO colleges(name,short_name,address,phone,email,coordinator,passcode_hash,passcode_sent_at,active,created_at,kind) VALUES (?,?,?,?,?,?,?,?,1,?,?)',
-    name, name.slice(0, 40), reqStr(b.address, 'Address', 300), phone(b.phone), emailOk(b.email, 'School email'), reqStr(b.coordinator, 'Teacher in charge', 100), h, nowIso(), nowIso(), 'school');
+    name, name.slice(0, 40), reqStr(b.address, 'Address', 300), phone(b.phone), mail, reqStr(b.coordinator, 'Teacher in charge', 100), h, nowIso(), nowIso(), 'school');
   await log(ctx.db, 'school', name, null, 'school_signup', 'School signed up', ctx.ip);
   await issueSession(ctx, 'college', { id, passcode_hash: h }, 12);
   return { ok: true };
@@ -71,6 +73,23 @@ route('POST', '/api/college/password', 'college', async ctx => {
   await ctx.db.run('UPDATE colleges SET passcode_hash=?,passcode_plain=NULL,passcode_sent_at=? WHERE id=?', h, new Date().toISOString(), ctx.college.id);
   await log(ctx.db, 'college', ctx.college.name, null, 'password_change', 'College changed its own password', ctx.ip);
   await issueSession(ctx, 'college', { ...ctx.college, passcode_hash: h }, 12);
+  return { ok: true };
+});
+// schools have no prior list to pick from: they sign in with the email they registered with
+route('POST', '/api/auth/school', null, async ctx => {
+  const email = String(ctx.body.email || '').trim().toLowerCase(), key = `sc:${ctx.ip}:${email}`;
+  await ctx.throttle(key);
+  const c = await ctx.db.get("SELECT * FROM colleges WHERE kind='school' AND active=1 AND lower(email)=?", email);
+  const typed = String(ctx.body.password || '');
+  if (!c || !c.passcode_hash || !((await verifySecret(typed, c.passcode_hash)) || (await verifySecret(normPasscode(typed), c.passcode_hash)))) {
+    await log(ctx.db, 'school', c ? c.name : email, null, 'login_failed', 'Wrong email or password', ctx.ip);
+    throw new HttpError(401, 'That email or password did not work. New school? Use "Register here".');
+  }
+  await ctx.clearThrottle(key);
+  await ctx.db.run('UPDATE colleges SET last_login_at=? WHERE id=?', new Date().toISOString(), c.id);
+  await log(ctx.db, 'school', c.name, null, 'login', 'School signed in', ctx.ip);
+  await issueSession(ctx, 'college', c, 12);
+  ctx.db.lazy = true;
   return { ok: true };
 });
 route('POST', '/api/auth/college/logout', null, async ctx => {
