@@ -1,6 +1,6 @@
 'use strict';
 // ---- Campus to booth: school sign-up and the college / school enrolment page (total numbers only) ----
-const QUALIFYING = '1 January 2026';   // students who are 18 (or 17 now and turn 18) by this date are eligible
+const QUALIFYING = '1 January 2027';   // students who are 18 (or 17 now and turn 18) by this date are eligible
 
 // ---------- school sign-up ----------
 function renderSchoolSignup() {
