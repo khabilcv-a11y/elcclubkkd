@@ -391,7 +391,7 @@ actions.repPrint = () => {
 
 // ---------- team ----------
 async function pgTeam(el) {
-  const [team, colleges, villages] = await Promise.all([api('/api/staff/team'), api('/api/staff/colleges'), api('/api/staff/villages')]); window.__team = team; window.__cl = colleges; window.__vl = villages;
+  const [team, colleges, villages] = await Promise.all([api('/api/staff/team'), api('/api/staff/colleges'), api('/api/staff/villages').catch(() => [])]); window.__team = team; window.__cl = colleges; window.__vl = villages;
   show(el, html`${pageHead('Team', 'Super admin: everything. Admin: all college, village, officer and report work. Intern: only the colleges and villages you assign.', html`<button class="btn primary" data-act="addStaff">${icon('plus')} Add staff</button>`, 'Administration')}
     <div class="card pad0">${tbl(['Name', 'Username', 'Role', 'Scope', 'Last sign-in', 'Status', ''], team.map(u => html`<tr><td><b>${u.name}</b><div class="small muted">${u.email || ''}</div></td><td>${u.username}</td><td>${badge(ROLE[u.role], u.role === 'super_admin' ? 'solid' : u.role === 'admin' ? 'info' : 'saffron')}</td>
       <td class="small">${u.role === 'intern' ? `${u.colleges.length} colleges · ${u.villages.length} villages` : 'Everything'}</td><td>${fdt(u.last_login_at)}</td><td>${u.active ? badge('active', 'ok') : badge('off', 'grey')}</td><td><div class="row gap-s nowrap">${rowBtn('editStaff', 'Edit', 'edit', `data-id="${u.id}"`)}${rowBtn('shareStaff', 'Share login', 'key', `data-id="${u.id}" title="Set a new password and get a copy-ready login message"`, 'primary')}</div></td></tr>`))}</div>`);

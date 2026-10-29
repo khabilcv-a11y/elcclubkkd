@@ -29,7 +29,7 @@ actions.enReport = () => { REP = { type: 'enrol_inst', filters: {}, sort: '', di
 async function apFeatures(el) {
   const groups = await api('/api/staff/features');
   show(el, html`${pageHead('Access control', 'Switch sections on or off for each kind of user. A switched-off section disappears from the menu and its actions stop working. Changes apply the next time someone opens or refreshes the page.', '', 'Administration')}
-    <div class="grid g2">${groups.map(g => html`<div class="card"><div class="card-head"><h3>${g.title}</h3></div><div class="switches">${g.items.map(i => html`<label class="switch"><span>${i.label}</span><input type="checkbox" role="switch" data-act="toggleFeat" data-k="${g.audience}.${i.id}" ${i.enabled ? 'checked' : ''}><i aria-hidden="true"></i></label>`)}</div></div>`)}</div>`);
+    <div class="grid g2">${groups.map(g => html`<div class="card"><div class="card-head"><h3>${g.title}</h3></div><div class="switches">${g.items.map(i => html`<label class="fswitch"><span>${i.label}</span><input type="checkbox" role="switch" data-act="toggleFeat" data-k="${g.audience}.${i.id}" ${i.enabled ? 'checked' : ''}><i aria-hidden="true"></i></label>`)}</div></div>`)}</div>`);
 }
 document.addEventListener('change', async e => {
   const el = e.target.closest?.('[data-act=toggleFeat]'); if (!el) return;
