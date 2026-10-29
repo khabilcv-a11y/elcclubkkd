@@ -3,6 +3,7 @@ import { route, scopeOf } from '../lib/router.js';
 import { log } from '../lib/db.js';
 import { HttpError, bad, token, nowIso, str, reqStr, int, csv } from '../lib/util.js';
 import { FEATURES, featureMap, isFeature } from '../lib/features.js';
+import { campusStats } from '../lib/stats.js';
 
 const slog = (ctx, action, detail) => log(ctx.db, 'staff', ctx.user.username, ctx.user.role, action, detail, ctx.ip);
 const clog = (ctx, action, detail) => log(ctx.db, 'college', ctx.college.name, null, action, detail, ctx.ip);
@@ -146,6 +147,30 @@ export async function enrolReport(ctx, type, q) {
     rows: list.map(c => { const rs = have.get(c.id) || []; return { college: c.name, type: label(c.id), depts: new Set(rs.map(r => r.dept)).size, classes: rs.length, ...tallyRow(rs) }; }) };
 }
 function tallyRow(rs) { const t = tally(rs); return { strength: t.strength, registered: t.registered, ineligible: t.ineligible, eligible: t.eligible, balance: t.balance, pct: t.pct }; }
+
+// coverage + inputs + performance of every institution (staff dashboard)
+route('GET', '/api/staff/campus', 'staff', async ctx => {
+  const s = await scopeOf(ctx), kind = ctx.query.kind === 'school' ? 'school' : ctx.query.kind === 'college' ? 'college' : null;
+  const cs = await campusStats(ctx.db);
+  const list = cs.institutions.filter(i => (!s || s.colleges.has(i.id)) && (!kind || i.kind === kind));
+  const t = { strength: 0, registered: 0, ineligible: 0, desk_regs: 0, desk_vols: 0, activity: 0, photos: 0, depts: 0, reporting: 0, active: 0, desk_reporting: 0, institutions: list.length };
+  for (const i of list) { for (const k of ['strength', 'registered', 'ineligible', 'desk_regs', 'desk_vols', 'activity', 'photos', 'depts']) t[k] += i[k]; if (i.strength > 0) t.reporting++; if (i.status === 'active') t.active++; if (i.desk_days > 0) t.desk_reporting++; }
+  t.eligible = Math.max(0, t.strength - t.ineligible); t.balance = Math.max(0, t.eligible - t.registered); t.pct = t.eligible ? Math.min(100, Math.round(t.registered * 100 / t.eligible)) : null;
+  return { institutions: list, totals: t, trend: s ? [] : cs.trend };
+});
+
+// ---------- performance report ----------
+export const PERF_DATASETS = [{ key: 'performance', title: 'College and school performance' }];
+const STATUS = { active: 'Active this week', quiet: 'Quiet (no activity this week)', new: 'Not started' };
+export async function performanceReport(ctx, q) {
+  const s = await scopeOf(ctx), text = q.q ? String(q.q).toLowerCase() : null;
+  const cs = await campusStats(ctx.db);
+  const rows = cs.institutions.filter(i => (!s || s.colleges.has(i.id)) && (!q.college || String(i.id) === String(q.college)) && (!q.kind || i.kind === q.kind) && (!text || i.name.toLowerCase().includes(text)))
+    .map(i => ({ college: i.name, type: i.kind === 'school' ? 'School' : 'College', strength: i.strength, registered: i.registered, ineligible: i.ineligible, eligible: i.eligible, balance: i.balance, pct: i.pct, depts: i.depts, classes: i.classes,
+      desk_days: i.desk_days, desk_regs: i.desk_regs, desk_vols: i.desk_vols, activity: i.activity, photos: i.photos, last: i.last_active, status: STATUS[i.status] }));
+  return { title: 'College and school performance', cols: [T('college', 'Institution'), T('type', 'Type'), N('strength', 'Total students'), N('registered', 'Registered'), N('ineligible', 'Not eligible (under 17)'), N('eligible', 'Eligible'), N('balance', 'Balance to cover'), N('pct', 'Covered %'),
+    N('depts', 'Departments reported'), N('classes', 'Classes'), N('desk_days', 'Help desk days reported'), N('desk_regs', 'Help desk registrations'), N('desk_vols', 'Help desk volunteer-days'), N('activity', 'Volunteer-days in other activities'), N('photos', 'Photos shared'), T('last', 'Last activity'), T('status', 'Status')], rows };
+}
 
 // ---------- section switches ----------
 route('GET', '/api/features', null, async ctx => featureMap(ctx.db));

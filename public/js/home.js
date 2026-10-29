@@ -52,8 +52,8 @@ async function renderHome() {
     <div role="listitem"><div class="v" data-count="${t.colleges}">0</div><div class="l">Participating colleges</div></div>
     <div role="listitem"><div class="v" data-count="${t.addressed}">0</div><div class="l">People reached</div></div>` : html`<div role="listitem"><div class="v" data-count="${C.totals.registered}">0</div><div class="l">Students registered</div></div>
     <div role="listitem"><div class="v" data-count="${C.desk.registrations}">0</div><div class="l">Registrations at help desks</div></div>
-    <div role="listitem"><div class="v" data-count="${C.colleges + C.schools}">0</div><div class="l">Colleges and schools</div></div>
-    <div role="listitem"><div class="v">${C.totals.pct == null ? '—' : C.totals.pct + '%'}</div><div class="l">Eligible students covered</div></div>`}</div></div>
+    <div role="listitem"><div class="v">${C.totals.active}<span class="of">/${C.totals.institutions}</span></div><div class="l">Active colleges and schools</div></div>
+    <div role="listitem"><div class="v">${C.totals.pct == null ? '—' : C.totals.pct + '%'}</div><div class="l">Total coverage of eligible students</div></div>`}</div></div>
 
   ${ANN.length ? html`<section class="section" id="notices"><div class="wrap"><div class="section-head"><div><h2>Announcements</h2><p>Latest updates from the district election office.</p></div></div>
     <div class="grid g2">${ANN.slice(0, 4).map(a => html`<article class="notice rv ${a.pinned ? 'pinned' : ''}"><h3>${a.pinned ? html`${icon('pin')} ` : ''}${a.title}</h3>${a.body ? html`<p>${a.body}</p>` : ''}<div class="when">${fdt(a.created_at)}</div></article>`)}</div></div></section>` : ''}
@@ -110,17 +110,11 @@ actions.albPrev = () => showAlbum(albumAt - 1);
 
 function campusSection(C) {
   const T = C.totals;
-  return html`<section class="section" id="campus"><div class="wrap"><div class="section-head"><div><h2>Campus to booth</h2><p>The target is 100%: every eligible student in every college and school on the electoral roll.</p></div></div>
-    <div class="card rv campus-top"><div class="row between" style="align-items:flex-end;gap:16px"><div><div class="campus-big">${T.pct == null ? '—' : T.pct + '%'}</div><div class="muted">of eligible students are registered</div></div>
-      <div class="campus-facts"><div><b>${n(T.registered)}</b><span>registered</span></div><div><b>${n(T.balance)}</b><span>still to cover</span></div><div><b>${n(T.ineligible)}</b><span>under 17</span></div><div><b>${T.reporting}</b><span>institutions reporting</span></div></div></div>
+  return html`<section class="section" id="campus"><div class="wrap"><div class="section-head"><div><h2>Campus to booth</h2><p>The target is 100%: every eligible student in every college and school on the electoral roll.</p></div><a class="btn secondary" href="#/board">Full display board ${icon('arrow-right')}</a></div>
+    <div class="card rv campus-top"><div class="row between" style="align-items:flex-end;gap:16px"><div><div class="campus-big">${T.pct == null ? '—' : T.pct + '%'}</div><div class="muted">total coverage of eligible students</div></div>
+      <div class="campus-facts"><div><b>${n(T.registered)}</b><span>registered</span></div><div><b>${n(T.balance)}</b><span>still to cover</span></div><div><b>${n(T.ineligible)}</b><span>under 17</span></div><div><b>${T.active}/${T.institutions}</b><span>active this week</span></div></div></div>
       ${progress(T.pct || 0, 'green')}</div>
-    <h3 style="margin:22px 0 10px">Ranking by share of eligible students registered</h3><div class="board" id="cboard"></div></div></section>`;
-}
-function paintCampus() {
-  const C = BOARD.campus; if (!$('#cboard')) return;
-  const list = C.institutions.filter(i => i.strength > 0).sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1) || b.registered - a.registered).slice(0, 10);
-  show($('#cboard'), list.length ? html`${list.map((c, i) => html`<div class="lbrow rv ${i < 3 ? 'r' + (i + 1) : ''}" style="grid-template-columns:44px minmax(160px,2.4fr) minmax(140px,2fr) minmax(90px,1fr)"><div class="rank">${i + 1}</div><div class="nm">${c.name}<small>${c.kind === 'school' ? 'School' : 'College'}</small></div>
-    <div>${progress(c.pct || 0, c.pct >= 100 ? 'green' : 'saffron')}</div><div class="c"><b>${c.pct == null ? '—' : c.pct + '%'}</b><small style="display:block">${n(c.registered)} of ${n(c.eligible)}</small></div></div>`)}` : empty('The first numbers are coming in', 'Colleges and schools share their enrolment numbers through the department link.', 'chart'));
+    <h3 style="margin:22px 0 10px">College and school ranking</h3><div class="tabs" role="tablist" aria-label="Rank by" id="ctabs" style="margin-bottom:12px"></div><div class="board" id="cboard" data-limit="10"></div></div></section>`;
 }
 
 function insightCards(i, t) {
@@ -150,8 +144,8 @@ function paintHome() {
 const resCard = r => html`<div class="res rv"><span class="ico">${icon(r.kind === 'link' ? 'link' : 'file')}</span><div class="grow"><h3>${r.title}</h3><p>${r.description || r.category}</p></div>
   ${r.kind === 'link' ? html`<a class="btn secondary sm" href="${r.url}" target="_blank" rel="noopener">${icon('external')} Open</a>` : html`<a class="btn secondary sm" href="/api/resources/${r.id}/download">${icon('download')} Download</a>`}</div>`;
 
-function paintTrend(sel) {
-  const tr = BOARD.trend, mx = Math.max(1, ...tr.map(x => x.registered));
+function paintTrend(sel, data) {
+  const tr = data || BOARD.trend, mx = Math.max(1, ...tr.map(x => x.registered));
   show($(sel), tr.length ? html`<div class="chart" role="img" aria-label="Bar chart of voters enrolled per field day">${tr.map(x => html`<div class="col" tabindex="0" data-tip="${fdate(x.date)}: ${x.registered} enrolled"><i data-h="${Math.max(3, Math.round(x.registered * 100 / mx))}"></i></div>`)}</div>
     <div class="row between small muted" style="margin-top:6px"><span>${fdate(tr[0].date)}</span><span>${fdate(tr.at(-1).date)}</span></div>` : empty('The first field day will light this up'));
 }
@@ -211,7 +205,7 @@ function paintColleges(keepPage) {
   const cs = (feat('public', 'map') ? [...BOARD.colleges] : BOARD.campus.institutions.map(i => ({ ...i, villages: 0 }))).sort((a, b) => a.name.localeCompare(b.name)).filter(c => !q || c.name.toLowerCase().includes(q));
   const pages = Math.max(1, Math.ceil(cs.length / CG_PAGE)); cgPage = Math.min(cgPage, pages - 1);
   const shown = cs.slice(cgPage * CG_PAGE, cgPage * CG_PAGE + CG_PAGE);
-  show($('#cg'), cs.length ? html`${shown.map(c => html`<div class="cg rv"><span class="lt">${initials(c.short_name)}</span><div class="grow"><b>${c.name}</b><small>${feat('public', 'map') ? `${c.villages} village${c.villages === 1 ? '' : 's'} · ${n(c.registered)} enrolled` : `${c.kind === 'school' ? 'School' : 'College'} · ${c.pct == null ? 'not reported yet' : c.pct + '% covered'}`}</small></div></div>`)}` : empty('No college matches', '', 'search'));
+  show($('#cg'), cs.length ? html`${shown.map(c => html`<div class="cg rv"><span class="lt">${initials(c.short_name)}</span><div class="grow"><b>${c.name}</b><small>${feat('public', 'map') ? `${c.villages} village${c.villages === 1 ? '' : 's'} · ${n(c.registered)} enrolled` : `${c.kind === 'school' ? 'School' : 'College'} · ${c.pct == null ? 'not started' : c.pct + '% covered'}${c.status === 'active' ? ' · active' : ''}`}</small></div></div>`)}` : empty('No college matches', '', 'search'));
   show($('#cgpager'), pages > 1 ? html`<button class="btn secondary sm" data-act="cgPrev" ${cgPage === 0 ? 'disabled' : ''}>${icon('arrow-left')} Previous</button><span class="small muted" aria-live="polite">Colleges ${cgPage * CG_PAGE + 1}–${Math.min(cs.length, cgPage * CG_PAGE + CG_PAGE)} of ${cs.length} · page ${cgPage + 1} of ${pages}</span><button class="btn secondary sm" data-act="cgNext" ${cgPage >= pages - 1 ? 'disabled' : ''}>Next ${icon('arrow-right')}</button>` : '');
 }
 actions.cgPrev = () => { cgPage--; paintColleges(true); $('#colleges')?.scrollIntoView({ block: 'start', behavior: reduced() ? 'auto' : 'smooth' }); };
@@ -223,6 +217,7 @@ async function renderBoard() {
   show($('#app'), publicShell(html`<div class="loading"><div class="spin"></div>Loading the display board…</div>`, 'board'));
   try { await loadPublic(); } catch (e) { return show($('#app'), publicShell(html`<div class="wrap section"><div class="alert err">${e.message}</div></div>`, 'board')); }
   const t = BOARD.totals;
+  if (!feat('public', 'map')) return renderCampusBoard();
   show($('#app'), publicShell(html`<div class="wrap" style="padding-top:26px">
     ${pageHead('Display board', html`Live programme figures for Kozhikode district. Refreshes automatically.`, html`<button class="btn secondary" data-act="tv">${icon('eye')} Full screen</button><a class="btn secondary" href="#/">${icon('home')} Home</a>`, 'Electoral Literacy Clubs')}
     <div class="kpis">${kpi('Voters enrolled', t.registered, { ic: 'user-check', tone: 'green' })}${kpi('People reached', t.addressed, { ic: 'megaphone', tone: 'saffron' })}${kpi('Student volunteers', t.volunteers, { ic: 'users' })}

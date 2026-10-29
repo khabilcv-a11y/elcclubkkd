@@ -15,22 +15,23 @@ async function boot() {
   route();
 }
 const STAFF_FEATURED = ['colleges', 'schools', 'enrol', 'desk', 'gallery', 'issues', 'notices', 'resources', 'reports', 'villages', 'allot', 'officers', 'requests', 'cert'];
-const PAGES = () => ({ dashboard: pgDashboard, colleges: pgColleges, schools: pgSchools, enrol: apEnrol, ...(typeof apDesk === 'function' ? { desk: apDesk } : {}), ...(typeof apGallery === 'function' ? { gallery: apGallery } : {}), ...(isSuper() ? { features: apFeatures } : {}), villages: pgVillages, allot: pgAllot, ...(isOps() ? { officers: pgOfficers, notices: pgNotices, resources: pgResources } : {}),
+const PAGES = () => ({ dashboard: apDashboard, colleges: pgColleges, schools: pgSchools, enrol: apEnrol, ...(typeof apDesk === 'function' ? { desk: apDesk } : {}), ...(typeof apGallery === 'function' ? { gallery: apGallery } : {}), ...(isSuper() ? { features: apFeatures } : {}), villages: pgVillages, allot: pgAllot, ...(isOps() ? { officers: pgOfficers, notices: pgNotices, resources: pgResources } : {}),
   requests: pgRequests, cert: pgCert, issues: pgIssues, reports: pgReports, ...(isSuper() ? { team: pgTeam, logs: pgLogs } : {}) });
 const TITLES = { dashboard: 'Dashboard', colleges: 'Colleges', villages: 'Villages', allot: 'Allotments', officers: 'Village officers', requests: 'Change requests', cert: 'Certification', issues: 'Help desk issues', notices: 'Announcements',
   resources: 'Resource centre', reports: 'Reports & exports', team: 'Team', logs: 'Activity log', schools: 'Schools', enrol: 'Enrolment drive', desk: 'Help desk reports', gallery: 'Gallery', features: 'Access control' };
 
 async function route() {
   if (!SU) return renderLogin();
-  let page = location.hash.replace(/^#\/?/, '').split('/')[0] || (feat('staff', 'enrol') ? 'enrol' : 'dashboard');
-  if (!PAGES()[page] || (STAFF_FEATURED.includes(page) && !feat('staff', page))) page = feat('staff', 'enrol') ? 'enrol' : 'dashboard';
+  let page = location.hash.replace(/^#\/?/, '').split('/')[0] || 'dashboard';
+  if (!PAGES()[page] || (STAFF_FEATURED.includes(page) && !feat('staff', page))) page = 'dashboard';
   try { DASH = (await api('/api/staff/dashboard')); } catch (e) { if (e.status === 401) return; }
   const t = DASH?.totals || {};
-  const navAll = [{ group: 'Campus to booth', items: [{ id: 'enrol', label: 'Enrolment drive', icon: 'target' }, { id: 'desk', label: 'Help desk reports', icon: 'clipboard' }, { id: 'gallery', label: 'Gallery', icon: 'image' }] },
+  const navAll = [{ group: 'Overview', items: [{ id: 'dashboard', label: 'Dashboard', icon: 'grid' }] },
+    { group: 'Campus to booth', items: [{ id: 'enrol', label: 'Enrolment drive', icon: 'target' }, { id: 'desk', label: 'Help desk reports', icon: 'clipboard' }, { id: 'gallery', label: 'Gallery', icon: 'image' }] },
     { group: 'Manage', items: [{ id: 'colleges', label: 'Colleges', icon: 'building' }, { id: 'schools', label: 'Schools', icon: 'book' }, { id: 'villages', label: 'Villages', icon: 'map-pin' }, { id: 'allot', label: 'Allotments', icon: 'link' }, ...(isOps() ? [{ id: 'officers', label: 'Village officers', icon: 'landmark' }] : [])] },
     { group: 'Operations', items: [{ id: 'requests', label: 'Change requests', icon: 'refresh', count: t.pending_requests }, { id: 'cert', label: 'Certification', icon: 'certificate', count: t.awaiting_ack }, { id: 'issues', label: 'Help desk issues', icon: 'help', count: t.open_issues },
       ...(isOps() ? [{ id: 'notices', label: 'Announcements', icon: 'megaphone' }, { id: 'resources', label: 'Resources', icon: 'book' }] : [])] },
-    { group: 'Insights', items: [{ id: 'dashboard', label: 'Dashboard', icon: 'grid' }, { id: 'reports', label: 'Reports & exports', icon: 'chart' }] },
+    { group: 'Insights', items: [{ id: 'reports', label: 'Reports & exports', icon: 'chart' }] },
     ...(isOps() ? [{ group: 'Administration', items: [...(isSuper() ? [{ id: 'team', label: 'Team', icon: 'users' }, { id: 'features', label: 'Access control', icon: 'settings' }, { id: 'logs', label: 'Activity log', icon: 'shield' }] : [])] }] : [])];
   const nav = navAll.map(g => ({ ...g, items: g.items.filter(i => (!STAFF_FEATURED.includes(i.id) || feat('staff', i.id)) && PAGES()[i.id]) })).filter(g => g.items.length);
   const extra = html`${isSuper() && SU.sheet_url ? html`<a class="btn secondary sm" href="${SU.sheet_url}" target="_blank" rel="noopener">${icon('external')}<span>Open Google Sheet</span></a>` : ''}<button class="btn ghost sm" data-act="pw" aria-label="Change password">${icon('key')}</button>`;
@@ -311,12 +312,12 @@ actions.delRes = async el => { if (!await confirmBox('Delete this resource? Anyo
 
 // ---------- reports & exports ----------
 const RF = { daily: ['college', 'taluk', 'village', 'lsgi', 'dates', 'attendance', 'verified', 'ack', 'q'], students: ['college', 'taluk', 'village', 'dates', 'q'], colleges: ['college', 'taluk', 'dates', 'q'],
-  villages: ['college', 'taluk', 'village', 'lsgi', 'dates', 'ack', 'q'], allotments: ['college', 'taluk', 'village', 'lsgi', 'ack', 'q'], issues: ['college', 'status', 'dates', 'q'], enrol_inst: ['college', 'kind', 'q'], desk_inst: ['college', 'kind', 'dates', 'q'], desk: ['college', 'kind', 'dates', 'q'], activities: ['college', 'kind', 'dates', 'q'], activity_summary: ['college', 'kind', 'dates'], enrol_dept: ['college', 'kind', 'q'], enrol: ['college', 'kind', 'q'] };
-let REP = { type: 'enrol_inst', filters: {}, sort: '', dir: 'asc', cols: null }, OPTS = null;
+  villages: ['college', 'taluk', 'village', 'lsgi', 'dates', 'ack', 'q'], allotments: ['college', 'taluk', 'village', 'lsgi', 'ack', 'q'], issues: ['college', 'status', 'dates', 'q'], performance: ['college', 'kind', 'q'], enrol_inst: ['college', 'kind', 'q'], desk_inst: ['college', 'kind', 'dates', 'q'], desk: ['college', 'kind', 'dates', 'q'], activities: ['college', 'kind', 'dates', 'q'], activity_summary: ['college', 'kind', 'dates'], enrol_dept: ['college', 'kind', 'q'], enrol: ['college', 'kind', 'q'] };
+let REP = { type: 'performance', filters: {}, sort: '', dir: 'asc', cols: null }, OPTS = null;
 async function pgReports(el) {
   OPTS ||= await api('/api/staff/report-options');
   show(el, html`${pageHead('Reports & exports', 'Choose a report, narrow it with filters, sort it, pick the columns, then download as CSV (opens in Excel) or print.', '', 'Insights')}
-    <div class="tabs" role="tablist" aria-label="Report" style="margin-bottom:14px">${OPTS.datasets.map(d => html`<button class="tab" role="tab" aria-selected="${REP.type === d.key}" data-act="repType" data-k="${d.key}">${d.title}</button>`)}</div>
+    <div class="tabs" role="tablist" aria-label="Report" style="margin-bottom:14px">${OPTS.datasets.filter(d => feat('staff', 'villages') || !['daily', 'students', 'colleges', 'villages', 'allotments'].includes(d.key)).map(d => html`<button class="tab" role="tab" aria-selected="${REP.type === d.key}" data-act="repType" data-k="${d.key}">${d.title}</button>`)}</div>
     <div class="card pad0"><form class="filterbar" id="rfilters" data-form="repApply">${repFilters()}<button class="btn primary" type="submit">${icon('filter')} Apply</button><button class="btn ghost" type="button" data-act="repClear">Clear</button></form>
       <div class="row between" style="padding:12px 16px;border-bottom:1px solid var(--line)"><div id="repcount" class="small muted">Loading…</div><div class="row gap-s"><div class="dropdown"><button class="btn secondary sm" data-act="dropdown" aria-haspopup="true" aria-expanded="false">${icon('list')} Columns</button><div class="menu" id="colmenu" style="min-width:260px;max-height:320px;overflow:auto"></div></div>
         <button class="btn secondary sm" data-act="repPrint">${icon('printer')} Print</button><button class="btn primary sm" data-act="repCsv">${icon('download')} Download CSV</button></div></div><div id="repbody"></div></div>`);

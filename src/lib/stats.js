@@ -70,17 +70,9 @@ export async function publicBoard(db) {
     return { id: v.id, name: v.name, taluk: v.taluk || 'Other', lsgi: v.lsgi, lat: v.lat, lng: v.lng, college: v.college || null, status,
       days: t.days, present: t.present, addressed: t.addressed, registered: t.registered };
   });
-  const [enrolRows, deskTot, insts] = await Promise.all([
-    db.all('SELECT college_id id,SUM(strength) strength,SUM(registered) registered,SUM(ineligible) ineligible FROM enrol_classes GROUP BY college_id'),
-    db.get('SELECT COALESCE(SUM(registrations),0) regs,COALESCE(SUM(volunteers),0) vols,COUNT(DISTINCT college_id) colleges FROM desk_days'),
-    db.all("SELECT id,name,short_name,COALESCE(kind,'college') kind FROM colleges WHERE active=1 ORDER BY name")]);
-  const em = new Map(enrolRows.map(r => [r.id, r]));
-  const campusList = insts.map(c => { const e = em.get(c.id) || { strength: 0, registered: 0, ineligible: 0 }, eligible = Math.max(0, e.strength - e.ineligible);
-    return { id: c.id, name: c.name, short_name: c.short_name || c.name, kind: c.kind, strength: e.strength, registered: e.registered, ineligible: e.ineligible, eligible, balance: Math.max(0, eligible - e.registered), pct: eligible ? Math.min(100, Math.round(e.registered * 100 / eligible)) : null }; });
-  const ct = campusList.reduce((t, c) => ({ strength: t.strength + c.strength, registered: t.registered + c.registered, ineligible: t.ineligible + c.ineligible }), { strength: 0, registered: 0, ineligible: 0 });
-  ct.eligible = Math.max(0, ct.strength - ct.ineligible); ct.balance = Math.max(0, ct.eligible - ct.registered); ct.pct = ct.eligible ? Math.min(100, Math.round(ct.registered * 100 / ct.eligible)) : null;
-  ct.reporting = campusList.filter(c => c.strength > 0).length;
-  const campus = { totals: ct, institutions: campusList, colleges: campusList.filter(c => c.kind !== 'school').length, schools: campusList.filter(c => c.kind === 'school').length, desk: { registrations: deskTot.regs, volunteers: deskTot.vols, reporting: deskTot.colleges } };
+  const cs = await campusStats(db);
+  const campus = { ...cs, colleges: cs.institutions.filter(c => c.kind !== 'school').length, schools: cs.institutions.filter(c => c.kind === 'school').length,
+    desk: { registrations: cs.totals.desk_regs, volunteers: cs.totals.desk_vols, reporting: cs.totals.desk_reporting }, awards: campusAwards(cs.institutions) };
   const sum = k => colleges.reduce((n, c) => n + c[k], 0);
   const tal = new Map();
   for (const v of villages) {
@@ -115,4 +107,37 @@ export async function publicBoard(db) {
     feed: feedRaw.filter(f => f.present > 0).slice(0, 8),
     campus, colleges, villages, trend, awards, formula: SCORE_FORMULA, today,
   };
+}
+
+// ---------- Campus to booth: coverage, inputs and performance of every college and school ----------
+const pctOf = (a, b) => (b ? Math.min(100, Math.round(a * 100 / b)) : null);
+export async function campusStats(db) {
+  const today = todayStr(), since = addDays(today, -6);
+  const [insts, enrol, desk, acts, photos, trend] = await Promise.all([
+    db.all("SELECT id,name,short_name,COALESCE(kind,'college') kind,coordinator,phone FROM colleges WHERE active=1 ORDER BY name"),
+    db.all('SELECT college_id id,SUM(strength) strength,SUM(registered) registered,SUM(ineligible) ineligible,COUNT(DISTINCT dept) depts,COUNT(*) classes,MAX(updated_at) last FROM enrol_classes GROUP BY college_id'),
+    db.all('SELECT college_id id,COUNT(*) days,SUM(registrations) regs,SUM(volunteers) vols,MAX(date) last FROM desk_days GROUP BY college_id'),
+    db.all('SELECT college_id id,COUNT(*) n,MAX(date) last FROM activity_log GROUP BY college_id'),
+    db.all('SELECT college_id id,COUNT(*) n,MAX(event_date) last FROM gallery GROUP BY college_id'),
+    db.all('SELECT date,SUM(registrations) registered,SUM(volunteers) volunteers FROM desk_days GROUP BY date ORDER BY date DESC LIMIT 30')]);
+  const by = rows => new Map(rows.map(r => [r.id, r]));
+  const E = by(enrol), D = by(desk), A = by(acts), P = by(photos);
+  const list = insts.map(c => {
+    const e = E.get(c.id) || { strength: 0, registered: 0, ineligible: 0, depts: 0, classes: 0, last: '' }, d = D.get(c.id) || { days: 0, regs: 0, vols: 0, last: '' }, a = A.get(c.id) || { n: 0, last: '' }, p = P.get(c.id) || { n: 0, last: '' };
+    const eligible = Math.max(0, e.strength - e.ineligible), last = [String(e.last || '').slice(0, 10), d.last || '', a.last || '', p.last || ''].sort().at(-1) || '';
+    const started = e.strength > 0 || d.days > 0 || a.n > 0 || p.n > 0;
+    return { id: c.id, name: c.name, short_name: c.short_name || c.name, kind: c.kind, coordinator: c.coordinator, phone: c.phone,
+      strength: e.strength, registered: e.registered, ineligible: e.ineligible, eligible, balance: Math.max(0, eligible - e.registered), pct: pctOf(e.registered, eligible),
+      depts: e.depts, classes: e.classes, desk_days: d.days, desk_regs: d.regs || 0, desk_vols: d.vols || 0, activity: a.n, photos: p.n,
+      last_active: last, status: !started ? 'new' : last >= since ? 'active' : 'quiet' };
+  });
+  const sum = k => list.reduce((n, c) => n + c[k], 0);
+  const totals = { strength: sum('strength'), registered: sum('registered'), ineligible: sum('ineligible'), depts: sum('depts'), classes: sum('classes'), desk_regs: sum('desk_regs'), desk_vols: sum('desk_vols'), activity: sum('activity'), photos: sum('photos'),
+    desk_reporting: list.filter(c => c.desk_days > 0).length, reporting: list.filter(c => c.strength > 0).length, active: list.filter(c => c.status === 'active').length, institutions: list.length };
+  totals.eligible = Math.max(0, totals.strength - totals.ineligible); totals.balance = Math.max(0, totals.eligible - totals.registered); totals.pct = pctOf(totals.registered, totals.eligible);
+  return { institutions: list, totals, trend: trend.reverse(), today };
+}
+export function campusAwards(list) {
+  const top = (key, ok = () => true) => { const c = list.filter(ok).sort((a, b) => b[key] - a[key])[0]; return c && c[key] > 0 ? { id: c.id, name: c.short_name || c.name, value: c[key] } : null; };
+  return { coverage: top('pct', c => c.eligible >= 20), registered: top('registered'), desk_regs: top('desk_regs'), desk_vols: top('desk_vols'), activity: top('activity'), photos: top('photos') };
 }
