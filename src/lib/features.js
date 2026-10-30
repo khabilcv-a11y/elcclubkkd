@@ -17,7 +17,7 @@ export const FEATURES = {
   },
   public: {
     title: 'Public home page',
-    items: [['map', 'Village map', 0], ['officer_login', 'Village officer sign-in', 0], ['album', 'Photo album', 1], ['school_signup', 'School sign-up', 1], ['leaderboard', 'Leaderboard and display board', 1]],
+    items: [['map', 'Village map', 0], ['officer_login', 'Village officer sign-in', 0], ['album', 'Photo album', 1], ['school_signup', 'School sign-up', 1], ['college_signup', 'College sign-up (colleges not on the list)', 1], ['leaderboard', 'Leaderboard and display board', 1]],
   },
 };
 const DEFAULTS = Object.fromEntries(Object.entries(FEATURES).flatMap(([aud, g]) => g.items.map(([id, , on]) => [`${aud}.${id}`, !!on])));

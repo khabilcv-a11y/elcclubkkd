@@ -2,24 +2,27 @@
 // ---- Campus to booth: school sign-up and the college / school enrolment page (total numbers only) ----
 const QUALIFYING = '1 January 2027';   // students who are 18 (or 17 now and turn 18) by this date are eligible
 
-// ---------- school sign-up ----------
-function renderSchoolSignup() {
-  if (!feat('public', 'school_signup')) { location.hash = '#/login/school'; return; }
+// ---------- sign-up for schools and for colleges that are not on the list ----------
+function renderSignup(kind) {
+  const school = kind === 'school', W = school ? 'school' : 'college';
+  if (!feat('public', kind + '_signup')) { location.hash = '#/login/' + kind; return; }
   show($('#app'), publicShell(html`<div class="loginpage"><div class="logincard" style="max-width:520px"><div class="lg"><img src="${LOGO.sweepDark}" alt="SWEEP Kozhikode"></div>
-    <h1>Register your school</h1><p class="sub">No Electoral Literacy Club yet? Register here and join the campus-to-booth drive.</p>
-    <form data-form="schoolSignup" class="stack-s">
-      <label class="f"><span>School name *</span><input type="text" name="name" required maxlength="160" autocomplete="organization"></label>
+    <h1>Register your ${W}</h1><p class="sub">${school ? 'No Electoral Literacy Club yet? Register here and join the campus-to-booth drive.' : 'Is your college not on the sign-in list? Register it here and join the campus-to-booth drive.'}</p>
+    <form data-form="signup" data-kind="${kind}" class="stack-s">
+      <label class="f"><span>${school ? 'School' : 'College'} name *</span><input type="text" name="name" required maxlength="160" autocomplete="organization"></label>
       <label class="f"><span>Address *</span><textarea name="address" required maxlength="300" rows="2"></textarea></label>
-      <div class="formgrid"><label class="f"><span>Teacher in charge *</span><input type="text" name="coordinator" required maxlength="100"></label><label class="f"><span>Mobile number *</span><input type="tel" name="phone" required inputmode="tel"></label></div>
-      <label class="f"><span>School email * (you will sign in with it)</span><input type="email" name="email" required autocomplete="email"></label>
+      <div class="formgrid"><label class="f"><span>${school ? 'Teacher in charge' : 'ELC coordinator'} *</span><input type="text" name="coordinator" required maxlength="100"></label><label class="f"><span>Mobile number *</span><input type="tel" name="phone" required inputmode="tel"></label></div>
+      <label class="f"><span>${school ? 'School' : 'College'} email *${school ? ' (you will sign in with it)' : ''}</span><input type="email" name="email" required autocomplete="email"></label>
       <div class="formgrid"><label class="f"><span>Choose a password *</span><input type="password" name="password" required minlength="8" autocomplete="new-password"><span class="hint">At least 8 characters. You can change it later.</span></label>
         <label class="f"><span>Repeat the password *</span><input type="password" name="password2" required minlength="8" autocomplete="new-password"></label></div>
       <div data-err></div><button class="btn primary lg" type="submit" style="width:100%">Register and continue</button>
-      <p class="hint center">Already registered? <a href="#/login/school">Sign in</a></p></form></div></div>`, ''));
+      <p class="hint center">Already registered? <a href="#/login/${kind}">Sign in</a></p></form></div></div>`, ''));
 }
-forms.schoolSignup = async f => {
-  const v = fd(f); if (v.password !== v.password2) throw new Error('The two passwords do not match');
-  await api('/api/public/school-signup', 'POST', v); await detectMe(); toast('Welcome! Your school is registered.'); location.hash = '#/me';
+const renderSchoolSignup = () => renderSignup('school');
+const renderCollegeSignup = () => renderSignup('college');
+forms.signup = async f => {
+  const v = fd(f), kind = f.dataset.kind; if (v.password !== v.password2) throw new Error('The two passwords do not match');
+  await api('/api/public/school-signup', 'POST', { ...v, kind }); await detectMe(); toast('Welcome! Your ' + kind + ' is registered.'); location.hash = '#/me';
 };
 
 // ---------- the numbers ----------

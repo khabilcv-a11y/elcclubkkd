@@ -35,18 +35,18 @@ route('GET', '/api/public/schools', null, ctx => ctx.db.all("SELECT id,name FROM
 
 // a school that has not formed an ELC yet signs itself up and chooses its own password
 route('POST', '/api/public/school-signup', null, async ctx => {
-  if (!(await featureMap(ctx.db)).public.school_signup) throw new HttpError(403, 'School sign-up is closed right now.');
+  const b = ctx.body, kind = b.kind === 'college' ? 'college' : 'school', W = kind === 'school' ? 'School' : 'College';
+  if (!(await featureMap(ctx.db)).public[kind + '_signup']) throw new HttpError(403, W + ' sign-up is closed right now.');
   await ctx.throttle(`su:${ctx.ip}`, 6, 3600000);
-  const b = ctx.body, name = reqStr(b.name, 'School name', 160).replace(/\s+/g, ' ');
-  const pw = String(b.password || '');
+  const name = reqStr(b.name, W + ' name', 160).replace(/\s+/g, ' '), pw = String(b.password || '');
   if (pw.length < 8) throw new HttpError(400, 'Choose a password of at least 8 characters');
   if (await ctx.db.get('SELECT 1 x FROM colleges WHERE lower(name)=lower(?)', name)) throw new HttpError(409, 'A school or college with this name is already registered. Try signing in instead, or ask the district office.');
-  const mail = emailOk(b.email, 'School email').toLowerCase();
-  if (await ctx.db.get("SELECT 1 x FROM colleges WHERE kind='school' AND lower(email)=?", mail)) throw new HttpError(409, 'A school is already registered with this email. Try signing in instead.');
+  const mail = emailOk(b.email, W + ' email').toLowerCase();
+  if (kind === 'school' && await ctx.db.get("SELECT 1 x FROM colleges WHERE kind='school' AND lower(email)=?", mail)) throw new HttpError(409, 'A school is already registered with this email. Try signing in instead.');
   const h = await hashSecret(pw, 20000);
   const id = await ctx.db.insert('INSERT INTO colleges(name,short_name,address,phone,email,coordinator,passcode_hash,passcode_sent_at,active,created_at,kind) VALUES (?,?,?,?,?,?,?,?,1,?,?)',
-    name, name.slice(0, 40), reqStr(b.address, 'Address', 300), phone(b.phone), mail, reqStr(b.coordinator, 'Teacher in charge', 100), h, nowIso(), nowIso(), 'school');
-  await log(ctx.db, 'school', name, null, 'school_signup', 'School signed up', ctx.ip);
+    name, name.slice(0, 40), reqStr(b.address, 'Address', 300), phone(b.phone), mail, reqStr(b.coordinator, kind === 'school' ? 'Teacher in charge' : 'Coordinator', 100), h, nowIso(), nowIso(), kind);
+  await log(ctx.db, kind, name, null, kind + '_signup', W + ' signed up', ctx.ip);
   await issueSession(ctx, 'college', { id, passcode_hash: h }, 24);
   return { ok: true };
 });

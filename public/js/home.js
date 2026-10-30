@@ -8,7 +8,7 @@ const ME = { kind: null, name: '' };   // who is signed in on this browser (set 
 function publicShell(inner, active = '') {
   const signed = ME.kind ? html`<a class="btn primary sm" href="#/${ME.kind === 'college' ? 'me' : 'officer'}">${icon('grid')} My workspace</a><button class="btn secondary sm" data-act="logoutAny">Sign out</button>`
     : html`<div class="dropdown"><button class="btn primary sm" data-act="dropdown" aria-haspopup="true" aria-expanded="false">Sign in ${icon('chevron-down')}</button>
-      <div class="menu" role="menu"><a href="#/login/college" role="menuitem">${icon('building')}<span>College coordinator<small>Password from the district office</small></span></a>
+      <div class="menu" role="menu"><a href="#/login/college" role="menuitem">${icon('building')}<span>College coordinator<small>Sign in or register your college</small></span></a>
         <a href="#/login/school" role="menuitem">${icon('book')}<span>School<small>Sign in or register your school</small></span></a>
         ${feat('public', 'officer_login') ? html`<a href="#/login/officer" role="menuitem">${icon('landmark')}<span>Village officer<small>Verify attendance and certify</small></span></a>` : ''}
         <a href="/admin" role="menuitem">${icon('shield')}<span>Staff console<small>Admins and interns</small></span></a></div></div>`;
@@ -275,9 +275,9 @@ async function renderLogin(role = 'college') {
         <button class="btn primary lg" type="submit" style="width:100%">Sign in</button><p class="hint center">New school? <a href="#/school-signup">Register here</a>. Colleges: use the College tab.</p></form>`);
     } else {
       const school = false, list = await api('/api/public/colleges');
-      show($('#lc'), html`<form data-form="loginCollege" class="stack-s">${comboField('college_id', school ? 'Your school' : 'Your college', school ? 'Start typing your school name…' : 'Start typing your college name…', list.map(c => ({ id: c.id, label: c.name, sub: '' })))}
+      show($('#lc'), html`<form data-form="loginCollege" class="stack-s">${comboField('college_id', school ? 'Your school' : 'Your college', school ? 'Start typing your school name…' : 'Start typing your college name…', list.map(c => ({ id: c.id, label: c.name, sub: '' })), feat('public', 'college_signup') ? 'No match. Check the spelling, or <a href="#/college-signup"><b>register your college</b></a>.' : null)}
         <label class="f"><span>Password</span><input name="passcode" type="password" autocomplete="current-password" required></label><div data-err></div>
-        <button class="btn primary lg" type="submit" style="width:100%">Sign in</button><p class="hint center">First time? Use the starting password shared by the district office, then change it from your workspace. Schools: use the School tab.</p></form>`);
+        <button class="btn primary lg" type="submit" style="width:100%">Sign in</button><p class="hint center">First time? Use the starting password shared by the district office, then change it from your workspace. Schools: use the School tab.</p>${feat('public', 'college_signup') ? html`<p class="hint center" style="margin-top:-4px">Can't find your college in the list? <a href="#/college-signup"><b>Register it here</b></a>.</p>` : ''}</form>`);
     }
     wireCombo($('#lc'));
   } catch (e) { show($('#lc'), html`<div class="alert err">${e.message}</div>`); }
@@ -285,8 +285,9 @@ async function renderLogin(role = 'college') {
 
 // ---------- type-to-search suggestion list (replaces the long drop-down) ----------
 let COMBO_ITEMS = [];
-function comboField(name, label, placeholder, items) {
-  COMBO_ITEMS = items;
+let COMBO_NONE = 'No match. Check the spelling, or ask the district office to add you.';
+function comboField(name, label, placeholder, items, none) {
+  COMBO_ITEMS = items; COMBO_NONE = none || 'No match. Check the spelling, or ask the district office to add you.';
   return html`<div class="combo"><label class="f"><span>${label}</span><input type="text" class="combo-in" role="combobox" aria-expanded="false" aria-controls="combo-list" aria-autocomplete="list" autocomplete="off" autocapitalize="words" spellcheck="false" placeholder="${placeholder}" required></label>
     <input type="hidden" name="${name}" class="combo-id"><ul id="combo-list" class="combo-list" role="listbox" hidden></ul></div>`;
 }
@@ -301,7 +302,7 @@ function wireCombo(root) {
     const toks = input.value.toLowerCase().split(/\s+/).filter(Boolean);
     shown = items.map(it => ({ it, hay: (it.label + ' ' + it.sub).toLowerCase() })).filter(x => toks.every(t => x.hay.includes(t)))
       .sort((a, b) => (b.hay.startsWith(toks[0] || '') ? 1 : 0) - (a.hay.startsWith(toks[0] || '') ? 1 : 0) || a.it.label.localeCompare(b.it.label)).map(x => x.it).slice(0, 8);
-    list.innerHTML = shown.length ? shown.map((it, i) => `<li role="option" id="co${i}" data-i="${i}" aria-selected="false"><b>${mark(it.label, toks)}</b>${it.sub ? `<small>${mark(it.sub, toks)}</small>` : ''}</li>`).join('') : '<li class="none" role="option" aria-disabled="true">No match. Check the spelling, or ask the district office to add you.</li>';
+    list.innerHTML = shown.length ? shown.map((it, i) => `<li role="option" id="co${i}" data-i="${i}" aria-selected="false"><b>${mark(it.label, toks)}</b>${it.sub ? `<small>${mark(it.sub, toks)}</small>` : ''}</li>`).join('') : '<li class="none" role="option" aria-disabled="true">' + COMBO_NONE + '</li>';
     list.hidden = false; input.setAttribute('aria-expanded', 'true'); at = -1;
   };
   const move = d => { if (list.hidden) paint(); if (!shown.length) return; at = (at + d + shown.length) % shown.length; $$('li', list).forEach((li, i) => { const on = i === at; li.classList.toggle('on', on); li.setAttribute('aria-selected', on); if (on) { input.setAttribute('aria-activedescendant', li.id); li.scrollIntoView({ block: 'nearest' }); } }); };

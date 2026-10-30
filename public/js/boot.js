@@ -14,6 +14,7 @@ async function route() {
   if (seg === 'ack') return renderAck(a);
   if (seg === 'gallery') return renderPublicGallery();
   if (seg === 'school-signup') return renderSchoolSignup();
+  if (seg === 'college-signup') return renderCollegeSignup();
   if (seg === 'officer-login') return renderLogin('officer');
   if (seg === 'login') return ME.kind ? (location.hash = ME.kind === 'college' ? '#/me' : '#/officer') : renderLogin(a || 'college');
   if (seg === 'me') return ME.kind === 'college' ? renderCollege(a || 'home') : (location.hash = '#/login/college');
