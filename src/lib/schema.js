@@ -42,7 +42,7 @@ export const TABLES = {
   features: { pk: ['key'], cols: [['key', 'TEXT', { nn: 1 }], ['enabled', 'INTEGER', { nn: 1, def: 1 }], ['updated_by', 'TEXT'], ['updated_at', 'TEXT']] },
   // Campus to booth drive: classes of each department with their enrolment numbers (entered by department coordinators through the college's link)
   enrol_classes: { pk: ['id'], unique: [['college_id', 'dept', 'class_name']], cols: [['id', 'INTEGER'], ['college_id', 'INTEGER', { nn: 1, ref: ['colleges', 'CASCADE'] }], ['dept', 'TEXT', { nn: 1 }],
-    ['coordinator', 'TEXT'], ['phone', 'TEXT'], ['class_name', 'TEXT', { nn: 1 }], ['strength', 'INTEGER', { nn: 1, def: 0 }], ['registered', 'INTEGER', { nn: 1, def: 0 }], ['ineligible', 'INTEGER', { nn: 1, def: 0 }], ['updated_at', 'TEXT']] },
+    ['coordinator', 'TEXT'], ['phone', 'TEXT'], ['class_name', 'TEXT', { nn: 1 }], ['strength', 'INTEGER', { nn: 1, def: 0 }], ['registered', 'INTEGER', { nn: 1, def: 0 }], ['ineligible', 'INTEGER', { nn: 1, def: 0 }], ['updated_at', 'TEXT'], ['remaining', 'INTEGER']] },
   // help desk daily report and the volunteers of other activities
   desk_days: { pk: ['id'], unique: [['college_id', 'date']], cols: [['id', 'INTEGER'], ['college_id', 'INTEGER', { nn: 1, ref: ['colleges', 'CASCADE'] }], ['date', 'TEXT', { nn: 1 }],
     ['registrations', 'INTEGER', { nn: 1, def: 0 }], ['volunteers', 'INTEGER', { nn: 1, def: 0 }], ['notes', 'TEXT'], ['created_at', 'TEXT'], ['updated_at', 'TEXT']] },

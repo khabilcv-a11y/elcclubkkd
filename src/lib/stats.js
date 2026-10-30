@@ -115,7 +115,7 @@ export async function campusStats(db) {
   const today = todayStr(), since = addDays(today, -6);
   const [insts, enrol, desk, acts, photos, trend] = await Promise.all([
     db.all("SELECT id,name,short_name,COALESCE(kind,'college') kind,coordinator,phone,logo_at FROM colleges WHERE active=1 ORDER BY name"),
-    db.all('SELECT college_id id,SUM(strength) strength,SUM(registered) registered,SUM(ineligible) ineligible,COUNT(DISTINCT dept) depts,COUNT(*) classes,MAX(updated_at) last FROM enrol_classes GROUP BY college_id'),
+    db.all('SELECT college_id id,SUM(strength) strength,SUM(registered) registered,SUM(ineligible) ineligible,SUM(COALESCE(remaining, MAX(0, strength - ineligible - registered))) balance,COUNT(DISTINCT dept) depts,COUNT(*) classes,MAX(updated_at) last FROM enrol_classes GROUP BY college_id'),
     db.all('SELECT college_id id,COUNT(*) days,SUM(registrations) regs,SUM(volunteers) vols,MAX(date) last FROM desk_days GROUP BY college_id'),
     db.all('SELECT college_id id,COUNT(*) n,MAX(date) last FROM activity_log GROUP BY college_id'),
     db.all('SELECT college_id id,COUNT(*) n,MAX(event_date) last FROM gallery GROUP BY college_id'),
@@ -123,18 +123,18 @@ export async function campusStats(db) {
   const by = rows => new Map(rows.map(r => [r.id, r]));
   const E = by(enrol), D = by(desk), A = by(acts), P = by(photos);
   const list = insts.map(c => {
-    const e = E.get(c.id) || { strength: 0, registered: 0, ineligible: 0, depts: 0, classes: 0, last: '' }, d = D.get(c.id) || { days: 0, regs: 0, vols: 0, last: '' }, a = A.get(c.id) || { n: 0, last: '' }, p = P.get(c.id) || { n: 0, last: '' };
+    const e = E.get(c.id) || { strength: 0, registered: 0, ineligible: 0, balance: 0, depts: 0, classes: 0, last: '' }, d = D.get(c.id) || { days: 0, regs: 0, vols: 0, last: '' }, a = A.get(c.id) || { n: 0, last: '' }, p = P.get(c.id) || { n: 0, last: '' };
     const eligible = Math.max(0, e.strength - e.ineligible), last = [String(e.last || '').slice(0, 10), d.last || '', a.last || '', p.last || ''].sort().at(-1) || '';
     const started = e.strength > 0 || d.days > 0 || a.n > 0 || p.n > 0;
     return { id: c.id, name: c.name, short_name: c.short_name || c.name, kind: c.kind, coordinator: c.coordinator, phone: c.phone, logo_v: c.logo_at || null,
-      strength: e.strength, registered: e.registered, ineligible: e.ineligible, eligible, balance: Math.max(0, eligible - e.registered), pct: pctOf(e.registered, eligible),
+      strength: e.strength, registered: e.registered, ineligible: e.ineligible, eligible, balance: e.balance || 0, pct: pctOf(e.registered, eligible),
       depts: e.depts, classes: e.classes, desk_days: d.days, desk_regs: d.regs || 0, desk_vols: d.vols || 0, activity: a.n, photos: p.n,
       last_active: last, status: !started ? 'new' : last >= since ? 'active' : 'quiet' };
   });
   const sum = k => list.reduce((n, c) => n + c[k], 0);
   const totals = { strength: sum('strength'), registered: sum('registered'), ineligible: sum('ineligible'), depts: sum('depts'), classes: sum('classes'), desk_regs: sum('desk_regs'), desk_vols: sum('desk_vols'), activity: sum('activity'), photos: sum('photos'),
     desk_reporting: list.filter(c => c.desk_days > 0).length, reporting: list.filter(c => c.strength > 0).length, active: list.filter(c => c.status === 'active').length, institutions: list.length };
-  totals.eligible = Math.max(0, totals.strength - totals.ineligible); totals.balance = Math.max(0, totals.eligible - totals.registered); totals.pct = pctOf(totals.registered, totals.eligible);
+  totals.eligible = Math.max(0, totals.strength - totals.ineligible); totals.balance = sum('balance'); totals.pct = pctOf(totals.registered, totals.eligible);
   return { institutions: list, totals, trend: trend.reverse(), today };
 }
 export function campusAwards(list) {

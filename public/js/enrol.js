@@ -26,36 +26,52 @@ forms.signup = async f => {
 };
 
 // ---------- the numbers ----------
-const enrolKpis = t => html`<div class="kpis">${kpi('Total students', t.strength, { ic: 'users' })}${kpi('Registered', t.registered, { ic: 'user-check', tone: 'green' })}${kpi('Not eligible yet', t.ineligible, { ic: 'clock' })}${kpi('Balance to cover', t.balance, { ic: 'target', tone: 'saffron' })}</div>`;
+const enrolKpis = t => html`<div class="kpis">${kpi('Total students', t.strength, { ic: 'users' })}${kpi('Registered', t.registered, { ic: 'user-check', tone: 'green' })}${kpi('Not eligible yet', t.ineligible, { ic: 'clock' })}${kpi('Yet to register', t.balance, { ic: 'target', tone: 'saffron' })}</div>`;
 
 actions.eligibility = () => modal(html`<h2>Who is eligible to register?</h2>
   <div class="stack-s"><p><b>Eligible:</b> a student who is already 18, or who is 17 now and will complete 18 on or before <b>${QUALIFYING}</b> (the qualifying date).</p>
-    <p><b>Not eligible yet:</b> a student who will not be 18 by ${QUALIFYING}. Do not count them in the balance to cover.</p>
+    <p><b>Not eligible yet:</b> a student who will not be 18 by ${QUALIFYING}. Do not count them as yet to register.</p>
     <p><b>Registered:</b> a student whose name is already on the electoral roll.</p>
-    <p class="small muted">The balance to cover is the eligible students who are not yet registered. They can apply with Form 6 at <a href="https://voters.eci.gov.in" target="_blank" rel="noopener">voters.eci.gov.in</a>, or call the helpline <b>1950</b>.</p></div>
+    <p class="small muted">The students yet to register are the eligible students who are not on the roll yet. They can apply with Form 6 at <a href="https://voters.eci.gov.in" target="_blank" rel="noopener">voters.eci.gov.in</a>, or call the helpline <b>1950</b>.</p></div>
   <div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn primary" data-act="closeModal">Got it</button></div>`);
 
 // ---------- the college / school page ----------
 async function pgEnrol(el) {
-  const d = await api('/api/college/enrol'), e = d.entry || { strength: '', registered: '', ineligible: '' }, t = d.totals;
+  const d = await api('/api/college/enrol'), e = d.entry || { strength: '', registered: '', ineligible: '', remaining: null }, t = d.totals;
   show(el, html`${pageHead('Enrolment drive', 'Campus to booth: every eligible student on the electoral roll. Enter your total numbers and keep them up to date as more students register.', '', 'Campus to booth')}
     <div class="card" style="margin-bottom:16px"><div class="row between"><b>${t.pct == null ? 'Enter your numbers to see your coverage' : t.pct + '% of eligible students registered'}</b><button class="btn ghost sm" data-act="eligibility">${icon('help')} Who is eligible?</button></div>
-      <div class="small muted" style="margin:2px 0 4px">${t.pct == null ? 'Target: 100%' : `${n(t.registered)} registered · ${n(t.balance)} still to cover · target 100%`}</div>${progress(t.pct || 0, t.pct >= 100 ? 'green' : 'saffron')}</div>
+      <div class="small muted" style="margin:2px 0 4px">${t.pct == null ? 'Target: 100%' : `${n(t.registered)} registered · ${n(t.balance)} yet to register · target 100%`}</div>${progress(t.pct || 0, t.pct >= 100 ? 'green' : 'saffron')}</div>
     <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>${icon('edit')} Your total numbers</h3>${d.entry?.updated_at ? html`<span class="small muted">Updated ${fdt(d.entry.updated_at)}</span>` : ''}</div>
       <form data-form="enrolSave" class="stack-s"><div class="formgrid">
         <label class="f"><span>Total students</span><input type="number" name="strength" min="0" inputmode="numeric" required value="${e.strength}" placeholder="0"></label>
         <label class="f"><span>Registered (already on the electoral roll)</span><input type="number" name="registered" min="0" inputmode="numeric" required value="${e.registered}" placeholder="0"></label>
-        <label class="f"><span>Not eligible yet (will not be 18 by ${QUALIFYING})</span><input type="number" name="ineligible" min="0" inputmode="numeric" required value="${e.ineligible}" placeholder="0"></label></div>
+        <label class="f"><span>Not eligible yet (will not be 18 by ${QUALIFYING})</span><input type="number" name="ineligible" min="0" inputmode="numeric" required value="${e.ineligible}" placeholder="0"></label>
+        <label class="f"><span>Eligible students yet to register</span><input type="number" name="remaining" id="enrem" min="0" inputmode="numeric" value="${e.remaining ?? ''}" placeholder="0"><span class="hint" id="remhint"></span></label></div>
         <div class="campus-facts" id="enlive"></div><div data-err></div>
         <div class="row"><button class="btn primary" type="submit">${icon('check')} Save my numbers</button></div></form></div>
     ${enrolKpis(t)}`);
-  const f = $('form[data-form=enrolSave]', el), live = () => {
-    const v = fd(f), s = Number(v.strength) || 0, r = Number(v.registered) || 0, i = Number(v.ineligible) || 0, elg = Math.max(0, s - i), bal = Math.max(0, elg - r);
-    show($('#enlive'), html`<div><b>${elg}</b><span>eligible</span></div><div><b>${bal}</b><span>balance to cover</span></div><div><b>${elg ? Math.min(100, Math.round(r * 100 / elg)) + '%' : '—'}</b><span>covered</span></div>`);
+  const f = $('form[data-form=enrolSave]', el), rem = $('#enrem', el);
+  const calc = () => { const v = fd(f), s = Number(v.strength) || 0, r = Number(v.registered) || 0, i = Number(v.ineligible) || 0; return Math.max(0, s - i - r); };
+  // the box follows the calculated figure until the college types its own; a figure it saved that differs from the calculation stays as theirs
+  let own = d.entry?.remaining != null && d.entry.remaining !== calc();
+  const live = () => {
+    const v = fd(f), s = Number(v.strength) || 0, r = Number(v.registered) || 0, i = Number(v.ineligible) || 0, elg = Math.max(0, s - i), sug = calc();
+    if (!own) rem.value = sug === 0 && !v.strength ? '' : sug;
+    const cur = rem.value === '' ? sug : Number(rem.value);
+    $('#remhint').innerHTML = own && cur !== sug ? `Calculated from your numbers: <b>${sug}</b> (total − not eligible − registered). <button type="button" class="linkbtn" data-act="useSuggest">Use ${sug}</button>` : `Worked out from your numbers: ${sug}. Change it if your own count is different.`;
+    show($('#enlive'), html`<div><b>${elg}</b><span>eligible</span></div><div><b>${cur}</b><span>yet to register</span></div><div><b>${elg ? Math.min(100, Math.round(r * 100 / elg)) + '%' : '—'}</b><span>covered</span></div>`);
   };
-  f.addEventListener('input', live); live();
+  f.addEventListener('input', e2 => { if (e2.target === rem) own = rem.value !== '' && Number(rem.value) !== calc(); live(); });
+  window.__enrolUse = () => { own = false; live(); };
+  live();
 }
-forms.enrolSave = async f => { const v = fd(f); await api('/api/college/enrol', 'PUT', { strength: v.strength, registered: v.registered, ineligible: v.ineligible }); toast('Numbers saved'); reloadCol(); };
+actions.useSuggest = () => window.__enrolUse?.();
+forms.enrolSave = async f => {
+  const v = fd(f), sug = Math.max(0, (Number(v.strength) || 0) - (Number(v.ineligible) || 0) - (Number(v.registered) || 0));
+  // only send the figure when the college typed one that differs from the calculation; otherwise it keeps following the other numbers
+  await api('/api/college/enrol', 'PUT', { strength: v.strength, registered: v.registered, ineligible: v.ineligible, remaining: v.remaining !== '' && Number(v.remaining) !== sug ? v.remaining : '' });
+  toast('Numbers saved'); reloadCol();
+};
 
 // ---------- home page of a college / school workspace while the village programme is off ----------
 async function pgHomeCampaign(el) {
@@ -66,7 +82,7 @@ async function pgHomeCampaign(el) {
     .filter(([id]) => feat(school ? 'school' : 'college', id));
   show(el, html`${pageHead(`Welcome, ${COL.college.short_name || COL.college.name}`, 'Campus to booth: bring every eligible student onto the electoral roll.', '', school ? 'School workspace' : 'College workspace')}
     ${COL.college.logo_v ? '' : html`<div class="card" style="margin-bottom:16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap">${avatar(COL.college.id, null, COL.college.name, 48)}<div class="grow"><b>Add your ${school ? 'school' : 'college'} logo</b><div class="small muted">It will appear next to your name on the public ranking, gallery and album.</div></div><button class="btn primary" data-act="logoModal">${icon('image')} Add logo</button></div>`}
-    <div class="card" style="margin-bottom:16px"><b>${t.pct == null ? 'Start by entering your total numbers' : t.pct + '% of eligible students registered'}</b><div class="small muted">${t.pct == null ? 'Target: 100%' : `${n(t.registered)} registered · ${n(t.balance)} still to cover · target 100%`}</div>${progress(t.pct || 0, t.pct >= 100 ? 'green' : 'saffron')}</div>
+    <div class="card" style="margin-bottom:16px"><b>${t.pct == null ? 'Start by entering your total numbers' : t.pct + '% of eligible students registered'}</b><div class="small muted">${t.pct == null ? 'Target: 100%' : `${n(t.registered)} registered · ${n(t.balance)} yet to register · target 100%`}</div>${progress(t.pct || 0, t.pct >= 100 ? 'green' : 'saffron')}</div>
     ${enrolKpis(t)}
     <div class="grid g3" style="margin-top:16px">${tiles.map(([id, ic, ti, sub]) => html`<a class="card rv hometile" href="#/me/${id}" style="text-decoration:none;color:inherit"><span class="kpi" style="padding:0;border:0;box-shadow:none"><span class="ico" style="position:static;width:42px;height:42px">${icon(ic)}</span></span><h3 style="margin:10px 0 4px">${ti}</h3><p class="small muted">${sub}</p></a>`)}</div>
     ${CANN.length ? html`<h3 style="margin:22px 0 8px">Latest announcements</h3><div class="stack-s">${CANN.slice(0, 3).map(a => html`<article class="notice ${a.pinned ? 'pinned' : ''}"><h3>${a.title}</h3>${a.body ? html`<p>${a.body}</p>` : ''}<div class="when">${fdt(a.created_at)}</div></article>`)}</div>` : ''}`);
