@@ -71,9 +71,17 @@ route('POST', '/api/staff/templates', OPS, async ctx => {
 });
 route('PUT', '/api/staff/templates/:id', OPS, async ctx => {
   const t = await tpl(ctx), b = ctx.body;
-  const fields = cleanFields(b.fields ?? t.fields, t.width, t.height), title = reqStr(b.title, 'Template title', 80);
+  let w = t.width, h = t.height, drive = t.drive_id, mime = t.mime, size = t.size;
+  if (b.data) {                                                    // a new design picture: the old file is replaced
+    if (!/^image\/(jpeg|png|webp)$/.test(b.mime || '')) throw bad('The template must be a PNG, WebP or JPG image');
+    const data = String(b.data); if (data.length * 0.75 > MAX_BYTES) throw bad('The template image is too large (up to 6 MB)');
+    w = num(b.width, 100, 8000); h = num(b.height, 100, 8000);
+    const up = await driveUpload(ctx.env, { name: `${String(b.title || t.title).replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 50)}_${Date.now()}.${b.mime.split('/')[1].replace('jpeg', 'jpg')}`, mime: b.mime, data, folder: 'Templates' });
+    ctx.waitUntil(driveDelete(ctx.env, t.drive_id).catch(() => {})); drive = up.id; mime = b.mime; size = Math.round(data.length * 0.75);
+  }
+  const fields = cleanFields(b.fields ?? t.fields, w, h), title = reqStr(b.title, 'Template title', 80);
   const thumb = /^[A-Za-z0-9+/=]+$/.test(String(b.thumb || '')) && String(b.thumb).length <= 42000 ? String(b.thumb) : t.thumb;
-  await ctx.db.run('UPDATE templates SET thumb=?,title=?,category=?,fields=?,active=?,kind=?,sort_order=? WHERE id=?', thumb, title, str(b.category, 40) || t.category, JSON.stringify(fields), b.active === false || b.active === 0 ? 0 : 1, ['photo', 'poster', 'certificate'].includes(b.kind) ? b.kind : t.kind, num(b.sort_order ?? t.sort_order, 0, 9999), t.id);
+  await ctx.db.run('UPDATE templates SET width=?,height=?,drive_id=?,mime=?,size=?,thumb=?,title=?,category=?,fields=?,active=?,kind=?,sort_order=? WHERE id=?', w, h, drive, mime, size, thumb, title, str(b.category, 40) || t.category, JSON.stringify(fields), b.active === false || b.active === 0 ? 0 : 1, ['photo', 'poster', 'certificate'].includes(b.kind) ? b.kind : t.kind, num(b.sort_order ?? t.sort_order, 0, 9999), t.id);
   await slog(ctx, 'template_edit', title);
   return { ok: true };
 });

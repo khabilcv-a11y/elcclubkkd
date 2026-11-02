@@ -114,12 +114,14 @@ function fitText(c, text, box, o) {
 }
 // a sentence with placeholders such as {student}, {college}, {dates}: the merged details are marked so they can be shown in bold
 const MERGE_TOKENS = [['student', 'Student name'], ['college', 'College / school'], ['activities', 'Activities'], ['dates', 'Dates'], ['days', 'Days'], ['campaign', 'Campaign'], ['serial', 'Certificate number'], ['issued', 'Date of issue']];
-const hasTokens = s => /\{[a-z]+\}/.test(String(s || ''));
+const hasTokens = s => /\{[a-z]+(?::[bn])?\}|\*\*[^*]+\*\*/.test(String(s || ''));
 function tokenRuns(text, merge, boldMerge, exporting) {
   const out = [];
-  for (const part of String(text || '').split(/(\{[a-z]+\})/)) {
-    const m = part.match(/^\{([a-z]+)\}$/);
-    if (m) { const v = merge?.[m[1]]; out.push({ t: v !== undefined && v !== '' ? v : (exporting ? '' : part), b: !!boldMerge }); } else if (part) out.push({ t: part, b: false });
+  for (const part of String(text || '').split(/(\{[a-z]+(?::[bn])?\}|\*\*[^*]+\*\*)/)) {
+    const m = part.match(/^\{([a-z]+)(?::([bn]))?\}$/);
+    if (m) { const v = merge?.[m[1]]; out.push({ t: v !== undefined && v !== '' ? v : (exporting ? '' : part), b: m[2] ? m[2] === 'b' : !!boldMerge }); }
+    else if (/^\*\*[^*]+\*\*$/.test(part)) out.push({ t: part.slice(2, -2), b: true });
+    else if (part) out.push({ t: part, b: false });
   }
   return out;
 }

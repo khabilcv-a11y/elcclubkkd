@@ -25,7 +25,7 @@ async function openDesigner(t) {
     <div class="edgrid"><div class="edpreview"><div class="tdstage checker" id="tdstage"><img id="tdimg" alt="Template picture" hidden><div id="tdboxes"></div><div class="tdempty" id="tdempty">${t ? 'Loading…' : 'Choose the template image to start'}</div></div>
       <p class="hint">Drag a box to move it, and drag its corner square to resize it. Photo frames should be PNG or WebP with a transparent window where the photo shows.</p></div>
       <form data-form="tplSave" class="stack-s edform">
-        ${t ? '' : html`<label class="f"><span>Template image (PNG, WebP or JPG, up to 6 MB) *</span><input type="file" id="tdfile" accept="image/png,image/webp,image/jpeg" required></label>`}
+        ${t ? html`<label class="f"><span>Replace the design image (optional)</span><input type="file" id="tdfile" accept="image/png,image/webp,image/jpeg"><span class="hint">Choose a new picture, for example one with the sentence area left blank. Your boxes stay where they are.</span></label>` : html`<label class="f"><span>Template image (PNG, WebP or JPG, up to 6 MB) *</span><input type="file" id="tdfile" accept="image/png,image/webp,image/jpeg" required></label>`}
         <label class="f"><span>Title *</span><input type="text" name="title" maxlength="80" required value="${TD.title}" placeholder="e.g. Rally banner, Blue frame"></label>
         <div class="formgrid"><label class="f"><span>Type</span><select name="kind" id="tdkind"><option value="poster" ${TD.kind === 'poster' ? 'selected' : ''}>Poster or banner (text only)</option><option value="photo" ${TD.kind === 'photo' ? 'selected' : ''}>Photo frame (photo goes behind)</option><option value="certificate" ${TD.kind === 'certificate' ? 'selected' : ''}>Certificate (merged with each student's details)</option></select></label>
           <label class="f"><span>Album / category</span><input type="text" name="category" list="tdcats" maxlength="40" value="${TD.category}" placeholder="e.g. Banners"><datalist id="tdcats">${cats.map(c => html`<option value="${c}">`)}</datalist></label></div>
@@ -49,7 +49,10 @@ function tdWire(m) {
     const f = e.target.files[0]; if (!f) return;
     if (f.size > 6 * 1024 * 1024) { e.target.value = ''; return toast('The image must be 6 MB or smaller', true); }
     const url = URL.createObjectURL(f), im = new Image();
-    im.onload = () => { TD.file = f; TD.w = im.naturalWidth; TD.h = im.naturalHeight; TD.fields = []; tdImage(im); };
+    im.onload = () => {
+      if (TD.id) { const kx = im.naturalWidth / TD.w, ky = im.naturalHeight / TD.h; TD.fields.forEach(q => { q.x = Math.round(q.x * kx); q.w = Math.round(q.w * kx); q.y = Math.round(q.y * ky); q.h = Math.round(q.h * ky); }); TD.file = f; TD.w = im.naturalWidth; TD.h = im.naturalHeight; TD.img = im; $('#tdimg').src = im.src; tdPaint(); toast('New picture chosen. Press Save to keep it.'); return; }
+      TD.file = f; TD.w = im.naturalWidth; TD.h = im.naturalHeight; TD.fields = []; tdImage(im);
+    };
     im.onerror = () => toast('That file is not a readable image', true); im.src = url;
   });
   $('#tdkind', m).addEventListener('change', e => { TD.kind = e.target.value; const cert = TD.kind === 'certificate'; TD.fields.forEach(f => { if (f.type === 'text') { if (cert && f.src === 'ask') f.src = 'student'; else if (!cert && !['college', 'fixed', 'ask'].includes(f.src)) f.src = 'ask'; } }); tdPaint(); });
@@ -71,8 +74,10 @@ function tdWire(m) {
   stage.addEventListener('pointerup', end); stage.addEventListener('pointercancel', end);
   // the box settings
   const upd = e => {
-    const k = e.target.dataset.tf; if (!k || !TD.fields[TD.sel]) return; const f = TD.fields[TD.sel];
-    if (k === 'mode') { const v = e.target.value; f.type = v === 'logo' ? 'logo' : 'text'; f.src = v === 'logo' ? 'college' : v; if (v === 'fixed' && TD.kind === 'certificate' && !f.value) { f.value = 'of {college} has actively volunteered as part of the {campaign} from {dates}, in {activities}. Their contribution towards voter awareness is sincerely acknowledged and appreciated.'; f.lines = Math.max(f.lines, 4); f.weight = 400; f.boldMerge = true; f.align = 'justify'; } tdPaint(); return; }
+    const tk = e.target.dataset.tok, k = e.target.dataset.tf; if (e.target.dataset.tokstyle) { TD.tokStyle = e.target.value; return; }
+    if (tk && TD.fields[TD.sel]) { const q = TD.fields[TD.sel]; q.value = q.value.replace(new RegExp('\\{' + tk + '(?::[bn])?\\}', 'g'), `{${tk}:${e.target.value}}`); const ta = $('#tdvalue'); if (ta) ta.value = q.value; return; }
+    if (!k || !TD.fields[TD.sel]) return; const f = TD.fields[TD.sel];
+    if (k === 'mode') { const v = e.target.value; f.type = v === 'logo' ? 'logo' : 'text'; f.src = v === 'logo' ? 'college' : v; if (v === 'fixed' && TD.kind === 'certificate' && !f.value) { f.value = 'of {college:b} has actively volunteered as part of the {campaign:b} from {dates:b}, in {activities:n}. Their contribution towards voter awareness is sincerely acknowledged and appreciated.'; f.lines = Math.max(f.lines, 4); f.weight = 400; f.align = 'justify'; } tdPaint(); return; }
     if (['x', 'y', 'w', 'h'].includes(k)) { f[k] = Math.round(Math.max(k === 'w' || k === 'h' ? 20 : 0, Number(e.target.value) || 0)); tdBoxes(); return; }
     if (['caps', 'italic', 'boldMerge'].includes(k)) f[k] = e.target.checked; else if (['weight', 'lines', 'size'].includes(k)) f[k] = Number(e.target.value) || 0; else f[k] = e.target.value;
     if (k === 'label') { tdBoxes(); tdList(); }
@@ -92,7 +97,10 @@ function tdField() {
   show(box, html`<div class="tdfield"><label class="f"><span>Name of this box</span><input type="text" data-tf="label" maxlength="40" value="${f.label}"></label>
     <label class="f"><span>What goes here</span>${sel('mode', TD.kind === 'certificate' ? [['student', 'Student name'], ['college', 'College / school name'], ['activities', 'Activities taken part in'], ['dates', 'Dates of participation'], ['days', 'Number of days'], ['campaign', 'Campaign title'], ['serial', 'Certificate number'], ['issued', 'Date of issue'], ['fixed', 'Fixed text, or a sentence with placeholders'], ['logo', 'The college\'s logo']] : [['ask', 'Text typed by the college'], ['college', 'College / school name (filled in automatically)'], ['fixed', 'Fixed text (same for everyone)'], ['logo', 'The college\'s logo']], mode)}</label>
     ${mode === 'fixed' ? html`<label class="f"><span>${TD.kind === 'certificate' ? 'Text (type the whole sentence and insert placeholders where the details belong)' : 'Text'}</span><textarea data-tf="value" id="tdvalue" rows="${TD.kind === 'certificate' ? 6 : 2}" maxlength="1200">${f.value}</textarea></label>
-      ${TD.kind === 'certificate' ? html`<div class="tdtokens"><span class="small muted">Insert a placeholder:</span>${MERGE_TOKENS.map(([k, l]) => html`<button type="button" class="chip" data-act="tdToken" data-k="${k}">${l}</button>`)}</div><label class="chk"><input type="checkbox" data-tf="boldMerge" ${f.boldMerge ? 'checked' : ''}> Show the merged details in bold</label>` : ''}` : ''}
+      ${TD.kind === 'certificate' ? html`<div class="tdtokens"><span class="small muted">Insert a placeholder as:</span><label class="chk"><input type="radio" name="tdstyle" data-tokstyle="1" value="b" ${(TD.tokStyle || 'b') === 'b' ? 'checked' : ''}> <b>Bold</b></label><label class="chk"><input type="radio" name="tdstyle" data-tokstyle="1" value="n" ${TD.tokStyle === 'n' ? 'checked' : ''}> Normal</label></div>
+        <div class="tdtokens">${MERGE_TOKENS.map(([k, l]) => html`<button type="button" class="chip" data-act="tdToken" data-k="${k}">${l}</button>`)}</div>
+        ${(() => { const seen = new Map(); for (const m of String(f.value || '').matchAll(/\{([a-z]+)(?::([bn]))?\}/g)) seen.set(m[1], m[2] || (f.boldMerge ? 'b' : 'n')); return seen.size ? html`<div class="tdused"><span class="small muted">Placeholders in this sentence (bold or normal):</span>${[...seen].map(([k, st]) => html`<label class="tdu"><span>${(MERGE_TOKENS.find(x => x[0] === k) || [k, k])[1]}</span><select data-tok="${k}"><option value="b" ${st === 'b' ? 'selected' : ''}>Bold</option><option value="n" ${st === 'n' ? 'selected' : ''}>Normal</option></select></label>`)}</div>` : ''; })()}
+        <p class="hint">To make other words bold, put ** on both sides of them, like **SVEEP Election Awareness Campaign**.</p>` : ''}` : ''}
     ${f.type === 'text' ? html`<div class="formgrid"><label class="f"><span>Font</span>${sel('font', Object.entries(FONTS).map(([k, v]) => [k, v[0]]), f.font || 'sans')}</label><label class="f"><span>Colour</span><input type="color" data-tf="color" value="${f.color}"></label><label class="f"><span>Weight</span>${sel('weight', [[400, 'Normal'], [600, 'Semi-bold'], [700, 'Bold'], [800, 'Extra bold']], f.weight)}</label>
       <label class="f"><span>Alignment</span>${sel('align', [['left', 'Left'], ['center', 'Centre'], ['right', 'Right'], ['justify', 'Justified']], f.align)}</label><label class="f"><span>Lines (at most)</span>${sel('lines', [1, 2, 3, 4, 5, 6, 8, 10, 12].map(n => [n, n]), f.lines)}</label><label class="f"><span>Largest font size (pixels, optional)</span><input type="number" data-tf="size" min="0" max="600" value="${f.size || ''}" placeholder="automatic"></label></div>
       <div class="row gap-s"><label class="chk"><input type="checkbox" data-tf="italic" ${f.italic ? 'checked' : ''}> <i>Italic</i></label><label class="chk"><input type="checkbox" data-tf="caps" ${f.caps ? 'checked' : ''}> CAPITAL LETTERS</label></div>
@@ -102,8 +110,8 @@ function tdField() {
 }
 function tdPaint() { tdBoxes(); tdList(); tdField(); }
 actions.tdToken = el => {
-  const ta = $('#tdvalue'), tok = `{${el.dataset.k}}`, a = ta.selectionStart ?? ta.value.length, b = ta.selectionEnd ?? a;
-  ta.value = ta.value.slice(0, a) + tok + ta.value.slice(b); ta.focus(); ta.setSelectionRange(a + tok.length, a + tok.length); TD.fields[TD.sel].value = ta.value;
+  const ta = $('#tdvalue'), tok = `{${el.dataset.k}:${TD.tokStyle || 'b'}}`, a = ta.selectionStart ?? ta.value.length, b = ta.selectionEnd ?? a;
+  ta.value = ta.value.slice(0, a) + tok + ta.value.slice(b); TD.fields[TD.sel].value = ta.value; tdField(); const n = $('#tdvalue'); n.focus(); n.setSelectionRange(a + tok.length, a + tok.length);
 };
 actions.tdSel = el => { TD.sel = Number(el.dataset.i); tdPaint(); };
 actions.tdAdd = el => { if (!TD.img) return toast('Choose the template image first', true); TD.fields.push(newField(el.dataset.t, TD.fields.length + 1, TD.w, TD.h)); TD.sel = TD.fields.length - 1; tdPaint(); };
@@ -124,7 +132,7 @@ forms.tplSave = async f => {
   const t = { ...tdObject(), kind: v.kind };
   $('[data-err]', f).innerHTML = '<div class="alert info">Saving the template…</div>';
   body.thumb = await templateThumb(t, TD.img);
-  if (TD.id) await api('/api/staff/templates/' + TD.id, 'PUT', body);
+  if (TD.id) { if (TD.file) { body.mime = TD.file.type; body.data = await toB64(TD.file); } await api('/api/staff/templates/' + TD.id, 'PUT', body); }
   else { body.mime = TD.file.type; body.data = await toB64(TD.file); await api('/api/staff/templates', 'POST', body); }
   f.closest('.overlay').close(); toast('Template saved'); apTemplates($('#pg'));
 };
