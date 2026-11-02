@@ -1,10 +1,11 @@
 import { route, scopeOf, assertCollege, assertVillage, issueSession } from '../lib/router.js';
 import { log } from '../lib/db.js';
-import { collegeStats } from '../lib/stats.js';
+import { collegeStats, campusStats } from '../lib/stats.js';
 import { driveConfigured } from '../lib/drive.js';
 import { daysWithVolunteers, reportFrom, LOCKED, villageReport, photoResponse } from './college.js';
 import { studentSummary } from './reports.js';
 import { certData, nextCertNo } from './college.js';
+import { extraBody, EXTRA } from '../lib/profile.js';
 import { HttpError, bad, haversine, hashSecret, verifySecret, DEFAULT_PASSWORD, nowIso, str, reqStr, num, emailOk, csv, isDup } from '../lib/util.js';
 
 const STAFF = 'staff';
@@ -42,22 +43,22 @@ function collegeBody(b) {
   const o = {
     name: reqStr(b.name, 'College name', 160), short_name: str(b.short_name, 40), address: reqStr(b.address, 'Address', 300),
     phone: reqStr(b.phone, 'Contact number', 30), email: emailOk(b.email, 'College email'), coordinator: str(b.coordinator, 100),
-    lat: num(b.lat), lng: num(b.lng), lsgi: str(b.lsgi, 120),
+    lat: num(b.lat), lng: num(b.lng), lsgi: str(b.lsgi, 120), ...extraBody(b),
   };
   if (o.lat != null && (o.lat < 8 || o.lat > 13 || o.lng == null)) throw bad('Latitude/longitude look wrong for Kerala');
   return o;
 }
 route('GET', '/api/staff/colleges', STAFF, async ctx => {
   const s = await scopeOf(ctx);
-  const [stats, rows] = await Promise.all([collegeStats(ctx.db), ctx.db.all('SELECT id,name,short_name,address,phone,email,coordinator,lat,lng,lsgi,passcode_sent_at,passcode_plain AS passcode,last_login_at,active,kind FROM colleges ORDER BY name')]);
+  const [stats, rows] = await Promise.all([collegeStats(ctx.db), ctx.db.all(`SELECT id,name,short_name,address,phone,email,coordinator,lat,lng,lsgi,${EXTRA.join(',')},profile_at,created_at,logo_at,passcode_sent_at,passcode_plain AS passcode,last_login_at,active,kind FROM colleges ORDER BY name`)]);
   const kind = ctx.query.kind === 'school' ? 'school' : ctx.query.kind === 'college' ? 'college' : null;
-  const m = new Map(stats.map(c => [c.id, c]));
-  return rows.filter(c => (!s || s.colleges.has(c.id)) && (!kind || (c.kind === 'school' ? 'school' : 'college') === kind)).map(c => ({ ...c, kind: c.kind === 'school' ? 'school' : 'college', stats: m.get(c.id) || null }));
+  const m = new Map(stats.map(c => [c.id, c])), cm = new Map((await campusStats(ctx.db)).institutions.map(c => [c.id, c]));
+  return rows.filter(c => (!s || s.colleges.has(c.id)) && (!kind || (c.kind === 'school' ? 'school' : 'college') === kind)).map(c => ({ ...c, kind: c.kind === 'school' ? 'school' : 'college', stats: m.get(c.id) || null, strength: cm.get(c.id)?.strength || 0, reg: cm.get(c.id)?.registered || 0 }));
 });
 route('POST', '/api/staff/colleges', OPS, async ctx => {
   const o = collegeBody(ctx.body);
-  const id = await ctx.db.insert('INSERT INTO colleges(name,short_name,address,phone,email,coordinator,lat,lng,lsgi,created_at,kind) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-    o.name, o.short_name, o.address, o.phone, o.email, o.coordinator, o.lat, o.lng, o.lsgi, nowIso(), ctx.body.kind === 'school' ? 'school' : 'college');
+  const id = await ctx.db.insert('INSERT INTO colleges(name,short_name,address,phone,email,coordinator,lat,lng,lsgi,created_at,kind,' + EXTRA.join(',') + ') VALUES (?,?,?,?,?,?,?,?,?,?,?' + ',?'.repeat(EXTRA.length) + ')',
+    o.name, o.short_name, o.address, o.phone, o.email, o.coordinator, o.lat, o.lng, o.lsgi, nowIso(), ctx.body.kind === 'school' ? 'school' : 'college', ...EXTRA.map(k => o[k]));
   await slog(ctx, 'college_add', o.name);
   const { code } = await pushPasscode(ctx, id);
   return { ok: true, id, code };
@@ -65,8 +66,8 @@ route('POST', '/api/staff/colleges', OPS, async ctx => {
 route('PUT', '/api/staff/colleges/:id', STAFF, async ctx => {
   await assertCollege(ctx, ctx.params.id);
   const o = collegeBody(ctx.body);
-  await ctx.db.run('UPDATE colleges SET name=?,short_name=?,address=?,phone=?,email=?,coordinator=?,lat=?,lng=?,lsgi=? WHERE id=?',
-    o.name, o.short_name, o.address, o.phone, o.email, o.coordinator, o.lat, o.lng, o.lsgi, Number(ctx.params.id));
+  await ctx.db.run('UPDATE colleges SET name=?,short_name=?,address=?,phone=?,email=?,coordinator=?,lat=?,lng=?,lsgi=?,profile_at=?,' + EXTRA.map(k => k + '=?').join(',') + ' WHERE id=?',
+    o.name, o.short_name, o.address, o.phone, o.email, o.coordinator, o.lat, o.lng, o.lsgi, nowIso(), ...EXTRA.map(k => o[k]), Number(ctx.params.id));
   await slog(ctx, 'college_edit', o.name);
   return { ok: true };
 });

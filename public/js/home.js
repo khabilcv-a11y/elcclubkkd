@@ -18,7 +18,7 @@ function publicShell(inner, active = '') {
         ${feat('public', 'map') ? html`<a class="l hide-m" href="#/" data-act="go" data-to="villagemap">Village map</a>` : html`<a class="l hide-m" href="#/" data-act="go" data-to="campus">Campus to booth</a>`}${feat('public', 'album') ? html`<a class="l hide-m" href="#/gallery" ${active === 'gallery' ? 'aria-current="page"' : ''}>Gallery</a>` : ''}<a class="l hide-m" href="#/" data-act="go" data-to="resources">Resources</a>${signed}</nav></div></header>
     <main id="main" tabindex="-1" class="page-in">${inner}</main>
     <footer class="foot"><div class="wrap"><div class="logos"><img src="${LOGO.district}" alt="District Administration Kozhikode"><span class="sep"></span><img src="${LOGO.sweepDark}" alt="SWEEP Kozhikode"><span class="sep"></span><img src="${LOGO.nvlb}" alt="No voter to be left behind" style="height:62px"></div>
-      <div class="cols"><div><img src="${LOGO.sweepWhite}" alt="SWEEP Kozhikode" style="height:46px;margin-bottom:10px"><p class="small">Systematic Voters' Education and Electoral Participation, Kozhikode. Electoral Literacy Clubs enrolling every eligible young voter, village by village.</p></div>
+      <div class="cols"><div><img src="${LOGO.sweepWhite}" alt="SWEEP Kozhikode" style="height:46px;margin-bottom:10px"><p class="small">Systematic Voters' Education and Electoral Participation, Kozhikode. Electoral Literacy Clubs enrolling every eligible young voter${feat('public', 'map') ? ', village by village' : ', from campus to booth'}.</p></div>
         <div><h4>Explore</h4><p class="small"><a href="#/board">Display board</a><br>${feat('public', 'map') ? html`<a href="#/" data-act="go" data-to="villagemap">Village map</a><br>` : ''}<a href="#/" data-act="go" data-to="resources">Resource centre</a></p></div>
         <div><h4>For participants</h4><p class="small"><a href="#/login/college">College coordinators</a><br><a href="#/login/school">Schools</a><br>${feat('public', 'officer_login') ? html`<a href="#/login/officer">Village officers</a><br>` : ''}<a href="/admin">Staff console</a></p></div>
         <div><h4>Check your own enrolment</h4><p class="small">Not on the electoral roll yet? Apply with Form 6 on the Election Commission's <a href="https://voters.eci.gov.in" target="_blank" rel="noopener">Voters' Service Portal</a> or call <b>1950</b>.</p></div></div>
@@ -125,12 +125,13 @@ actions.albPrev = () => setAlbum(albumAt - 1);
 actions.cfGo = el => { if ($('#cf')?.dataset.swiped) return; const k = Number(el.dataset.i); if (k !== albumAt) setAlbum(k); else openLightbox(albumList, k); };
 
 function campusSection(C) {
-  const T = C.totals;
+  const T = C.totals, inRace = rankedCampus(C.institutions).length;
   return html`<section class="section" id="campus"><div class="wrap"><div class="section-head"><div><h2>Campus to booth</h2><p>The target is 100%: every eligible student in every college and school on the electoral roll.</p></div><a class="btn secondary" href="#/board">Full display board ${icon('arrow-right')}</a></div>
     <div class="card rv campus-top"><div class="row between" style="align-items:flex-end;gap:16px"><div><div class="campus-big">${T.pct == null ? '—' : T.pct + '%'}</div><div class="muted">total coverage of eligible students</div></div>
       <div class="campus-facts"><div><b>${n(T.registered)}</b><span>students registered</span></div><div><b>${T.active}/${T.joined}</b><span>active this week</span></div></div></div>
       ${progress(T.pct || 0, 'green')}</div>
-    <h3 style="margin:26px 0 12px">Leading colleges and schools</h3><div id="cpodium"></div><div class="board" id="cboard" data-limit="10"></div></div></section>`;
+    ${epicSection(C)}
+    ${inRace > 5 ? html`<h3 style="margin:26px 0 12px">Leading colleges and schools</h3><div id="cpodium"></div><div class="board" id="cboard" data-limit="10"></div>` : raceNote(inRace)}</div></section>`;
 }
 
 function insightCards(i, t) {
@@ -157,7 +158,7 @@ function paintHome() {
 }
 const resPic = r => (r.kind === 'file' && r.has_thumb ? html`<a class="rthumb" href="#/resource/${r.id}" tabindex="-1" aria-hidden="true"><img src="/api/resources/${r.id}/thumb" alt="" loading="lazy" decoding="async"></a>` : html`<a href="#/resource/${r.id}" tabindex="-1" aria-hidden="true">${fileTile(r.filename, r.mime, r.kind === 'link')}</a>`);
 const resCard = r => html`<div class="res rv">${resPic(r)}<div class="grow"><h3><a href="#/resource/${r.id}">${r.title}</a></h3><p>${r.description || r.category}</p></div>
-  <div class="resact"><button class="iconbtn" data-act="copyRes" data-id="${r.id}" aria-label="Copy link to ${r.title}" title="Copy link">${icon('copy')}</button>${r.kind === 'link' ? html`<a class="btn secondary sm" href="${r.url}" target="_blank" rel="noopener">${icon('external')} Open</a>` : html`<a class="btn secondary sm" href="/api/resources/${r.id}/download">${icon('download')} Download</a>`}</div></div>`;
+  <div class="resact"><button class="iconbtn" data-act="copyRes" data-s="${resSlug(r)}" aria-label="Copy link to ${r.title}" title="Copy link">${icon('copy')}</button>${r.kind === 'link' ? html`<a class="btn secondary sm" href="${r.url}" target="_blank" rel="noopener">${icon('external')} Open</a>` : html`<a class="btn secondary sm" href="/api/resources/${r.id}/download">${icon('download')} Download</a>`}</div></div>`;
 
 function paintTrend(sel, data) {
   const tr = data || BOARD.trend, mx = Math.max(1, ...tr.map(x => x.registered));

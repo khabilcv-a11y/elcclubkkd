@@ -109,6 +109,15 @@ export async function publicBoard(db) {
   };
 }
 
+// ---------- badges: Epic of Kozhikode for 100%, milestones on the way, and recognition for steady work ----------
+export const BADGES = { epic: ['Epic of Kozhikode', 'gold'], p75: ['75% club', 'ok'], p50: ['Halfway there', 'info'], p25: ['First quarter', 'grey'], reporter: ['Daily reporter', 'saffron'], lens: ['Photo champion', 'info'] };
+function badgesFor(pc, deskDays, photos) {
+  const out = [];
+  if (pc != null) { if (pc >= 100) out.push('epic'); else if (pc >= 75) out.push('p75'); else if (pc >= 50) out.push('p50'); else if (pc >= 25) out.push('p25'); }
+  if (deskDays >= 7) out.push('reporter');
+  if (photos >= 5) out.push('lens');
+  return out;
+}
 // ---------- Campus to booth: coverage, inputs and performance of every college and school ----------
 const pctOf = (a, b) => (b ? Math.min(100, Math.round(a * 100 / b)) : null);
 export async function campusStats(db) {
@@ -126,14 +135,15 @@ export async function campusStats(db) {
     const e = E.get(c.id) || { strength: 0, registered: 0, ineligible: 0, balance: 0, depts: 0, classes: 0, last: '' }, d = D.get(c.id) || { days: 0, regs: 0, vols: 0, last: '' }, a = A.get(c.id) || { n: 0, last: '' }, p = P.get(c.id) || { n: 0, last: '' };
     const eligible = Math.max(0, e.strength - e.ineligible), last = [String(e.last || '').slice(0, 10), d.last || '', a.last || '', p.last || ''].sort().at(-1) || '';
     const started = e.strength > 0 || d.days > 0 || a.n > 0 || p.n > 0;
+    const reg = e.registered + (d.regs || 0), bal = Math.max(0, (e.balance || 0) - (d.regs || 0)), pc = pctOf(reg, eligible);
     return { id: c.id, name: c.name, short_name: c.short_name || c.name, kind: c.kind, coordinator: c.coordinator, phone: c.phone, logo_v: c.logo_at || null,
-      strength: e.strength, registered: e.registered, ineligible: e.ineligible, eligible, balance: e.balance || 0, pct: pctOf(e.registered, eligible),
+      strength: e.strength, registered: reg, ineligible: e.ineligible, eligible, balance: bal, pct: pc, epic: eligible > 0 && pc >= 100, badges: badgesFor(pc, d.days, p.n, e.last),
       depts: e.depts, classes: e.classes, desk_days: d.days, desk_regs: d.regs || 0, desk_vols: d.vols || 0, activity: a.n, photos: p.n,
       last_active: last, status: !started ? 'new' : last >= since ? 'active' : 'quiet', joined: started || !!c.last_login_at };
   });
   const sum = k => list.reduce((n, c) => n + c[k], 0);
   const totals = { strength: sum('strength'), registered: sum('registered'), ineligible: sum('ineligible'), depts: sum('depts'), classes: sum('classes'), desk_regs: sum('desk_regs'), desk_vols: sum('desk_vols'), activity: sum('activity'), photos: sum('photos'),
-    desk_reporting: list.filter(c => c.desk_days > 0).length, reporting: list.filter(c => c.strength > 0).length, active: list.filter(c => c.status === 'active').length, institutions: list.length, joined: list.filter(c => c.joined).length };
+    desk_reporting: list.filter(c => c.desk_days > 0).length, reporting: list.filter(c => c.strength > 0).length, active: list.filter(c => c.status === 'active').length, institutions: list.length, joined: list.filter(c => c.joined).length, epic: list.filter(c => c.epic).length };
   totals.eligible = Math.max(0, totals.strength - totals.ineligible); totals.balance = sum('balance'); totals.pct = pctOf(totals.registered, totals.eligible);
   return { institutions: list, totals, trend: trend.reverse(), today };
 }

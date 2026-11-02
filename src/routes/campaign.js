@@ -12,11 +12,13 @@ const kindOf = c => (c.kind === 'school' ? 'school' : 'college');
 const base = ctx => ctx.env.BASE_URL || new URL(ctx.req.url).origin;
 
 // ---------- numbers ----------
+// A row holds the college's starting numbers; "desk" is what its daily reports have added since, so registered and
+// yet-to-register keep up with the reports without anyone re-typing them.
 export function tally(rows) {
-  const t = { strength: 0, registered: 0, ineligible: 0 };
-  for (const r of rows) { t.strength += r.strength; t.registered += r.registered; t.ineligible += r.ineligible; }
+  const t = { strength: 0, registered: 0, ineligible: 0, base_registered: 0, desk: 0 };
+  for (const r of rows) { const d = r.desk || 0; t.strength += r.strength; t.base_registered += r.registered; t.desk += d; t.registered += r.registered + d; t.ineligible += r.ineligible; }
   t.eligible = Math.max(0, t.strength - t.ineligible);
-  t.balance = rows.reduce((s, r) => s + (r.remaining != null ? r.remaining : Math.max(0, r.strength - r.ineligible - r.registered)), 0);
+  t.balance = rows.reduce((s, r) => s + Math.max(0, (r.remaining != null ? r.remaining : Math.max(0, r.strength - r.ineligible - r.registered)) - (r.desk || 0)), 0);
   t.pct = t.eligible ? Math.min(100, Math.round(t.registered * 100 / t.eligible)) : null;
   return t;
 }
@@ -36,9 +38,10 @@ const loadRows = (db, collegeId) => db.all('SELECT * FROM enrol_classes WHERE co
 // ---------- the college's own numbers: totals only ----------
 const TOTAL_DEPT = 'Total';
 const totalRow = (db, id) => db.get('SELECT * FROM enrol_classes WHERE college_id=? AND dept=?', id, TOTAL_DEPT);
+const deskRegs = async (db, id) => (await db.get('SELECT COALESCE(SUM(registrations),0) n FROM desk_days WHERE college_id=?', id)).n;
 route('GET', '/api/college/enrol', 'college', async ctx => {
-  const r = await totalRow(ctx.db, ctx.college.id);
-  return { kind: kindOf(ctx.college), entry: r ? { strength: r.strength, registered: r.registered, ineligible: r.ineligible, remaining: r.remaining ?? null, updated_at: r.updated_at } : null, totals: tally(r ? [r] : []) };
+  const r = await totalRow(ctx.db, ctx.college.id), desk = await deskRegs(ctx.db, ctx.college.id);
+  return { kind: kindOf(ctx.college), entry: r ? { strength: r.strength, registered: r.registered, ineligible: r.ineligible, remaining: r.remaining ?? null, updated_at: r.updated_at } : null, totals: tally(r ? [{ ...r, desk }] : []) };
 });
 route('PUT', '/api/college/enrol', 'college', async ctx => {
   ctx.db.deferred = true;
@@ -53,16 +56,16 @@ route('PUT', '/api/college/enrol', 'college', async ctx => {
   else await ctx.db.run('INSERT INTO enrol_classes(college_id,dept,coordinator,phone,class_name,strength,registered,ineligible,updated_at,remaining) VALUES (?,?,?,?,?,?,?,?,?,?)', c.id, TOTAL_DEPT, c.coordinator || '', c.phone || '', 'All students', strength, registered, ineligible, now, remaining);
   await ctx.db.run('DELETE FROM enrol_classes WHERE college_id=? AND dept<>?', c.id, TOTAL_DEPT);   // any older department-wise rows
   await clog(ctx, 'enrol_update', `${registered} registered of ${strength}`);
-  return { ok: true, totals: tally([{ strength, registered, ineligible, remaining }]) };
+  return { ok: true, totals: tally([{ strength, registered, ineligible, remaining, desk: await deskRegs(ctx.db, c.id) }]) };
 });
 
 // ---------- district view ----------
 route('GET', '/api/staff/enrol', 'staff', async ctx => {
   const s = await scopeOf(ctx), kind = ctx.query.kind === 'school' ? 'school' : ctx.query.kind === 'college' ? 'college' : null;
-  const [cs, rows] = await Promise.all([ctx.db.all('SELECT id,name,short_name,kind,coordinator,phone,logo_at FROM colleges WHERE active=1 ORDER BY name'), ctx.db.all('SELECT * FROM enrol_classes')]);
-  const by = new Map(rows.filter(r => r.dept === TOTAL_DEPT).map(r => [r.college_id, r]));
-  const out = cs.filter(c => (!s || s.colleges.has(c.id)) && (!kind || kindOf(c) === kind)).map(c => { const r = by.get(c.id); return { id: c.id, name: c.name, kind: kindOf(c), logo_v: c.logo_at || null, coordinator: c.coordinator, phone: c.phone, updated_at: r ? r.updated_at : null, totals: tally(r ? [r] : []) }; });
-  return { institutions: out, totals: tally(out.filter(i => by.has(i.id)).map(i => ({ ...i.totals, remaining: i.totals.balance }))), reporting: out.filter(i => by.has(i.id)).length };
+  const [cs, rows, dk] = await Promise.all([ctx.db.all('SELECT id,name,short_name,kind,coordinator,phone,logo_at FROM colleges WHERE active=1 ORDER BY name'), ctx.db.all('SELECT * FROM enrol_classes'), ctx.db.all('SELECT college_id,SUM(registrations) n FROM desk_days GROUP BY college_id')]);
+  const by = new Map(rows.filter(r => r.dept === TOTAL_DEPT).map(r => [r.college_id, r])), D = new Map(dk.map(r => [r.college_id, r.n]));
+  const out = cs.filter(c => (!s || s.colleges.has(c.id)) && (!kind || kindOf(c) === kind)).map(c => { const r = by.get(c.id); return { id: c.id, name: c.name, kind: kindOf(c), logo_v: c.logo_at || null, coordinator: c.coordinator, phone: c.phone, updated_at: r ? r.updated_at : null, totals: tally(r ? [{ ...r, desk: D.get(c.id) || 0 }] : []) }; });
+  return { institutions: out, totals: tally(out.filter(i => by.has(i.id)).map(i => ({ ...i.totals, desk: 0, remaining: i.totals.balance }))), reporting: out.filter(i => by.has(i.id)).length };
 });
 
 // ---------- reports (plugged into the reports page) ----------
@@ -71,11 +74,11 @@ const T = (key, label) => ({ key, label });
 export const ENROL_DATASETS = [{ key: 'enrol_inst', title: 'Enrolment by college / school' }];
 export async function enrolReport(ctx, type, q) {
   const s = await scopeOf(ctx), text = q.q ? String(q.q).toLowerCase() : null;
-  const [cs, rows] = await Promise.all([ctx.db.all('SELECT id,name,kind FROM colleges WHERE active=1 ORDER BY name'), ctx.db.all('SELECT * FROM enrol_classes WHERE dept=?', TOTAL_DEPT)]);
-  const by = new Map(rows.map(r => [r.college_id, r]));
+  const [cs, rows, dk] = await Promise.all([ctx.db.all('SELECT id,name,kind FROM colleges WHERE active=1 ORDER BY name'), ctx.db.all('SELECT * FROM enrol_classes WHERE dept=?', TOTAL_DEPT), ctx.db.all('SELECT college_id,SUM(registrations) n FROM desk_days GROUP BY college_id')]);
+  const by = new Map(rows.map(r => [r.college_id, r])), D = new Map(dk.map(r => [r.college_id, r.n]));
   const list = cs.filter(c => (!s || s.colleges.has(c.id)) && (!q.college || String(c.id) === String(q.college)) && (!q.kind || kindOf(c) === q.kind) && (!text || c.name.toLowerCase().includes(text)));
   return { title: 'Enrolment by college / school', cols: [T('college', 'Institution'), T('type', 'Type'), N('strength', 'Total students'), N('registered', 'Registered'), N('ineligible', 'Not eligible yet'), N('eligible', 'Eligible'), N('balance', 'Yet to register'), N('pct', 'Covered %'), T('updated', 'Updated')],
-    rows: list.map(c => { const r = by.get(c.id), t = tally(r ? [r] : []); return { college: c.name, type: kindOf(c) === 'school' ? 'School' : 'College', strength: t.strength, registered: t.registered, ineligible: t.ineligible, eligible: t.eligible, balance: t.balance, pct: t.pct, updated: r ? (r.updated_at || '').slice(0, 10) : '' }; }) };
+    rows: list.map(c => { const r = by.get(c.id), t = tally(r ? [{ ...r, desk: D.get(c.id) || 0 }] : []); return { college: c.name, type: kindOf(c) === 'school' ? 'School' : 'College', strength: t.strength, registered: t.registered, ineligible: t.ineligible, eligible: t.eligible, balance: t.balance, pct: t.pct, updated: r ? (r.updated_at || '').slice(0, 10) : '' }; }) };
 }
 
 // coverage + inputs + performance of every institution (staff dashboard)

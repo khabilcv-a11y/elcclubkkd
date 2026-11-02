@@ -17,16 +17,26 @@ function openLightbox(list, start) {
   document.addEventListener('keydown', key); paintBox();
 }
 const kindLabel = i => (i.kind === 'school' ? 'School' : 'College');
+// badges earned: Epic of Kozhikode (100%), milestones on the way, steady reporting and photos
+const BADGE = { epic: ['★ Epic of Kozhikode', 'gold'], p75: ['75% club', 'ok'], p50: ['Halfway there', 'info'], p25: ['First quarter', 'grey'], reporter: ['Daily reporter', 'saffron'], lens: ['Photo champion', 'info'] };
+const badgeChips = (list, max = 3) => html`${(list || []).slice(0, max).map(b => BADGE[b] ? html`<span class="badge ${BADGE[b][1]}">${BADGE[b][0]}</span>` : '')}`;
+const raceNote = k => html`<div class="card rv racenote" style="margin-top:24px">${icon('trophy')}<div><b>The ranking opens soon</b><p>${k ? `${k} college${k === 1 ? ' has' : 's and schools have'} entered numbers so far. ` : ''}The leaderboard appears once more than 5 colleges and schools are in the race. Every registration counts, so keep your daily report up to date.</p></div></div>`;
+// 100% covered: the Epic of Kozhikode
+function epicSection(C) {
+  const epics = C.institutions.filter(i => i.epic); if (!epics.length) return '';
+  return html`<div class="epic rv"><div class="epic-head"><span class="epic-ic">${icon('award')}</span><div><span class="epic-eyebrow">100% covered</span><h3>Epic of Kozhikode</h3><p>These colleges and schools have brought every eligible student onto the electoral roll.</p></div></div>
+    <div class="epic-grid">${epics.map(c => html`<div class="epic-card">${avatar(c.id, c.logo_v, c.name, 52)}<b>${c.name}</b><small>${kindLabel(c)} · ${n(c.registered)} students registered</small><span class="badge gold">★ Epic of Kozhikode</span></div>`)}</div></div>`;
+}
 
 function podiumHtml(top) {
   if (!top.length) return '';
   const order = top.length >= 3 ? [1, 0, 2] : top.map((_, k) => k);
-  return html`<div class="podium cpod" style="grid-template-columns:repeat(${top.length},1fr);max-width:${top.length * 380}px;margin-inline:auto">${order.map(k => { const c = top[k]; return html`<div class="pod p${k + 1} rv"><div class="m">${k + 1}</div>${avatar(c.id, c.logo_v, c.name, 56)}<h3>${c.name}</h3><small>${kindLabel(c)}</small>
+  return html`<div class="podium cpod" style="grid-template-columns:repeat(${top.length},1fr);max-width:${top.length * 380}px;margin-inline:auto">${order.map(k => { const c = top[k]; return html`<div class="pod p${k + 1} rv"><div class="m">${k + 1}</div>${avatar(c.id, c.logo_v, c.name, 56)}<h3>${c.name}</h3><small>${kindLabel(c)}</small><div class="chiprow">${badgeChips(c.badges, 1)}</div>
       <div class="sc">${c.pct}%</div><div class="pbar">${progress(c.pct, c.pct >= 100 ? 'green' : 'saffron')}</div><div class="small muted"><b>${n(c.registered)}</b> registered</div></div>`; })}</div>`;
 }
 function rankRows(list, from) {
   return html`${list.map((c, i) => html`<div class="lbrow rv" style="grid-template-columns:44px minmax(160px,2.4fr) minmax(130px,2fr) minmax(100px,1fr)"><div class="rank">${from + i + 1}</div>
-    <div class="nm nmav">${avatar(c.id, c.logo_v, c.name, 38)}<span>${c.name}<small>${kindLabel(c)}${c.status === 'active' ? ' · active this week' : ''}</small></span></div>
+    <div class="nm nmav">${avatar(c.id, c.logo_v, c.name, 38)}<span>${c.name}<small>${kindLabel(c)}${c.status === 'active' ? ' · active this week' : ''}</small><span class="chiprow">${badgeChips(c.badges, 2)}</span></span></div>
     <div>${progress(c.pct, c.pct >= 100 ? 'green' : 'saffron')}<small class="muted">${c.pct}% covered</small></div>
     <div class="c"><b>${n(c.registered)}</b><small style="display:block">registered</small></div></div>`)}`;
 }
@@ -34,7 +44,7 @@ let cquery = '';
 function paintCampus() {
   const box = $('#cboard'); if (!box || !BOARD?.campus) return;
   const limit = Number(box.dataset.limit || 0), all = rankedCampus(BOARD.campus.institutions), q = cquery.toLowerCase();
-  if (!all.length) { show($('#cpodium'), ''); return show(box, empty('Rankings appear as colleges and schools enter their numbers', 'Enter your totals on the Enrolment drive page to join the ranking.', 'chart')); }
+  if (all.length <= 5) { show($('#cpodium'), ''); return show(box, raceNote(all.length)); }
   if (q) { show($('#cpodium'), ''); const hit = all.map((c, i) => ({ c, i })).filter(x => x.c.name.toLowerCase().includes(q)); return show(box, hit.length ? html`${hit.map(x => rankRows([x.c], x.i))}` : empty('No match', 'Try another name.', 'search')); }
   show($('#cpodium'), podiumHtml(all.slice(0, 3)));
   const rest = all.slice(3, limit || undefined);
@@ -49,6 +59,7 @@ async function renderCampusBoard() {
     <div class="card rv campus-top"><div class="row between" style="align-items:flex-end;gap:16px"><div><div class="campus-big">${T.pct == null ? '—' : T.pct + '%'}</div><div class="muted">total coverage of eligible students</div></div>
       <div class="campus-facts"><div><b>${n(T.registered)}</b><span>students registered</span></div><div><b>${T.active}/${T.institutions}</b><span>active this week</span></div></div></div>${progress(T.pct || 0, 'green')}</div>
     <div class="kpis" style="margin-top:16px">${kpi('Volunteer-days at help desks', T.desk_vols, { ic: 'users', tone: 'saffron', sub: '1 volunteer present for 1 day = 1 volunteer-day' })}${kpi('Volunteer-days in other activities', T.activity, { ic: 'megaphone', sub: 'Flash mobs, class campaigns, game zones' })}${kpi('Photos shared', T.photos, { ic: 'camera' })}</div>
+    ${epicSection(C)}
     <div class="section-head" style="margin-top:34px"><div><h2>College and school ranking</h2><p>Ranked by coverage: the share of eligible students who are registered.</p></div>
       <label class="f" style="margin:0;min-width:240px"><span class="sr">Search</span><input type="search" id="cq2" placeholder="Search a college or school…" value="${esc(cquery)}"></label></div>
     <div id="cpodium"></div><div class="board" id="cboard" data-limit="0"></div>
@@ -113,7 +124,7 @@ async function renderResource(id) {
     : /^image\//.test(r.mime || '') ? html`<img class="resview" src="/api/resources/${r.id}/view" alt="${r.title}">`
     : html`<div class="rv-tile">${r.has_thumb ? html`<img class="resview" src="/api/resources/${r.id}/thumb" alt="">` : fileTile(r.filename, r.mime)}<p>A preview is not available for this type of file. Download it to open it.</p></div>`;
   show($('#app'), publicShell(html`<div class="wrap" style="padding-top:26px">${pageHead(r.title, r.description || r.category, html`<a class="btn secondary" href="#/">${icon('home')} Home</a>`, r.category || 'Resource')}
-    <div class="card" style="margin-bottom:16px"><div class="row between"><div class="small muted">${r.kind === 'file' ? html`${r.filename}${r.size ? ' · ' + (r.size > 1048576 ? (r.size / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(r.size / 1024)) + ' KB') : ''}` : 'Web link'}</div>
-      <div class="row gap-s">${r.kind === 'link' ? html`<a class="btn primary" href="${r.url}" target="_blank" rel="noopener">${icon('external')} Open link</a>` : html`<a class="btn primary" href="/api/resources/${r.id}/download">${icon('download')} Download</a>`}<button class="btn secondary" data-act="copyRes" data-id="${r.id}">${icon('copy')} Copy link</button></div></div></div>
+    <div class="card" style="margin-bottom:16px"><div class="row between"><div class="small muted"><b>${r.filename || r.title}</b> · Share link: <code>${resLink(r)}</code><br>${r.kind === 'file' ? html`${r.size ? (r.size > 1048576 ? (r.size / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(r.size / 1024)) + ' KB') : ''}` : 'Web link'}</div>
+      <div class="row gap-s">${r.kind === 'link' ? html`<a class="btn primary" href="${r.url}" target="_blank" rel="noopener">${icon('external')} Open link</a>` : html`<a class="btn primary" href="/api/resources/${r.id}/download">${icon('download')} Download</a>`}<button class="btn secondary" data-act="copyRes" data-s="${resSlug(r)}">${icon('copy')} Copy link</button></div></div></div>
     <div class="card resprev">${pic}</div></div>`, ''));
 }

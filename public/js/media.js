@@ -11,7 +11,10 @@ async function copyText(text, done = 'Copied') {
   toast(done);
 }
 const portalLink = path => location.origin + '/#/' + path;
-actions.copyRes = el => copyText(portalLink('resource/' + el.dataset.id), 'Link copied');
+// a link that names the file: /r/guide-to-voter-registration-1793426997481919.pdf (first four words of the title, the id, the extension)
+const resSlug = r => { const w = String(r.title || 'file').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean).slice(0, 4).join('-') || 'file', e = (String(r.filename || '').match(/\.[A-Za-z0-9]{1,6}$/) || [''])[0].toLowerCase(); return `${w}-${r.id}${e}`; };
+const resLink = r => location.origin + '/r/' + resSlug(r);
+actions.copyRes = el => copyText(location.origin + '/r/' + el.dataset.s, 'Link copied');
 
 // shrink big camera photos so editing stays smooth on phones
 async function readPhoto(file, max = 2400) {
@@ -135,3 +138,22 @@ async function jpegToPdf(jpegBlob, w, h) {
   push(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xr}\n%%EOF`);
   return new Blob(parts, { type: 'application/pdf' });
 }
+
+const INST_TYPES = ['Government', 'Aided', 'Unaided / self-financing', 'Autonomous', 'Other'];
+// every detail kept about an institution: used by the staff form here and by the institution's own Profile page
+const detailFields = (c, staff) => html`<h4 class="fsec">Institution</h4>
+  <div class="formgrid">${staff ? html`<label class="f"><span>Name *</span><input type="text" name="name" value="${c?.name || ''}" required maxlength="160"></label>` : html`<label class="f"><span>Name</span><input type="text" value="${c?.name || ''}" disabled><span class="hint">To change the name, ask the district office.</span></label>`}
+    <label class="f"><span>Short name (shown on the leaderboard)</span><input type="text" name="short_name" value="${c?.short_name || ''}" maxlength="40"></label>
+    <label class="f"><span>Type</span><select name="inst_type"><option value="">Choose…</option>${INST_TYPES.map(t => html`<option ${c?.inst_type === t ? 'selected' : ''}>${t}</option>`)}</select></label>
+    <label class="f"><span>AISHE / UDISE code (optional)</span><input type="text" name="inst_code" value="${c?.inst_code || ''}" maxlength="40"></label></div>
+  <label class="f"><span>Address *</span><textarea name="address" required maxlength="300" rows="2">${c?.address || ''}</textarea></label>
+  <div class="formgrid"><label class="f"><span>Located LSGI</span><input type="text" name="lsgi" value="${c?.lsgi || ''}" maxlength="120" placeholder="e.g. Chelannur Grama Panchayath"></label>
+    <label class="f"><span>Office phone *</span><input type="tel" name="phone" value="${c?.phone || ''}" required></label>
+    <label class="f"><span>Office email *</span><input type="email" name="email" value="${c?.email || ''}" required></label></div>
+  <h4 class="fsec">ELC coordinator (teacher in charge)</h4>
+  <div class="formgrid"><label class="f"><span>Name</span><input type="text" name="coordinator" value="${c?.coordinator || ''}" maxlength="100"></label>
+    <label class="f"><span>Designation</span><input type="text" name="designation" value="${c?.designation || ''}" maxlength="80" placeholder="e.g. Assistant Professor"></label>
+    <label class="f"><span>Mobile (WhatsApp)</span><input type="tel" name="coord_phone" value="${c?.coord_phone || ''}" maxlength="30"></label>
+    <label class="f"><span>Email</span><input type="email" name="coord_email" value="${c?.coord_email || ''}"></label></div>
+  <h4 class="fsec">Head of the institution (principal / headmaster)</h4>
+  <div class="formgrid"><label class="f"><span>Name</span><input type="text" name="head_name" value="${c?.head_name || ''}" maxlength="100"></label><label class="f"><span>Phone</span><input type="tel" name="head_phone" value="${c?.head_phone || ''}" maxlength="30"></label></div>`;

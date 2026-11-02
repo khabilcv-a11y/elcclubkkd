@@ -89,6 +89,24 @@ route('GET', '/api/resources/:id/download', null, async ctx => {
   const bytes = Uint8Array.from(atob(f.data), ch => ch.charCodeAt(0));
   return { __raw: true, bytes, headers: { 'Content-Type': r.mime || f.mime || 'application/octet-stream', 'Content-Disposition': `attachment; filename="${(r.filename || 'file').replace(/[^\w.\- ]/g, '_')}"`, 'Cache-Control': 'private, max-age=300' } };
 });
+// The link people share: /r/guide-to-voter-registration-1793426997481919.pdf. It names the file, shows a title and picture when
+// pasted into WhatsApp or social media, and sends a person on to the resource page.
+const htmlEsc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+route('GET', '/r/:slug', null, async ctx => {
+  const m = String(ctx.params.slug).match(/(\d{6,})(?:\.[A-Za-z0-9]{1,6})?$/), origin = new URL(ctx.req.url).origin;
+  const r = m ? await ctx.db.get('SELECT id,title,description,category,audience,filename,thumb FROM resources WHERE id=?', Number(m[1])) : null;
+  const open = r ? origin + '/#/resource/' + r.id : origin + '/#/';
+  const pub = r && r.audience === 'public';
+  const title = r ? (pub ? r.title : 'Shared file · SWEEP Kozhikode') : 'SWEEP Kozhikode · Electoral Literacy Clubs';
+  const desc = r ? (pub ? (r.description || [r.category, r.filename].filter(Boolean).join(' · ')) : 'A file shared by SWEEP Kozhikode. Sign in to open it.') : 'Electoral Literacy Clubs of Kozhikode';
+  const img = pub && r.thumb ? `${origin}/api/resources/${r.id}/thumb` : `${origin}/img/sweep-dark.webp`;
+  const page = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${htmlEsc(title)}</title>
+<meta name="description" content="${htmlEsc(desc)}"><meta property="og:type" content="website"><meta property="og:site_name" content="SWEEP Kozhikode"><meta property="og:title" content="${htmlEsc(title)}"><meta property="og:description" content="${htmlEsc(desc)}">
+<meta property="og:image" content="${htmlEsc(img)}"><meta property="og:url" content="${htmlEsc(origin + '/r/' + ctx.params.slug)}"><meta name="twitter:card" content="summary_large_image">
+<meta http-equiv="refresh" content="0;url=${htmlEsc(open)}"><script>location.replace(${JSON.stringify(open)})</script></head><body style="font-family:system-ui;padding:24px"><p><a href="${htmlEsc(open)}">Open ${htmlEsc(title)}</a></p></body></html>`;
+  return { __raw: true, text: page, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=300' } };
+});
+
 route('POST', '/api/staff/resources', OPS, async ctx => {
   const b = ctx.body, kind = b.kind === 'link' ? 'link' : 'file';
   const base = { title: reqStr(b.title, 'Title', 140), description: str(b.description, 500), category: str(b.category, 40) || 'General', audience: RES_AUDIENCES.includes(b.audience) ? b.audience : 'colleges' };

@@ -5,7 +5,8 @@ const stub = env => env.PORTAL.get(env.PORTAL.idFromName('main'), { locationHint
 
 export default {
   fetch(req, env) {
-    if (!new URL(req.url).pathname.startsWith('/api/')) return env.ASSETS.fetch(req);
+    const p = new URL(req.url).pathname;
+    if (!p.startsWith('/api/') && !p.startsWith('/r/')) return env.ASSETS.fetch(req);
     return stub(env).fetch(req);
   },
   // every 5 minutes: keep the live copy fresh and pick up hand-edits in the sheet

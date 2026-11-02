@@ -38,15 +38,15 @@ actions.eligibility = () => modal(html`<h2>Who is eligible to register?</h2>
 // ---------- the college / school page ----------
 async function pgEnrol(el) {
   const d = await api('/api/college/enrol'), e = d.entry || { strength: '', registered: '', ineligible: '', remaining: null }, t = d.totals;
-  show(el, html`${pageHead('Enrolment drive', 'Campus to booth: every eligible student on the electoral roll. Enter your total numbers and keep them up to date as more students register.', '', 'Campus to booth')}
+  show(el, html`${pageHead('Enrolment drive', 'Campus to booth: every eligible student on the electoral roll. Enter your starting numbers once. After that, the registrations in your daily reports are added automatically, so there is nothing to update here each day.', '', 'Campus to booth')}
     <div class="card" style="margin-bottom:16px"><div class="row between"><b>${t.pct == null ? 'Enter your numbers to see your coverage' : t.pct + '% of eligible students registered'}</b><button class="btn ghost sm" data-act="eligibility">${icon('help')} Who is eligible?</button></div>
-      <div class="small muted" style="margin:2px 0 4px">${t.pct == null ? 'Target: 100%' : `${n(t.registered)} registered · ${n(t.balance)} yet to register · target 100%`}</div>${progress(t.pct || 0, t.pct >= 100 ? 'green' : 'saffron')}</div>
+      <div class="small muted" style="margin:2px 0 4px">${t.pct == null ? 'Target: 100%' : `${n(t.registered)} registered (${n(t.base_registered)} at the start + ${n(t.desk)} from your daily reports) · ${n(t.balance)} yet to register · target 100%`}</div>${progress(t.pct || 0, t.pct >= 100 ? 'green' : 'saffron')}</div>
     <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>${icon('edit')} Your total numbers</h3>${d.entry?.updated_at ? html`<span class="small muted">Updated ${fdt(d.entry.updated_at)}</span>` : ''}</div>
       <form data-form="enrolSave" class="stack-s"><div class="formgrid">
         <label class="f"><span>Total students</span><input type="number" name="strength" min="0" inputmode="numeric" required value="${e.strength}" placeholder="0"></label>
-        <label class="f"><span>Registered (already on the electoral roll)</span><input type="number" name="registered" min="0" inputmode="numeric" required value="${e.registered}" placeholder="0"></label>
+        <label class="f"><span>Registered at the start (already on the electoral roll)</span><input type="number" name="registered" min="0" inputmode="numeric" required value="${e.registered}" placeholder="0"></label>
         <label class="f"><span>Not eligible yet (will not be 18 by ${QUALIFYING})</span><input type="number" name="ineligible" min="0" inputmode="numeric" required value="${e.ineligible}" placeholder="0"></label>
-        <label class="f"><span>Eligible students yet to register</span><input type="number" name="remaining" id="enrem" min="0" inputmode="numeric" value="${e.remaining ?? ''}" placeholder="0"><span class="hint" id="remhint"></span></label></div>
+        <label class="f"><span>Eligible students yet to register (at the start)</span><input type="number" name="remaining" id="enrem" min="0" inputmode="numeric" value="${e.remaining ?? ''}" placeholder="0"><span class="hint" id="remhint"></span></label></div>
         <div class="campus-facts" id="enlive"></div><div data-err></div>
         <div class="row"><button class="btn primary" type="submit">${icon('check')} Save my numbers</button></div></form></div>
     ${enrolKpis(t)}`);
@@ -75,14 +75,16 @@ forms.enrolSave = async f => {
 
 // ---------- home page of a college / school workspace while the village programme is off ----------
 async function pgHomeCampaign(el) {
-  const [d, ds] = await Promise.all([api('/api/college/enrol'), api('/api/college/desk/summary').catch(() => null)]);
-  const school = COL.college.kind === 'school', t = d.totals;
+  const [d, ds, bd] = await Promise.all([api('/api/college/enrol'), api('/api/college/desk/summary').catch(() => null), api('/api/public/board').catch(() => null)]);
+  const school = COL.college.kind === 'school', t = d.totals, me = bd?.campus.institutions.find(i => i.id === COL.college.id);
   const tiles = [['enrol', 'target', 'Enrolment drive', d.entry ? `${n(t.registered)} registered · ${pct(t.pct)} covered` : 'Enter your total numbers'],
     ['desk', 'clipboard', 'Daily help-desk report', ds ? `${n(ds.registrations)} registrations · ${ds.days} day${ds.days === 1 ? '' : 's'} reported` : 'Record registrations and volunteers each day'], ['gallery', 'camera', 'Gallery and photo frames', 'Make framed photos of your events and share them']]
     .filter(([id]) => feat(school ? 'school' : 'college', id));
   show(el, html`${pageHead(`Welcome, ${COL.college.short_name || COL.college.name}`, 'Campus to booth: bring every eligible student onto the electoral roll.', '', school ? 'School workspace' : 'College workspace')}
     ${COL.college.logo_v ? '' : html`<div class="card" style="margin-bottom:16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap">${avatar(COL.college.id, null, COL.college.name, 48)}<div class="grow"><b>Add your ${school ? 'school' : 'college'} logo</b><div class="small muted">It will appear next to your name on the public ranking, gallery and album.</div></div><button class="btn primary" data-act="logoModal">${icon('image')} Add logo</button></div>`}
     <div class="card" style="margin-bottom:16px"><b>${t.pct == null ? 'Start by entering your total numbers' : t.pct + '% of eligible students registered'}</b><div class="small muted">${t.pct == null ? 'Target: 100%' : `${n(t.registered)} registered · ${n(t.balance)} yet to register · target 100%`}</div>${progress(t.pct || 0, t.pct >= 100 ? 'green' : 'saffron')}</div>
+    ${me?.epic ? html`<div class="epic-mine rv">${icon('award')}<div><b>Epic of Kozhikode</b><p>${school ? 'Your school has' : 'Your college has'} brought every eligible student onto the electoral roll. Thank you for leading the way.</p></div></div>` : ''}
+    ${me?.badges?.length ? html`<div class="card" style="margin-bottom:16px"><div class="row" style="gap:10px"><b>Your badges</b>${badgeChips(me.badges, 6)}</div>${me.epic ? '' : html`<div class="small muted" style="margin-top:6px">Every registration in your daily report adds to your coverage. 100% earns the <b>Epic of Kozhikode</b> badge.</div>`}</div>` : ''}
     ${enrolKpis(t)}
     <div class="grid g3" style="margin-top:16px">${tiles.map(([id, ic, ti, sub]) => html`<a class="card rv hometile" href="#/me/${id}" style="text-decoration:none;color:inherit"><span class="kpi" style="padding:0;border:0;box-shadow:none"><span class="ico" style="position:static;width:42px;height:42px">${icon(ic)}</span></span><h3 style="margin:10px 0 4px">${ti}</h3><p class="small muted">${sub}</p></a>`)}</div>
     ${CANN.length ? html`<h3 style="margin:22px 0 8px">Latest announcements</h3><div class="stack-s">${CANN.slice(0, 3).map(a => html`<article class="notice ${a.pinned ? 'pinned' : ''}"><h3>${a.title}</h3>${a.body ? html`<p>${a.body}</p>` : ''}<div class="when">${fdt(a.created_at)}</div></article>`)}</div>` : ''}`);
