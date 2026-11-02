@@ -3,16 +3,16 @@
 export const FEATURES = {
   college: {
     title: 'College logins',
-    items: [['home', 'Home', 1], ['enrol', 'Enrolment drive (department link)', 1], ['desk', 'Help desk daily report', 1], ['gallery', 'Gallery and photo frames', 1], ['posters', 'Posters and banners', 1], ['profile', 'Institution profile', 1], ['notices', 'Announcements', 1], ['help', 'Help desk (issues)', 1], ['resources', 'Resource centre', 1],
+    items: [['home', 'Home', 1], ['enrol', 'Enrolment drive (department link)', 1], ['desk', 'Help desk daily report', 1], ['gallery', 'Gallery and photo frames', 1], ['posters', 'Posters and banners', 1], ['profile', 'Institution profile', 1], ['certs', 'Certificates', 1], ['notices', 'Announcements', 1], ['help', 'Help desk (issues)', 1], ['resources', 'Resource centre', 1],
       ['students', 'Village volunteers (students list)', 0], ['schedule', 'Village schedule', 0], ['log', 'Village daily log', 0], ['villages', 'My villages', 0], ['report', 'Village reports', 0]],
   },
   school: {
     title: 'School logins',
-    items: [['home', 'Home', 1], ['enrol', 'Enrolment drive (class link)', 1], ['desk', 'Help desk daily report', 1], ['gallery', 'Gallery and photo frames', 1], ['posters', 'Posters and banners', 1], ['profile', 'Institution profile', 1], ['notices', 'Announcements', 1], ['help', 'Help desk (issues)', 1], ['resources', 'Resource centre', 1]],
+    items: [['home', 'Home', 1], ['enrol', 'Enrolment drive (class link)', 1], ['desk', 'Help desk daily report', 1], ['gallery', 'Gallery and photo frames', 1], ['posters', 'Posters and banners', 1], ['profile', 'Institution profile', 1], ['certs', 'Certificates', 1], ['notices', 'Announcements', 1], ['help', 'Help desk (issues)', 1], ['resources', 'Resource centre', 1]],
   },
   staff: {
     title: 'Admin, intern and super admin consoles',
-    items: [['colleges', 'Colleges', 1], ['schools', 'Schools', 1], ['enrol', 'Enrolment drive', 1], ['desk', 'Help desk daily reports', 1], ['gallery', 'Gallery and albums', 1], ['templates', 'Photo frame and poster templates', 1], ['issues', 'Help desk (issues)', 1], ['notices', 'Announcements', 1], ['resources', 'Resources', 1], ['reports', 'Reports and exports', 1],
+    items: [['colleges', 'Colleges', 1], ['schools', 'Schools', 1], ['enrol', 'Enrolment drive', 1], ['desk', 'Help desk daily reports', 1], ['gallery', 'Gallery and albums', 1], ['templates', 'Photo frame, poster and certificate templates', 1], ['certs', 'Certificates', 1], ['issues', 'Help desk (issues)', 1], ['notices', 'Announcements', 1], ['resources', 'Resources', 1], ['reports', 'Reports and exports', 1],
       ['villages', 'Villages', 0], ['allot', 'Allotments', 0], ['officers', 'Village officers', 0], ['requests', 'Change requests', 0], ['cert', 'Certification', 0]],
   },
   public: {
@@ -34,9 +34,9 @@ export const isFeature = (key) => key in DEFAULTS;
 
 // which switch guards an API path (null = always available)
 const COLLEGE_PATHS = [[/^\/api\/college\/(schedule|roster)/, 'schedule'], [/^\/api\/college\/days/, 'log'], [/^\/api\/college\/(pool|submit-village)/, 'students'], [/^\/api\/college\/(villages|requests)/, 'villages'],
-  [/^\/api\/college\/photos/, 'log'], [/^\/api\/college\/enrol/, 'enrol'], [/^\/api\/college\/desk/, 'desk'], [/^\/api\/college\/gallery/, 'gallery'], [/^\/api\/college\/posters/, 'posters'], [/^\/api\/college\/profile/, 'profile'], [/^\/api\/college\/issues/, 'help']];
+  [/^\/api\/college\/photos/, 'log'], [/^\/api\/college\/enrol/, 'enrol'], [/^\/api\/college\/desk/, 'desk'], [/^\/api\/college\/gallery/, 'gallery'], [/^\/api\/college\/posters/, 'posters'], [/^\/api\/college\/profile/, 'profile'], [/^\/api\/college\/certs/, 'certs'], [/^\/api\/college\/issues/, 'help']];
 const STAFF_PATHS = [[/^\/api\/staff\/villages/, 'villages'], [/^\/api\/staff\/assignments/, 'allot'], [/^\/api\/staff\/officers/, 'officers'], [/^\/api\/staff\/requests/, 'requests'], [/^\/api\/staff\/(acks|certificates)/, 'cert'],
-  [/^\/api\/staff\/enrol/, 'enrol'], [/^\/api\/staff\/gallery/, 'gallery'], [/^\/api\/staff\/templates/, 'templates']];
+  [/^\/api\/staff\/enrol/, 'enrol'], [/^\/api\/staff\/gallery/, 'gallery'], [/^\/api\/staff\/templates/, 'templates'], [/^\/api\/staff\/certs/, 'certs']];
 export function guardedFeature(path, audience) {
   const table = audience === 'staff' ? STAFF_PATHS : audience === 'officer' ? [[/./, 'officer_login']] : COLLEGE_PATHS;
   const hit = table.find(([re]) => re.test(path));

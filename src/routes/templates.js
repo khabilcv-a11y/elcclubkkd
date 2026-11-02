@@ -19,7 +19,7 @@ function cleanFields(raw, w, h) {
   const out = list.slice(0, 20).map((f, i) => {
     const x = num(f.x, 0, w - 4), y = num(f.y, 0, h - 4);
     return { id: 'f' + (i + 1), label: str(f.label, 40) || 'Text ' + (i + 1), type: f.type === 'logo' ? 'logo' : 'text',
-      src: ['college', 'ask', 'fixed'].includes(f.src) ? f.src : 'ask', value: str(f.value, 200), x, y, w: num(f.w, 4, w - x), h: num(f.h, 4, h - y),
+      src: ['college', 'ask', 'fixed', 'student', 'activities', 'dates', 'days', 'campaign', 'serial', 'issued'].includes(f.src) ? f.src : 'ask', value: str(f.value, 200), x, y, w: num(f.w, 4, w - x), h: num(f.h, 4, h - y),
       color: hex(f.color), weight: [400, 600, 800].includes(Number(f.weight)) ? Number(f.weight) : 800, align: ['left', 'center', 'right'].includes(f.align) ? f.align : 'center',
       caps: !!f.caps, lines: num(f.lines || 1, 1, 4) };
   });
@@ -33,8 +33,8 @@ const shape = r => ({ ...r, fields: (() => { try { return JSON.parse(r.fields ||
 route('GET', '/api/templates', null, async ctx => {
   const who = await whoIs(ctx);
   if (who === 'public' || who === 'officer') throw new HttpError(401, 'Please sign in');
-  const kind = ctx.query.kind === 'photo' || ctx.query.kind === 'poster' ? ctx.query.kind : null;
-  const rows = await ctx.db.all(`SELECT ${PUBLIC} FROM templates WHERE (? IS NULL OR kind=?) ${who === 'staff' ? '' : 'AND active=1'} ORDER BY category,sort_order,id`, kind, kind);
+  const kind = ['photo', 'poster', 'certificate'].includes(ctx.query.kind) ? ctx.query.kind : null;
+  const rows = await ctx.db.all(`SELECT ${PUBLIC} FROM templates WHERE (? IS NULL OR kind=?) ${who === 'staff' ? '' : "AND active=1 AND kind<>'certificate'"} ORDER BY category,sort_order,id`, kind, kind);
   return rows.map(shape);
 });
 // the pictures are not secret and never change for an id, so they are cached hard
@@ -58,12 +58,12 @@ route('POST', '/api/staff/templates', OPS, async ctx => {
   if (!/^image\/(jpeg|png|webp)$/.test(b.mime || '')) throw bad('The template must be a PNG, WebP or JPG image');
   const data = String(b.data || '');
   if (!data || data.length * 0.75 > MAX_BYTES) throw bad('The template image is too large (up to 6 MB)');
-  const w = num(b.width, 100, 8000), h = num(b.height, 100, 8000), kind = b.kind === 'photo' ? 'photo' : 'poster';
+  const w = num(b.width, 100, 8000), h = num(b.height, 100, 8000), kind = ['photo', 'certificate'].includes(b.kind) ? b.kind : 'poster';
   const fields = cleanFields(b.fields, w, h), title = reqStr(b.title, 'Template title', 80);
   const ext = b.mime.split('/')[1].replace('jpeg', 'jpg');
   const up = await driveUpload(ctx.env, { name: `${title.replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 50)}_${Date.now()}.${ext}`, mime: b.mime, data, folder: 'Templates' });
   const id = await ctx.db.insert('INSERT INTO templates(title,kind,category,width,height,fields,drive_id,mime,size,thumb,active,sort_order,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,1,0,?,?)',
-    title, kind, str(b.category, 40) || (kind === 'photo' ? 'Photo frames' : 'Posters'), w, h, JSON.stringify(fields), up.id, b.mime, Math.round(data.length * 0.75),
+    title, kind, str(b.category, 40) || (kind === 'photo' ? 'Photo frames' : kind === 'certificate' ? 'Certificates' : 'Posters'), w, h, JSON.stringify(fields), up.id, b.mime, Math.round(data.length * 0.75),
     /^[A-Za-z0-9+/=]+$/.test(String(b.thumb || '')) && String(b.thumb).length <= 42000 ? String(b.thumb) : null, ctx.user.username, nowIso());
   await slog(ctx, 'template_add', title);
   return { ok: true, id };
@@ -72,7 +72,7 @@ route('PUT', '/api/staff/templates/:id', OPS, async ctx => {
   const t = await tpl(ctx), b = ctx.body;
   const fields = cleanFields(b.fields ?? t.fields, t.width, t.height), title = reqStr(b.title, 'Template title', 80);
   const thumb = /^[A-Za-z0-9+/=]+$/.test(String(b.thumb || '')) && String(b.thumb).length <= 42000 ? String(b.thumb) : t.thumb;
-  await ctx.db.run('UPDATE templates SET thumb=?,title=?,category=?,fields=?,active=?,kind=?,sort_order=? WHERE id=?', thumb, title, str(b.category, 40) || t.category, JSON.stringify(fields), b.active === false || b.active === 0 ? 0 : 1, b.kind === 'photo' ? 'photo' : b.kind === 'poster' ? 'poster' : t.kind, num(b.sort_order ?? t.sort_order, 0, 9999), t.id);
+  await ctx.db.run('UPDATE templates SET thumb=?,title=?,category=?,fields=?,active=?,kind=?,sort_order=? WHERE id=?', thumb, title, str(b.category, 40) || t.category, JSON.stringify(fields), b.active === false || b.active === 0 ? 0 : 1, ['photo', 'poster', 'certificate'].includes(b.kind) ? b.kind : t.kind, num(b.sort_order ?? t.sort_order, 0, 9999), t.id);
   await slog(ctx, 'template_edit', title);
   return { ok: true };
 });

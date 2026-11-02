@@ -14,7 +14,7 @@ actions.tplDel = async el => { if (!await confirmBox('Delete this template for g
 actions.tplAdd = () => openDesigner(null);
 actions.tplEdit = el => openDesigner(window.__tpls.find(x => x.id === Number(el.dataset.id)));
 
-const newField = (type, n, W, H) => ({ label: type === 'logo' ? 'College logo' : 'Text ' + n, type, src: type === 'logo' ? 'college' : 'ask', value: '', x: Math.round(W * 0.2), y: Math.round(H * Math.min(0.8, 0.15 + 0.1 * n)), w: Math.round(type === 'logo' ? W * 0.18 : W * 0.6), h: Math.round(type === 'logo' ? W * 0.18 : H * 0.09), color: '#1c2162', weight: 800, align: 'center', caps: false, lines: 1 });
+const newField = (type, n, W, H) => ({ label: type === 'logo' ? 'College logo' : 'Text ' + n, type, src: type === 'logo' ? 'college' : (TD?.kind === 'certificate' ? 'student' : 'ask'), value: '', x: Math.round(W * 0.2), y: Math.round(H * Math.min(0.8, 0.15 + 0.1 * n)), w: Math.round(type === 'logo' ? W * 0.18 : W * 0.6), h: Math.round(type === 'logo' ? W * 0.18 : H * 0.09), color: '#1c2162', weight: 800, align: 'center', caps: false, lines: 1 });
 const tdMode = f => (f.type === 'logo' ? 'logo' : f.src);
 
 async function openDesigner(t) {
@@ -27,7 +27,7 @@ async function openDesigner(t) {
       <form data-form="tplSave" class="stack-s edform">
         ${t ? '' : html`<label class="f"><span>Template image (PNG, WebP or JPG, up to 6 MB) *</span><input type="file" id="tdfile" accept="image/png,image/webp,image/jpeg" required></label>`}
         <label class="f"><span>Title *</span><input type="text" name="title" maxlength="80" required value="${TD.title}" placeholder="e.g. Rally banner, Blue frame"></label>
-        <div class="formgrid"><label class="f"><span>Type</span><select name="kind" id="tdkind"><option value="poster" ${TD.kind === 'poster' ? 'selected' : ''}>Poster or banner (text only)</option><option value="photo" ${TD.kind === 'photo' ? 'selected' : ''}>Photo frame (photo goes behind)</option></select></label>
+        <div class="formgrid"><label class="f"><span>Type</span><select name="kind" id="tdkind"><option value="poster" ${TD.kind === 'poster' ? 'selected' : ''}>Poster or banner (text only)</option><option value="photo" ${TD.kind === 'photo' ? 'selected' : ''}>Photo frame (photo goes behind)</option><option value="certificate" ${TD.kind === 'certificate' ? 'selected' : ''}>Certificate (merged with each student's details)</option></select></label>
           <label class="f"><span>Album / category</span><input type="text" name="category" list="tdcats" maxlength="40" value="${TD.category}" placeholder="e.g. Banners"><datalist id="tdcats">${cats.map(c => html`<option value="${c}">`)}</datalist></label></div>
         <label class="chk"><input type="checkbox" name="active" ${TD.active ? 'checked' : ''}> Visible to colleges and schools</label>
         <div class="edslot"><div class="row between"><b>Text and logo boxes</b><span class="row gap-s"><button type="button" class="btn secondary sm" data-act="tdAdd" data-t="text">${icon('plus')} Text</button><button type="button" class="btn secondary sm" data-act="tdAdd" data-t="logo">${icon('plus')} Logo</button></span></div>
@@ -39,6 +39,7 @@ async function openDesigner(t) {
 function tdImage(im) {
   TD.img = im; TD.w ||= im.naturalWidth; TD.h ||= im.naturalHeight;
   const el = $('#tdimg'); el.src = im.src; el.hidden = false; $('#tdempty').hidden = true;
+  if (!TD.fields.length && TD.kind === 'certificate') { TD.fields.push(newField('text', 1, TD.w, TD.h)); TD.fields[0].label = 'Student name'; TD.fields[0].caps = true; const c = newField('text', 2, TD.w, TD.h); c.label = 'College or school'; c.src = 'college'; c.weight = 600; const d = newField('text', 3, TD.w, TD.h); d.label = 'Dates'; d.src = 'dates'; d.weight = 600; TD.fields.push(c, d); }
   if (!TD.fields.length) { TD.fields.push(newField('text', 1, TD.w, TD.h)); if (TD.kind === 'photo') { TD.fields[0].src = 'college'; TD.fields[0].label = 'College name'; TD.fields.push(newField('text', 2, TD.w, TD.h)); TD.fields[1].label = 'Activity title'; } }
   tdPaint();
 }
@@ -51,7 +52,7 @@ function tdWire(m) {
     im.onload = () => { TD.file = f; TD.w = im.naturalWidth; TD.h = im.naturalHeight; TD.fields = []; tdImage(im); };
     im.onerror = () => toast('That file is not a readable image', true); im.src = url;
   });
-  $('#tdkind', m).addEventListener('change', e => { TD.kind = e.target.value; });
+  $('#tdkind', m).addEventListener('change', e => { TD.kind = e.target.value; const cert = TD.kind === 'certificate'; TD.fields.forEach(f => { if (f.type === 'text') { if (cert && f.src === 'ask') f.src = 'student'; else if (!cert && !['college', 'fixed', 'ask'].includes(f.src)) f.src = 'ask'; } }); tdPaint(); });
   // dragging and resizing boxes
   let drag = null;
   stage.addEventListener('pointerdown', e => {
@@ -89,7 +90,7 @@ function tdField() {
   if (!f) return show(box, html`<p class="muted small">Add a text or logo box, then place it on the picture.</p>`);
   const mode = tdMode(f), sel = (k, opts, cur) => html`<select data-tf="${k}">${opts.map(([v, l]) => html`<option value="${v}" ${String(cur) === String(v) ? 'selected' : ''}>${l}</option>`)}</select>`;
   show(box, html`<div class="tdfield"><label class="f"><span>Name of this box</span><input type="text" data-tf="label" maxlength="40" value="${f.label}"></label>
-    <label class="f"><span>What goes here</span>${sel('mode', [['ask', 'Text typed by the college'], ['college', 'College / school name (filled in automatically)'], ['fixed', 'Fixed text (same for everyone)'], ['logo', 'The college\'s logo']], mode)}</label>
+    <label class="f"><span>What goes here</span>${sel('mode', TD.kind === 'certificate' ? [['student', 'Student name'], ['college', 'College / school name'], ['activities', 'Activities taken part in'], ['dates', 'Dates of participation'], ['days', 'Number of days'], ['campaign', 'Campaign title'], ['serial', 'Certificate number'], ['issued', 'Date of issue'], ['fixed', 'Fixed text (same on every certificate)'], ['logo', 'The college\'s logo']] : [['ask', 'Text typed by the college'], ['college', 'College / school name (filled in automatically)'], ['fixed', 'Fixed text (same for everyone)'], ['logo', 'The college\'s logo']], mode)}</label>
     ${mode === 'fixed' ? html`<label class="f"><span>Text</span><input type="text" data-tf="value" maxlength="200" value="${f.value}"></label>` : ''}
     ${f.type === 'text' ? html`<div class="formgrid"><label class="f"><span>Colour</span><input type="color" data-tf="color" value="${f.color}"></label><label class="f"><span>Weight</span>${sel('weight', [[400, 'Normal'], [600, 'Semi-bold'], [800, 'Extra bold']], f.weight)}</label>
       <label class="f"><span>Alignment</span>${sel('align', [['left', 'Left'], ['center', 'Centre'], ['right', 'Right']], f.align)}</label><label class="f"><span>Lines (at most)</span>${sel('lines', [[1, '1'], [2, '2'], [3, '3'], [4, '4']], f.lines)}</label></div>
@@ -106,7 +107,7 @@ actions.tdPreview = async () => {
   if (!TD.img) return toast('Choose the template image first', true);
   const t = tdObject(), m = modal(html`<h2>Preview with sample text</h2><canvas id="tdpv" style="width:100%;border-radius:12px;box-shadow:var(--shadow)"></canvas><div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn primary" data-act="closeModal">Close</button></div>`, { wide: true });
   const cv = $('#tdpv', m), k = Math.min(1, 1200 / t.width); cv.width = Math.round(t.width * k); cv.height = Math.round(t.height * k);
-  const c = cv.getContext('2d'); c.scale(k, k); const values = {}; t.fields.forEach(f => { values[f.id] = f.src === 'college' ? 'Sample College of Arts and Science' : 'Sample ' + f.label; });
+  const c = cv.getContext('2d'); c.scale(k, k); const values = {}; t.fields.forEach(f => { values[f.id] = CERT_SAMPLE[f.src] ?? ('Sample ' + f.label); });
   drawTemplate(c, t, { img: TD.img, photo: null, values, logo: null, exporting: false, showEmpty: true });
 };
 forms.tplSave = async f => {

@@ -17,6 +17,7 @@ import './routes/gallery.js';
 import './routes/logo.js';
 import './routes/templates.js';
 import './routes/profile.js';
+import './routes/certs.js';
 
 // ---------- public + auth routes ----------
 let boardCache = { at: 0, data: null };

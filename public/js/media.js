@@ -65,7 +65,7 @@ function wrapWords(c, text, maxW) {
   return lines;
 }
 function fitText(c, text, box, o) {
-  let t = String(text || '').trim(); if (!t) return;
+  let t = String(text || '').trim(); if (!t) return { fits: true, size: 0 };
   if (o.caps) t = t.toUpperCase();
   const pad = Math.min(box.w * 0.03, 14), maxW = box.w - pad * 2, maxLines = o.lines || 1, weight = o.weight || 800, family = 'Inter, Arial, sans-serif';
   let size = Math.floor(box.h / (maxLines > 1 ? maxLines * 1.08 : 1.15)), lines = null;
@@ -74,11 +74,14 @@ function fitText(c, text, box, o) {
     const ls = wrapWords(c, t, maxW);
     if (ls.length <= maxLines && ls.length * size * 1.12 <= box.h && ls.every(l => c.measureText(l).width <= maxW)) { lines = ls; break; }
   }
+  const fits = !!lines;
   if (!lines) { size = 8; c.font = `${weight} 8px ${family}`; lines = wrapWords(c, t, maxW).slice(0, maxLines); }
+  if (o.dry) return { fits, size };
   c.save(); c.fillStyle = o.color || '#1c2162'; c.textBaseline = 'middle'; c.textAlign = o.align || 'center';
   const x = o.align === 'left' ? box.x + pad : o.align === 'right' ? box.x + box.w - pad : box.x + box.w / 2, lh = size * 1.12, y0 = box.y + (box.h - lines.length * lh) / 2 + lh / 2;
   lines.forEach((l, i) => c.fillText(l, x, y0 + i * lh + size * 0.04));
   c.restore();
+  return { fits, size };
 }
 
 // ---------- the photo inside a whole frame ----------
@@ -115,12 +118,15 @@ function drawTemplate(c, t, st) {
 async function templateThumb(t, img) {
   const k = 520 / t.width, cv = document.createElement('canvas'); cv.width = 520; cv.height = Math.max(1, Math.round(t.height * k));
   const c = cv.getContext('2d'); c.scale(k, k);
-  const values = {}; t.fields.forEach(f => { values[f.id] = f.src === 'college' ? 'Sample College' : f.label; });
+  const values = {}; t.fields.forEach(f => { values[f.id] = CERT_SAMPLE[f.src] ?? (f.src === 'college' ? 'Sample College' : f.label); });
   drawTemplate(c, t, { img, photo: null, values, logo: null, exporting: true });
   return thumbB64(cv, [[520, 0.72], [440, 0.65], [360, 0.6], [300, 0.55]]);
 }
+// what each merge box shows in the designer's preview and thumbnail
+const CERT_SAMPLE = { student: 'Aswathy K. Nair', college: 'Sample College of Arts and Science', activities: 'Help desk, Flash Mob', dates: '2 Nov 2026 to 9 Nov 2026', days: '5', campaign: 'Campus to Booth 2026', serial: 'ELC-2026-0001', issued: '12 November 2026' };
+const TPL_KIND = { photo: 'Photo frame', poster: 'Poster / banner', certificate: 'Certificate' };
 const tplThumbUrl = t => (t.has_thumb ? `/api/templates/${t.id}/thumb` : `/api/templates/${t.id}/image`);
-const tplCard = (t, attrs = '', extra = '') => html`<div class="tplcard"><button type="button" class="tplpic" ${raw(attrs)} aria-label="${t.title}"><span class="tplimg ${t.kind === 'photo' ? 'checker' : ''}"><img src="${tplThumbUrl(t)}" alt="" loading="lazy" decoding="async"></span><b>${t.title}</b><small>${t.kind === 'photo' ? 'Photo frame' : 'Poster / banner'}${t.category ? ' · ' + t.category : ''}</small></button>${extra}</div>`;
+const tplCard = (t, attrs = '', extra = '') => html`<div class="tplcard"><button type="button" class="tplpic" ${raw(attrs)} aria-label="${t.title}"><span class="tplimg ${t.kind === 'photo' ? 'checker' : ''}"><img src="${tplThumbUrl(t)}" alt="" loading="lazy" decoding="async"></span><b>${t.title}</b><small>${TPL_KIND[t.kind] || 'Template'}${t.category ? ' · ' + t.category : ''}</small></button>${extra}</div>`;
 
 // ---------- one JPEG as a one-page PDF (no library needed); the page is the template size at 150 dpi ----------
 async function jpegToPdf(jpegBlob, w, h) {
@@ -157,3 +163,41 @@ const detailFields = (c, staff) => html`<h4 class="fsec">Institution</h4>
     <label class="f"><span>Email</span><input type="email" name="coord_email" value="${c?.coord_email || ''}"></label></div>
   <h4 class="fsec">Head of the institution (principal / headmaster)</h4>
   <div class="formgrid"><label class="f"><span>Name</span><input type="text" name="head_name" value="${c?.head_name || ''}" maxlength="100"></label><label class="f"><span>Phone</span><input type="tel" name="head_phone" value="${c?.head_phone || ''}" maxlength="30"></label></div>`;
+
+// ---------- certificates: values for the merge boxes, an alignment check, PDF per student, and a zip of many ----------
+// every box takes its text from the frozen details of one student: student, college, activities, dates, days, campaign, serial, issued
+const certValues = (t, snap) => Object.fromEntries(t.fields.map(f => [f.id, f.src === 'fixed' ? f.value : (f.src === 'ask' ? '' : (snap[f.src] ?? ''))]));
+// which students' details do not fit their box (text would have to shrink below readable size or run out of room)
+function certCheck(t, snaps) {
+  const c = document.createElement('canvas').getContext('2d'), bad = [];
+  for (const s of snaps) {
+    const v = certValues(t, s);
+    for (const f of t.fields) { if (f.type !== 'text' || !v[f.id]) continue; const r = fitText(c, v[f.id], f, { ...f, dry: true }); if (!r.fits || r.size < Math.max(14, f.h * 0.28)) { bad.push({ name: s.student, field: f.label, text: v[f.id] }); break; } }
+  }
+  return bad;
+}
+async function certPdf(t, img, snap, logo = null) {
+  const k = Math.min(1, 3400 / Math.max(t.width, t.height)), cv = document.createElement('canvas'); cv.width = Math.round(t.width * k); cv.height = Math.round(t.height * k);
+  const c = cv.getContext('2d'); c.scale(k, k);
+  drawTemplate(c, t, { img, photo: null, values: certValues(t, snap), logo, exporting: true });
+  const jpg = await new Promise(res => cv.toBlob(res, 'image/jpeg', 0.92));
+  return jpegToPdf(jpg, cv.width, cv.height);
+}
+const CRC_TABLE = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+const crc32 = b => { let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = CRC_TABLE[(c ^ b[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+// a plain zip file (no compression: PDFs are already compressed) built in the browser
+async function zipStore(files) {
+  const enc = new TextEncoder(), parts = [], central = []; let offset = 0;
+  const u16 = n => [n & 255, (n >> 8) & 255], u32 = n => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255];
+  const now = new Date(), dt = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate(), tm = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+  for (const f of files) {
+    const data = new Uint8Array(await f.blob.arrayBuffer()), name = enc.encode(f.name), crc = crc32(data);
+    const local = new Uint8Array([0x50, 0x4b, 3, 4, ...u16(20), ...u16(0x0800), ...u16(0), ...u16(tm), ...u16(dt), ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(name.length), ...u16(0)]);
+    parts.push(local, name, data);
+    central.push(new Uint8Array([0x50, 0x4b, 1, 2, ...u16(20), ...u16(20), ...u16(0x0800), ...u16(0), ...u16(tm), ...u16(dt), ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(name.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(offset)]), name);
+    offset += local.length + name.length + data.length;
+  }
+  const cd = central.reduce((s, p) => s + p.length, 0);
+  const end = new Uint8Array([0x50, 0x4b, 5, 6, ...u16(0), ...u16(0), ...u16(files.length), ...u16(files.length), ...u32(cd), ...u32(offset), ...u16(0)]);
+  return new Blob([...parts, ...central, end], { type: 'application/zip' });
+}

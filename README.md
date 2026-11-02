@@ -125,3 +125,17 @@ The portal now runs the drive to bring every eligible student onto the electoral
 - **Help desk volunteers**: the daily report now takes volunteer *names* (the count is worked out from them). Names used before are suggested while typing. The report page lists every student with their activities and dates (student-wise or day by day, sortable, searchable, CSV), and staff have the same as the report *Volunteers: student-wise list*.
 - **Participating colleges and schools** on the home page lists only institutions that have signed in or started work, with Colleges / Schools filters, search, and an auto-sliding row (or *Show all*).
 - PDF previews use pdf.js (Apache 2.0), kept in `public/vendor/pdfjs`.
+
+### Daily counts, badges and the institution repository
+- Colleges and schools enter their **starting numbers once** (Enrolment drive). Registrations in the daily reports are added to *registered* and taken off *yet to register* automatically, so the dashboard, the ranking and the home page always follow the daily reports.
+- **Epic of Kozhikode**: an institution that reaches 100% is highlighted on the home page and display board and gets a gold badge; milestone badges (25 / 50 / 75%, daily reporter, photo champion) show in the ranking and in the college's own home. The ranking itself appears once **more than 5** institutions have entered numbers.
+- **Institution profile** (every college and school): coordinator, designation, mobile, email, head of institution, type and code. The staff *Colleges* and *Schools* pages show all of it in compact rows with icon buttons, and **Download all details** gives one CSV of the whole repository.
+- Share links for resources look like `/r/<first words of the title>-<id>.<extension>`; pasted into WhatsApp they show the title and the preview picture.
+
+### Certificates
+1. Staff console → **Frames, posters, certificates**: upload a certificate design (type *Certificate*), drag boxes over it, and choose what each box merges: student name, college or school, activities, dates, number of days, campaign title, certificate number, date of issue, fixed text, or the college logo. Preview shows sample text.
+2. Staff console → **Certificates**: create a campaign (title, dates, design, number prefix, suggested minimum days) and switch it on. Nothing reaches colleges until it is switched on.
+3. Each college or school opens **Certificates**: its volunteers are taken from the daily reports. The coordinator ticks who is eligible (or *Select all*, or *Select with at least N days*), edits dates and events with the pencil, adds or removes students, prints or downloads the list to verify, then **submits the final list**.
+4. After submitting, **Generate** makes the certificates. Before that, text that will not fit its box (for example a very long name) is flagged. Certificates are generated **once**; they can be downloaded again any number of times, one by one or as a ZIP. The PDFs are drawn in the browser from the details frozen at generation, so no files are stored.
+5. Staff see every institution's students listed, selected, final list submitted, generated, successful and remaining, can open the student list, **allow generating again** (for chosen students or for everyone) and **reopen** a submitted list.
+6. **Import participants**: paste a Google Sheet link (shared as "Anyone with the link: Viewer") or upload a CSV, match the columns (college, student, date, activity), and the students appear in each college's list. Institution names are matched loosely; unmatched ones are reported.

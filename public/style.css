@@ -529,3 +529,15 @@ hr.soft{border:0;border-top:1px solid var(--line);margin:18px 0}
 .epic-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,230px),1fr));gap:12px}
 .epic-card{display:flex;flex-direction:column;align-items:center;text-align:center;gap:4px;padding:16px 12px;border-radius:16px;background:rgba(255,255,255,.85);border:1px solid #f0d27a}.epic-card b{color:var(--ink);line-height:1.25}.epic-card small{color:var(--muted)}
 .epic-mine{display:flex;gap:14px;align-items:center;padding:16px 18px;margin-bottom:16px;border-radius:16px;background:linear-gradient(135deg,#fff6d6,#ffe08a);border:1px solid #f0c04a;color:#3d2a00}.epic-mine .icon{width:36px;height:36px;color:#c98a00;flex:none}.epic-mine p{margin:2px 0 0;color:#6b4a00}
+
+/* ---------- certificates ---------- */
+.campgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:12px}
+.campcard{position:relative;background:#fff;border:2px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-xs);transition:border-color .2s}.campcard.on{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-100)}
+.camppick{display:block;width:100%;text-align:left;border:0;background:none;padding:14px 16px 12px;cursor:pointer;font:inherit;color:inherit;border-radius:var(--r-lg)}.camppick b{font-size:1.02rem;color:var(--ink)}
+.campact{position:absolute;right:10px;top:10px}
+.csteps{display:flex;gap:6px;flex-wrap:wrap}.cstep{display:flex;align-items:center;gap:6px;padding:5px 12px 5px 6px;border-radius:99px;background:#eef0f8;color:var(--muted);font-weight:600;font-size:.84rem}
+.cstep span{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#fff;font-size:.75rem;font-weight:800}.cstep .icon{width:14px;height:14px}
+.cstep.on{background:var(--brand);color:#fff}.cstep.on span{color:var(--brand)}.cstep.done{background:var(--ok-bg);color:var(--ok)}.cstep.done span{background:var(--ok);color:#fff}
+.entryrow{display:grid;grid-template-columns:150px 1fr 38px;gap:8px;align-items:center}@media(max-width:560px){.entryrow{grid-template-columns:1fr 1fr 38px}}
+.pill.sm{padding:2px 9px;font-size:.76rem}.pillrow.tight{gap:4px}
+.certfoot{padding:12px 16px;border-top:1px solid var(--line);background:#fafbff;position:sticky;bottom:0}
