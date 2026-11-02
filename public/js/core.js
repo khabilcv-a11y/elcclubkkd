@@ -310,3 +310,47 @@ function consoleShell({ product, who, role, nav, active, base, content, extra = 
     <div class="shell"><nav class="side" aria-label="Workspace">${nav.map(g => html`${g.group ? html`<h4>${g.group}</h4>` : ''}${items(g)}`)}</nav>
     <main id="main" class="main page-in" tabindex="-1">${content}</main></div>`;
 }
+
+// ---------- every table can be sorted: each column heading becomes a sort button ----------
+// Tables that already have their own sorting (reports, volunteer list) or that hold merged cells are left alone. Total rows stay at the bottom.
+const TS_NUM = /^-?\d+(\.\d+)?%?$/, TS_DATE = /^(\d{1,2}\s+[A-Za-z]{3,9}\.?,?\s+\d{4}|\d{4}-\d\d-\d\d)/;
+function tsValue(td) {
+  if (!td) return { e: true };
+  if (td.dataset.sort !== undefined) { const v = td.dataset.sort, nn = Number(v); return v === '' ? { e: true } : isNaN(nn) ? { s: v.toLowerCase() } : { n: nn }; }
+  let t = td.innerText || '';
+  if (td.querySelector('.av,.ftile,.sr')) { const c = td.cloneNode(true); c.querySelectorAll('.av,.ftile,.sr').forEach(x => x.remove()); t = c.textContent; }   // ignore logo initials and hidden labels
+  t = t.replace(/\s+/g, ' ').trim();
+  if (!t || /^[—–-]$/.test(t) || /^(not entered|no report yet|not started)$/i.test(t)) return { e: true };
+  const c = t.replace(/[,\s]/g, ''); if (TS_NUM.test(c)) return { n: parseFloat(c) };
+  const d = t.match(TS_DATE); if (d) { const ts = Date.parse(d[0].replace(/\./, '')); if (!isNaN(ts)) return { n: ts }; }
+  return { s: t.toLowerCase() };
+}
+function enhanceTables(root = document) {
+  for (const t of root.querySelectorAll('table:not([data-sortdone]):not([data-nosort])')) {
+    const head = t.tHead?.rows; if (!head || head.length !== 1 || !t.tBodies[0]) continue;
+    const ths = [...head[0].cells]; if (ths.some(h => h.colSpan > 1) || t.tHead.querySelector('.sortbtn,.sortable,[data-act$=Sort],input')) { t.dataset.sortdone = '1'; continue; }
+    const rows = [...t.tBodies[0].rows]; if (rows.length < 2) continue;
+    if (rows.some(r => !r.classList.contains('total') && r.cells.length !== ths.length)) { t.dataset.sortdone = '1'; continue; }
+    ths.forEach((h, i) => {
+      const label = (h.innerText || '').trim(), title = h.getAttribute('title') || h.getAttribute('aria-label') || label;
+      if (!label && !h.querySelector('svg')) return;
+      h.innerHTML = `<button type="button" class="sortbtn" data-tsort="${i}" title="Sort by ${esc(title)}">${h.innerHTML}<span class="sico" aria-hidden="true"></span></button>`; h.setAttribute('aria-sort', 'none');
+    });
+    t.dataset.sortdone = '1';
+  }
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest?.('.sortbtn[data-tsort]'); if (!b) return;
+  const t = b.closest('table'), i = Number(b.dataset.tsort), th = b.closest('th'), dir = th.getAttribute('aria-sort') === 'ascending' ? -1 : 1, body = t.tBodies[0];
+  const all = [...body.rows], tail = all.filter(r => r.classList.contains('total')), rows = all.filter(r => !r.classList.contains('total'));
+  const keyed = rows.map((r, k) => ({ r, k, v: tsValue(r.cells[i]) }));
+  keyed.sort((x, y) => {
+    if (x.v.e || y.v.e) return x.v.e && y.v.e ? x.k - y.k : x.v.e ? 1 : -1;      // blanks always last
+    const a = x.v.n !== undefined ? x.v.n : x.v.s, c = y.v.n !== undefined ? y.v.n : y.v.s;
+    if (typeof a === 'number' && typeof c === 'number') return (a - c) * dir || x.k - y.k;
+    return String(a).localeCompare(String(c), undefined, { numeric: true, sensitivity: 'base' }) * dir || x.k - y.k;
+  });
+  body.append(...keyed.map(x => x.r), ...tail);
+  $$('th', t.tHead).forEach(h => { h.setAttribute('aria-sort', h === th ? (dir === 1 ? 'ascending' : 'descending') : 'none'); const s = $('.sico', h), bt = $('.sortbtn', h); if (s) s.className = 'sico' + (h === th ? (dir === 1 ? ' asc' : ' desc') : ''); bt?.classList.toggle('on', h === th); });
+});
+{ let tsTimer = 0; new MutationObserver(() => { clearTimeout(tsTimer); tsTimer = setTimeout(() => enhanceTables(), 60); }).observe(document.documentElement, { childList: true, subtree: true }); document.addEventListener('DOMContentLoaded', () => enhanceTables()); }
