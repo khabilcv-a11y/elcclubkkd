@@ -90,11 +90,13 @@ route('DELETE', '/api/college/gallery/:id', 'college', async ctx => {
 // A photo is public when it is switched on and its institution is active (photos uploaded by the district office have no institution).
 const PUBLIC_FROM = `FROM gallery g LEFT JOIN colleges c ON c.id=g.college_id LEFT JOIN gallery_albums a ON a.id=g.album_id WHERE g.visible=1 AND (g.college_id IS NULL OR c.active=1)`;
 const PUBLIC_COLS = `g.ext_url,g.id,g.title,g.activity,g.event_date,g.orientation,g.album_id,g.college_id,c.logo_at logo_v,COALESCE(c.name,'District Election Office') college,a.title album`;
+// photos from the district administration (added by the office) come before those of colleges and schools
+const DISTRICT_FIRST = 'CASE WHEN g.college_id IS NULL THEN 0 ELSE 1 END';
 async function albumOn(ctx) { if (!(await featureMap(ctx.db)).public.album) throw new HttpError(404, 'Not available'); }
 route('GET', '/api/public/album', null, async ctx => {
   await albumOn(ctx);
   // the home page shows the running campaign; the office can also put a photo from a "previous works" album there
-  return ctx.db.all(`SELECT ${PUBLIC_COLS} ${PUBLIC_FROM} AND (g.album_id IS NULL OR a.current=1 OR g.home=1) ORDER BY g.id DESC LIMIT ${ctx.query.all ? 300 : 40}`);
+  return ctx.db.all(`SELECT ${PUBLIC_COLS} ${PUBLIC_FROM} AND (g.album_id IS NULL OR a.current=1 OR g.home=1) ORDER BY ${DISTRICT_FIRST}, g.id DESC LIMIT ${ctx.query.all ? 300 : 40}`);
 });
 async function publicPhoto(ctx) {
   await albumOn(ctx);
@@ -109,7 +111,7 @@ route('GET', '/api/public/album/:id/thumb', null, async ctx => thumbResponse(ctx
 route('GET', '/api/public/gallery', null, async ctx => {
   await albumOn(ctx);
   const [current, albums, counts] = await Promise.all([
-    ctx.db.all(`SELECT ${PUBLIC_COLS} ${PUBLIC_FROM} AND (g.album_id IS NULL OR a.current=1) ORDER BY g.id DESC LIMIT 300`),
+    ctx.db.all(`SELECT ${PUBLIC_COLS} ${PUBLIC_FROM} AND (g.album_id IS NULL OR a.current=1) ORDER BY ${DISTRICT_FIRST}, g.id DESC LIMIT 300`),
     ctx.db.all('SELECT id,title,description,current,sort_order FROM gallery_albums ORDER BY sort_order,id DESC'),
     ctx.db.all(`SELECT g.album_id,COUNT(*) n,MAX(g.id) cover,MAX(g.event_date) last ${PUBLIC_FROM} AND g.album_id IS NOT NULL GROUP BY g.album_id`)]);
   const cnt = new Map(counts.map(r => [r.album_id, r])), ext = new Map((await ctx.db.all(`SELECT id,ext_url FROM gallery WHERE id IN (${counts.map(r => Number(r.cover)).join(',') || 0}) AND ext_url IS NOT NULL`)).map(r => [r.id, r.ext_url]));
@@ -136,7 +138,7 @@ route('GET', '/api/staff/gallery/:id/thumb', 'staff', async ctx => {
 route('GET', '/api/staff/gallery', 'staff', async ctx => {
   const s = await scopeOf(ctx);
   const rows = await ctx.db.all(`SELECT g.id,g.college_id,g.album_id,g.title,g.description,g.activity,g.event_date,g.orientation,g.visible,g.home,g.by_staff,g.created_at,g.ext_url,COALESCE(c.name,'District Election Office') college FROM gallery g LEFT JOIN colleges c ON c.id=g.college_id ORDER BY g.id DESC LIMIT 400`);
-  return rows.filter(r => !s || (r.college_id && s.colleges.has(r.college_id)));
+  return rows.filter(r => !s || (r.college_id && s.colleges.has(r.college_id)) || r.by_staff === ctx.user.username);   // an intern also sees the photos they uploaded themselves
 });
 route('GET', '/api/staff/gallery/:id/image', 'staff', async ctx => {
   const g = await ctx.db.get('SELECT * FROM gallery WHERE id=?', Number(ctx.params.id));
@@ -157,7 +159,8 @@ route('POST', '/api/staff/gallery/:id/album', OPS, async ctx => {
   await slog(ctx, 'gallery_move', `#${ctx.params.id} to ${aid ? 'album ' + aid : 'the current campaign'}`);
   return { ok: true };
 });
-route('POST', '/api/staff/gallery', OPS, async ctx => {
+// admins, super admins and interns can all add photos; photos added this way count as the district administration's and are shown first
+route('POST', '/api/staff/gallery', 'staff', async ctx => {
   const b = ctx.body;
   if (!/^image\/(jpeg|png|webp)$/.test(b.mime || '')) throw bad('The picture must be a JPG, PNG or WebP image');
   const data = String(b.data || '');
@@ -173,9 +176,10 @@ route('POST', '/api/staff/gallery', OPS, async ctx => {
   await slog(ctx, 'gallery_upload', `${album ? album.title : 'Current campaign'}: ${title}`);
   return { ok: true, id };
 });
-route('DELETE', '/api/staff/gallery/:id', OPS, async ctx => {
+route('DELETE', '/api/staff/gallery/:id', 'staff', async ctx => {
   const g = await ctx.db.get('SELECT * FROM gallery WHERE id=?', Number(ctx.params.id));
   if (!g) throw new HttpError(404, 'Photo not found');
+  if (!OPS.includes(ctx.user.role) && g.by_staff !== ctx.user.username) throw new HttpError(403, 'You can delete only the photos you added yourself');
   await ctx.db.run('DELETE FROM gallery WHERE id=?', g.id);
   if (g.drive_id) ctx.waitUntil(driveDelete(ctx.env, g.drive_id).catch(() => {}));
   await slog(ctx, 'gallery_delete', g.title);
