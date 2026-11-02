@@ -19,7 +19,7 @@ function publicShell(inner, active = '') {
     <main id="main" tabindex="-1" class="page-in">${inner}</main>
     <footer class="foot"><div class="wrap"><div class="logos"><img src="${LOGO.district}" alt="District Administration Kozhikode"><span class="sep"></span><img src="${LOGO.sweepDark}" alt="SWEEP Kozhikode"><span class="sep"></span><img src="${LOGO.nvlb}" alt="No voter to be left behind" style="height:62px"></div>
       <div class="cols"><div><img src="${LOGO.sweepWhite}" alt="SWEEP Kozhikode" style="height:46px;margin-bottom:10px"><p class="small">Systematic Voters' Education and Electoral Participation, Kozhikode. Electoral Literacy Clubs enrolling every eligible young voter${feat('public', 'map') ? ', village by village' : ', from campus to booth'}.</p></div>
-        <div><h4>Explore</h4><p class="small"><a href="#/board">Display board</a><br>${feat('public', 'map') ? html`<a href="#/" data-act="go" data-to="villagemap">Village map</a><br>` : ''}<a href="#/" data-act="go" data-to="resources">Resource centre</a></p></div>
+        <div><h4>Explore</h4><p class="small"><a href="#/board">Display board</a><br>${feat('public', 'social') ? html`<a href="https://www.instagram.com/sveep.kozhikode/" target="_blank" rel="noopener">Instagram @sveep.kozhikode</a><br>` : ''}${feat('public', 'map') ? html`<a href="#/" data-act="go" data-to="villagemap">Village map</a><br>` : ''}<a href="#/" data-act="go" data-to="resources">Resource centre</a></p></div>
         <div><h4>For participants</h4><p class="small"><a href="#/login/college">College coordinators</a><br><a href="#/login/school">Schools</a><br>${feat('public', 'officer_login') ? html`<a href="#/login/officer">Village officers</a><br>` : ''}<a href="/admin">Staff console</a></p></div>
         <div><h4>Check your own enrolment</h4><p class="small">Not on the electoral roll yet? Apply with Form 6 on the Election Commission's <a href="https://voters.eci.gov.in" target="_blank" rel="noopener">Voters' Service Portal</a> or call <b>1950</b>.</p></div></div>
       <div class="legal"><span>© District Administration, Kozhikode</span><span>Built for the Electoral Literacy Club programme</span></div></div></footer>`;
@@ -39,6 +39,7 @@ async function renderHome() {
   try { await loadPublic(); } catch (e) { return show($('#app'), publicShell(html`<div class="wrap section"><div class="alert err">Couldn't load the numbers: ${e.message}</div></div>`, 'home')); }
   const t = BOARD.totals, ins = BOARD.insights, C = BOARD.campus, vil = feat('public', 'map');
   ALBUM = feat('public', 'album') ? await api('/api/public/album').catch(() => []) : [];
+  SOCIAL = feat('public', 'social') ? await api('/api/public/social').catch(() => null) : null;
   show($('#app'), publicShell(html`
   <section class="hero"><div class="wrap"><div>
       <span class="eyebrow"><span class="live"></span> Live from the field · updated every few seconds</span>
@@ -60,6 +61,7 @@ async function renderHome() {
 
   ${campusSection(C)}
   ${ALBUM.length ? albumSection() : ''}
+  ${SOCIAL?.posts?.length ? socialSection() : ''}
   ${vil ? html`<section class="section" id="villagemap"><div class="wrap"><div class="section-head"><div><h2>Where our volunteers are working</h2><p>${t.villages_active} of ${t.villages_total} village offices have students present in the field, and ${t.villages_registered} have voters registered. Select a village to see its progress.</p></div>
     <div class="chips" id="mapfilter" role="group" aria-label="Filter villages"></div></div>
     <div class="map-wrap rv"><div id="map" role="application" aria-label="Map of Kozhikode villages with ELC activity"></div><div class="map-side"><label class="f"><span class="sr">Search villages</span><input type="search" id="vq" placeholder="Search a village or college…"></label><div id="vlist" role="list"></div></div></div>
@@ -83,10 +85,28 @@ async function renderHome() {
   <section class="section"><div class="wrap grid g2">
     ${vil ? html`<div><div class="section-head"><div><h2>Live activity</h2></div></div><div class="card rv"><ul class="feed" id="feed"></ul></div></div>` : ''}
     <div id="resources"><div class="section-head"><div><h2>Resource centre</h2></div></div><div class="resgrid" id="reslist"></div><p class="center" id="resmore" style="margin-top:14px"></p></div></div></section>`, 'home'));
-  paintHome(); paintCampus(); wireMap(); startAlbum(); startColleges(); $('#main').focus({ preventScroll: true });
+  paintHome(); paintCampus(); wireMap(); startAlbum(); startColleges(); startSocial(); $('#main').focus({ preventScroll: true });
 }
 
-let ALBUM = [], albumTimer = null, albumList = [], FAN = null;
+let ALBUM = [], albumTimer = null, albumList = [], FAN = null, SOCIAL = null;
+// "Latest on Instagram": the district's chosen posts, each shown with Instagram's own embed. An embed is loaded only when it scrolls close to the screen,
+// so visitors who never get there are not sent to Instagram at all.
+function socialSection() {
+  const S = SOCIAL;
+  return html`<section class="section" id="social"><div class="wrap"><div class="section-head"><div><h2>Latest on Instagram</h2><p>Updates from <b>@${S.handle}</b>, the district's voter awareness page.</p></div><a class="btn accent" href="${S.profile}" target="_blank" rel="noopener">${icon('external')} Follow @${S.handle}</a></div>
+    <div class="igwrap"><button class="fan-btn igbtn prev" data-act="igScroll" data-d="-1" aria-label="Earlier posts">${icon('arrow-left')}</button>
+      <div class="igrow" id="igrow" role="list" aria-label="Latest Instagram posts" tabindex="0">${S.posts.map(p => html`<div class="igcard" role="listitem" data-code="${p.code}"><div class="igph"><span class="igglyph">${icon('camera')}</span><b>Instagram post</b><a class="btn secondary sm" href="${p.url}" target="_blank" rel="noopener">View on Instagram ${icon('external')}</a></div></div>`)}</div>
+      <button class="fan-btn igbtn next" data-act="igScroll" data-d="1" aria-label="More posts">${icon('arrow-right')}</button></div>
+    <p class="small muted center" style="margin-top:10px">Posts are shown by Instagram, so Instagram may set its own cookies once they load.</p></div></section>`;
+}
+function startSocial() {
+  const row = $('#igrow'); if (!row) return;
+  const load = c => { if (c.dataset.on) return; c.dataset.on = '1'; c.innerHTML = `<iframe src="https://www.instagram.com/p/${encodeURIComponent(c.dataset.code)}/embed/captioned/" title="Instagram post" loading="lazy" scrolling="no" allowtransparency="true" referrerpolicy="strict-origin-when-cross-origin"></iframe>`; };
+  if (!('IntersectionObserver' in window)) { $$('.igcard', row).forEach(load); return; }
+  const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { load(e.target); io.unobserve(e.target); } }), { root: null, rootMargin: '500px 400px' });
+  $$('.igcard', row).forEach(c => io.observe(c));
+}
+actions.igScroll = el => { const t = $('#igrow'); t?.scrollBy({ left: Number(el.dataset.d) * Math.max(320, t.clientWidth * 0.8), behavior: reduced() ? 'auto' : 'smooth' }); };
 // "Moments from the campaign": photo cards fanned along an arc like a spread hand. Drag to spin it, tap a card to bring it forward and tap again to open it.
 // It drifts slowly by itself, and stops while you touch it (and entirely for people who prefer less motion).
 function albumSection() {
@@ -125,7 +145,7 @@ function startAlbum() {
   };
   const pxPerCard = () => (cards[0]?.offsetWidth || 190) * 0.7;
   let sx = 0, sp = 0, moved = 0, lx = 0, lt = 0, v = 0, down = null;
-  box.onpointerdown = e => { if (e.target.closest('.fan-btn')) return; down = e.target.closest?.('.fan-card') || null; F.drag = true; F.target = null; F.vel = 0; sx = lx = e.clientX; sp = F.pos; moved = 0; lt = performance.now(); v = 0; box.setPointerCapture?.(e.pointerId); };
+  box.onpointerdown = e => { if (e.target.closest('.fan-btn')) return; down = e.target.closest?.('.fan-card') || null; F.drag = true; F.target = null; F.vel = 0; sx = lx = e.clientX; sp = F.pos; moved = 0; lt = performance.now(); v = 0; try { box.setPointerCapture?.(e.pointerId); } catch {} };
   box.onpointermove = e => { if (!F.drag) return; const dx = e.clientX - sx; moved = Math.max(moved, Math.abs(dx)); F.pos = sp - dx / pxPerCard(); const now = performance.now(); v = (-(e.clientX - lx) / pxPerCard()) / Math.max(1, now - lt); lx = e.clientX; lt = now; };
   box.onpointerup = box.onpointercancel = e => {
     if (!F.drag) return; F.drag = null; F.hold = performance.now() + 2500;
