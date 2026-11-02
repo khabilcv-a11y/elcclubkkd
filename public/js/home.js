@@ -86,43 +86,60 @@ async function renderHome() {
   paintHome(); paintCampus(); wireMap(); startAlbum(); startColleges(); $('#main').focus({ preventScroll: true });
 }
 
-let ALBUM = [], albumTimer = null, albumAt = 0, albumList = [];
+let ALBUM = [], albumTimer = null, albumList = [], FAN = null;
+// "Moments from the campaign": photo cards fanned along an arc like a spread hand. Drag to spin it, tap a card to bring it forward and tap again to open it.
+// It drifts slowly by itself, and stops while you touch it (and entirely for people who prefer less motion).
 function albumSection() {
-  return html`<section class="section" id="album"><div class="wrap"><div class="section-head"><div><h2>Moments from the campaign</h2><p>Photos from help desks, flash mobs, class-to-class campaigns and more, shared by colleges and schools.</p></div><a class="btn secondary" href="#/gallery">See all photos ${icon('arrow-right')}</a></div></div>
-    <div class="cf" id="cf" role="region" aria-roledescription="carousel" aria-label="Campaign photo album" tabindex="0"><div class="cf-stage" id="cfstage"></div>
-      <button class="cf-btn prev" data-act="albPrev" aria-label="Previous photo">${icon('arrow-left')}</button><button class="cf-btn next" data-act="albNext" aria-label="Next photo">${icon('arrow-right')}</button></div>
-    <div class="cf-cap" id="cfcap" aria-live="polite"></div><div class="cf-dots" id="cfdots" aria-hidden="true"></div></section>`;
+  return html`<section class="section" id="album"><div class="wrap"><div class="section-head"><div><h2>Moments from the campaign</h2><p>Photos from the district administration, colleges and schools. Drag to spin, tap a photo to open it.</p></div><a class="btn secondary" href="#/gallery">Explore the gallery ${icon('arrow-right')}</a></div></div>
+    <div class="fan" id="fan" role="region" aria-roledescription="carousel" aria-label="Campaign photos" tabindex="0"><div class="fan-stage" id="fanstage"></div>
+      <button class="fan-btn prev" data-act="albPrev" aria-label="Previous photo">${icon('arrow-left')}</button><button class="fan-btn next" data-act="albNext" aria-label="Next photo">${icon('arrow-right')}</button></div>
+    <div class="fan-cap" id="fancap" aria-live="polite"></div></section>`;
 }
 function startAlbum() {
-  clearInterval(albumTimer); const st = $('#cfstage'); if (!st) return;
-  albumList = ALBUM.slice(0, 12);
-  st.innerHTML = albumList.map((g, i) => `<figure class="cf-card" data-i="${i}" data-act="cfGo" aria-label="${esc(g.college)}: ${esc(g.title)}"><div class="bg" data-src="${gUrl(g, 'medium', `/api/public/album/${g.id}/thumb`)}"></div><img data-src="${gUrl(g, 'large', `/api/public/album/${g.id}/thumb`)}" data-full="${gUrl(g, 'xlarge', `/api/public/album/${g.id}/image`)}" alt="${esc(g.title)}, ${esc(g.college)}" draggable="false"></figure>`).join('');
-  setAlbum(0);
-  const box = $('#cf'); let paused = false, x0 = null;
-  box.addEventListener('mouseenter', () => { paused = true; }); box.addEventListener('mouseleave', () => { paused = false; });
-  box.addEventListener('focusin', () => { paused = true; }); box.addEventListener('focusout', () => { paused = false; });
-  box.addEventListener('keydown', e => { if (e.key === 'ArrowRight') setAlbum(albumAt + 1); else if (e.key === 'ArrowLeft') setAlbum(albumAt - 1); });
-  box.addEventListener('pointerdown', e => { x0 = e.clientX; }); box.addEventListener('pointerup', e => { if (x0 != null && Math.abs(e.clientX - x0) > 45) { setAlbum(albumAt + (e.clientX < x0 ? 1 : -1)); box.dataset.swiped = '1'; setTimeout(() => { delete box.dataset.swiped; }, 50); } x0 = null; });
-  if (!reduced() && albumList.length > 1) albumTimer = setInterval(() => { if (!paused && !document.querySelector('.overlay') && document.getElementById('cfstage')) setAlbum(albumAt + 1); }, 4800);
+  if (FAN?.raf) cancelAnimationFrame(FAN.raf);
+  const st = $('#fanstage'), box = $('#fan'); if (!st) return;
+  albumList = ALBUM.slice(0, 14);
+  st.innerHTML = albumList.map((g, i) => `<figure class="fan-card" data-i="${i}" aria-label="${esc(g.title)}, ${esc(g.college)}"><img src="${gUrl(g, 'large', `/api/public/album/${g.id}/thumb`)}" alt="${esc(g.title)}, ${esc(g.college)}" draggable="false"></figure>`).join('');
+  const N = albumList.length, cards = $$('.fan-card', st), F = FAN = { pos: 0, vel: 0, target: null, drag: null, hold: 0, raf: 0, last: 0, N, shown: -1 };
+  const step = Math.max(12.5, 170 / N);                               // degrees between neighbouring cards
+  const wrap = o => ((o + N / 2) % N + N) % N - N / 2;
+  const paint = () => {
+    for (let i = 0; i < N; i++) {
+      const o = wrap(i - F.pos), ang = o * step, a = Math.abs(ang), c = cards[i];
+      const op = a > 66 ? 0 : a > 46 ? 1 - (a - 46) / 20 : 1;
+      c.style.opacity = op; c.style.visibility = op <= 0.02 ? 'hidden' : 'visible'; c.style.zIndex = 100 - Math.round(Math.abs(o) * 10);
+      c.style.transform = `rotate(${ang.toFixed(2)}deg) scale(${(1 + 0.1 * Math.max(0, 1 - Math.abs(o))).toFixed(3)})`;
+      c.classList.toggle('mid', Math.abs(o) < 0.5);
+    }
+    const k = ((Math.round(F.pos) % N) + N) % N; if (k !== F.shown) { F.shown = k; const g = albumList[k], cap = $('#fancap'); cap.classList.remove('in'); void cap.offsetWidth;
+      cap.innerHTML = `<b class="withav">${g.logo_v ? `<img class="av" src="${logoUrl(g.college_id, g.logo_v)}" alt="" style="width:30px;height:30px">` : ''}${esc(g.college)}</b><span>${esc(g.title)}</span>${albumMeta(g) ? `<small>${esc(albumMeta(g))}</small>` : ''}`; cap.classList.add('in'); }
+  };
+  const tick = t => {
+    if (!document.getElementById('fanstage')) return;
+    const dt = Math.min(48, F.last ? t - F.last : 16); F.last = t;
+    if (F.drag) { /* following the pointer */ }
+    else if (F.target != null) { F.pos += (F.target - F.pos) * Math.min(1, dt / 120); if (Math.abs(F.target - F.pos) < 0.003) { F.pos = F.target; F.target = null; } }
+    else if (Math.abs(F.vel) > 0.00015) { F.pos += F.vel * dt; F.vel *= Math.pow(0.95, dt / 16); if (Math.abs(F.vel) <= 0.00015) F.target = Math.round(F.pos); }
+    else if (t > F.hold && !reduced() && !document.querySelector('.lbx2') && N > 1) F.pos += 0.00017 * dt;
+    paint(); F.raf = requestAnimationFrame(tick);
+  };
+  const pxPerCard = () => (cards[0]?.offsetWidth || 190) * 0.7;
+  let sx = 0, sp = 0, moved = 0, lx = 0, lt = 0, v = 0;
+  box.onpointerdown = e => { if (e.target.closest('.fan-btn')) return; F.drag = true; F.target = null; F.vel = 0; sx = lx = e.clientX; sp = F.pos; moved = 0; lt = performance.now(); v = 0; box.setPointerCapture?.(e.pointerId); };
+  box.onpointermove = e => { if (!F.drag) return; const dx = e.clientX - sx; moved = Math.max(moved, Math.abs(dx)); F.pos = sp - dx / pxPerCard(); const now = performance.now(); v = (-(e.clientX - lx) / pxPerCard()) / Math.max(1, now - lt); lx = e.clientX; lt = now; };
+  box.onpointerup = box.onpointercancel = e => {
+    if (!F.drag) return; F.drag = null; F.hold = performance.now() + 2500;
+    if (moved < 6) { const c = e.target.closest?.('.fan-card'); if (c) { const i = Number(c.dataset.i), k = ((Math.round(F.pos) % N) + N) % N; if (i === k) openLightbox(albumList, i); else F.target = F.pos + wrap(i - F.pos); } else F.target = Math.round(F.pos); }
+    else { F.vel = Math.max(-0.01, Math.min(0.01, v * 0.9)); if (Math.abs(F.vel) < 0.0004) F.target = Math.round(F.pos); }
+  };
+  box.onkeydown = e => { if (e.key === 'ArrowRight') { F.target = Math.round(F.pos) + 1; F.hold = performance.now() + 2500; } else if (e.key === 'ArrowLeft') { F.target = Math.round(F.pos) - 1; F.hold = performance.now() + 2500; } else if (e.key === 'Enter' || e.key === ' ') { if (e.target === box) { e.preventDefault(); openLightbox(albumList, ((Math.round(F.pos) % N) + N) % N); } } };
+  box.onmouseenter = () => { F.hold = Infinity; }; box.onmouseleave = () => { F.hold = performance.now() + 800; };
+  box.onfocusin = () => { F.hold = Infinity; }; box.onfocusout = () => { F.hold = performance.now() + 800; };
+  paint(); F.raf = requestAnimationFrame(tick);
 }
-function setAlbum(i) {
-  const cards = $$('#cfstage .cf-card'), N = cards.length; if (!N) return;
-  albumAt = ((i % N) + N) % N;
-  cards.forEach((c, k) => {
-    let o = k - albumAt; if (o > N / 2) o -= N; if (o < -N / 2) o += N;
-    c.dataset.o = Math.abs(o) > 1 ? (o < 0 ? 'xl' : 'xr') : String(o);
-    if (Math.abs(o) <= 2) { const im = $('img', c), bg = $('.bg', c); if (im && im.dataset.src) { im.src = im.dataset.src; delete im.dataset.src; } if (bg && bg.dataset.src) { bg.style.backgroundImage = 'url(' + bg.dataset.src + ')'; delete bg.dataset.src; } }
-    c.setAttribute('aria-hidden', o === 0 ? 'false' : 'true');
-    if (o === 0) { const im = $('img', c); if (im && im.dataset.full) { const full = im.dataset.full; delete im.dataset.full; const pre = new Image(); pre.onload = () => { im.src = full; }; pre.src = full; } }
-  });
-  const g = albumList[albumAt], cap = $('#cfcap');
-  cap.classList.remove('in'); void cap.offsetWidth;
-  cap.innerHTML = `<b class="withav">${g.logo_v ? `<img class="av" src="${logoUrl(g.college_id, g.logo_v)}" alt="" style="width:34px;height:34px">` : ''}${esc(g.college)}</b><span>${esc(g.title)}</span>${albumMeta(g) ? `<small>${esc(albumMeta(g))}</small>` : ''}`; cap.classList.add('in');
-  show($('#cfdots'), html`${albumList.map((_, k) => html`<i class="${k === albumAt ? 'on' : ''}"></i>`)}`);
-}
-actions.albNext = () => setAlbum(albumAt + 1);
-actions.albPrev = () => setAlbum(albumAt - 1);
-actions.cfGo = el => { if ($('#cf')?.dataset.swiped) return; const k = Number(el.dataset.i); if (k !== albumAt) setAlbum(k); else openLightbox(albumList, k); };
+const fanStep = d => { if (!FAN) return; FAN.target = Math.round(FAN.pos) + d; FAN.hold = performance.now() + 2500; };
+actions.albNext = () => fanStep(1);
+actions.albPrev = () => fanStep(-1);
 
 function campusSection(C) {
   const T = C.totals, inRace = rankedCampus(C.institutions).length;

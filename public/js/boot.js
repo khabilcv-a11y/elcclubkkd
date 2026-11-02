@@ -12,7 +12,7 @@ async function route() {
   window.scrollTo(0, 0);
   document.title = (TITLES[seg || ''] || TITLES['']) + (seg ? ' · SWEEP Kozhikode' : '');
   if (seg === 'ack') return renderAck(a);
-  if (seg === 'gallery') return renderPublicGallery(a);
+  if (seg === 'gallery') return renderPublicGallery(a, b);
   if (seg === 'resource') return renderResource(a);
   if (seg === 'school-signup') return renderSchoolSignup();
   if (seg === 'college-signup') return renderCollegeSignup();
