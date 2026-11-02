@@ -49,15 +49,66 @@ async function apDesk(el) {
 actions.dkKind = el => { DKKIND = el.dataset.k; apDesk($('#pg')); };
 actions.deskRep = el => { REP = { type: el.dataset.t, filters: {}, sort: '', dir: 'asc', cols: null }; location.hash = '#/reports'; };
 
-// ---------- Gallery moderation ----------
+// ---------- Gallery: photos from colleges and schools, photos added by the office, and the albums that sort the public gallery ----------
+let GALF = 'all';
 async function apGallery(el) {
-  const items = await api('/api/staff/gallery'); window.__gal = items;
-  show(el, html`${pageHead('Gallery', 'Photos made by colleges and schools. Hide a photo to take it off the public home page, or delete it.', '', 'Campus to booth')}
-    ${items.length ? html`<div class="galgrid">${items.map(g => html`<article class="galcard ${g.visible ? '' : 'dim'}"><img src="/api/staff/gallery/${g.id}/thumb" alt="${g.title}" loading="lazy" decoding="async"><div class="galbody"><h3>${g.title}</h3><div class="small muted"><b>${g.college}</b> · ${g.activity} · ${fdate(g.event_date)}</div>${g.description ? html`<p class="small">${g.description}</p>` : ''}
-      <div class="row gap-s" style="margin-top:10px">${isOps() ? html`<button class="btn sm secondary" data-act="galVis" data-id="${g.id}" data-v="${g.visible ? 0 : 1}">${g.visible ? 'Hide from home page' : 'Show on home page'}</button><button class="btn sm danger" data-act="galDel" data-id="${g.id}" aria-label="Delete ${g.title}">${icon('trash')}</button>` : ''}${g.visible ? badge('Public', 'ok') : badge('Hidden', 'grey')}</div></div></article>`)}</div>` : html`<div class="card">${empty('No photos yet', 'Photos appear here once colleges and schools save framed photos to their galleries.', 'image')}</div>`}`);
+  const [items, albums] = await Promise.all([api('/api/staff/gallery'), api('/api/staff/gallery-albums').catch(() => [])]);
+  window.__gal = items; window.__albums = albums;
+  const ops = isOps(), albumOf = id => albums.find(a => a.id === id);
+  const shown = items.filter(g => GALF === 'all' || (GALF === 'inst' && g.college_id) || (GALF === 'office' && !g.college_id) || (GALF === 'cur' && !g.album_id) || String(g.album_id) === GALF);
+  const chips = [['all', `All (${items.length})`], ['inst', 'From colleges and schools'], ['office', 'Added by the office'], ['cur', 'Current campaign'], ...albums.map(a => [String(a.id), `${a.title} (${a.count})`])];
+  show(el, html`${pageHead('Gallery', 'Photos from colleges and schools, and photos you add yourself. Create albums with titles to sort the public gallery: the current campaign is highlighted, earlier work is shown as albums.', ops ? html`<button class="btn secondary" data-act="albAdd">${icon('plus')} New album</button><button class="btn primary" data-act="galAdd">${icon('upload')} Add photos</button>` : '', 'Campus to booth')}
+    ${ops ? html`<div class="card" style="margin-bottom:16px"><div class="card-head"><h3>${icon('folder')} Albums</h3><a class="btn ghost sm" href="/#/gallery" target="_blank" rel="noopener">${icon('external')} See the public gallery</a></div>
+      ${albums.length ? html`<div class="albrows">${albums.map(a => html`<div class="albrow"><div><b>${a.title}</b> ${a.current ? badge('Current campaign', 'ok') : badge('Previous works', 'grey')}<div class="small muted">${a.count} photo${a.count === 1 ? '' : 's'}${a.description ? ' · ' + a.description : ''}</div></div><div class="row gap-s nowrap">${rowBtn('albEdit', 'Edit', 'edit', `data-id="${a.id}"`)}${rowBtn('albDel', '', 'trash', `data-id="${a.id}" aria-label="Delete album ${esc(a.title)}"`, 'danger')}</div></div>`)}</div>` : html`<p class="muted small">No albums yet. Photos from colleges and schools appear under "Current campaign" automatically. Create an album to add earlier work such as a previous election drive.</p>`}</div>` : ''}
+    <div class="chips" style="margin-bottom:14px" role="group" aria-label="Show">${chips.map(([k, l]) => html`<button class="chip ${GALF === k ? 'on' : ''}" data-act="galFilter" data-k="${k}">${l}</button>`)}</div>
+    ${shown.length ? html`<div class="galgrid">${shown.map(g => html`<article class="galcard ${g.visible ? '' : 'dim'}"><img src="/api/staff/gallery/${g.id}/thumb" alt="${g.title}" loading="lazy" decoding="async"><div class="galbody"><h3>${g.title}</h3><div class="small muted"><b>${g.college}</b>${g.activity ? ' · ' + g.activity : ''} · ${fdate(g.event_date)}</div>${g.description ? html`<p class="small">${g.description}</p>` : ''}
+      <div class="pillrow" style="margin-top:6px">${g.album_id && albumOf(g.album_id) ? badge(albumOf(g.album_id).title, 'info') : badge('Current campaign', 'ok')}${g.visible ? badge('Public', 'ok') : badge('Hidden', 'grey')}${g.home ? badge('On home page', 'info') : ''}</div>
+      ${ops ? html`<div class="row gap-s" style="margin-top:10px"><button class="btn sm secondary" data-act="galVis" data-id="${g.id}" data-v="${g.visible ? 0 : 1}">${g.visible ? 'Hide' : 'Show'}</button><button class="btn sm secondary" data-act="galMove" data-id="${g.id}">${icon('folder')} Album</button><button class="btn sm danger" data-act="galDel" data-id="${g.id}" aria-label="Delete ${g.title}">${icon('trash')}</button></div>` : ''}</div></article>`)}</div>` : html`<div class="card">${empty('No photos here yet', 'Photos appear as colleges and schools save framed photos. You can also add photos yourself.', 'image')}</div>`}`);
 }
+actions.galFilter = el => { GALF = el.dataset.k; apGallery($('#pg')); };
 actions.galVis = async el => { await api(`/api/staff/gallery/${el.dataset.id}/visible`, 'POST', { visible: el.dataset.v === '1' }); apGallery($('#pg')); };
 actions.galDel = async el => { if (!await confirmBox('Delete this photo for good?', 'Delete', true)) return; await api('/api/staff/gallery/' + el.dataset.id, 'DELETE'); toast('Deleted'); apGallery($('#pg')); };
+
+const albumOptions = (sel = '') => html`<option value="">Current campaign (highlighted at the top)</option>${window.__albums.map(a => html`<option value="${a.id}" ${String(sel) === String(a.id) ? 'selected' : ''}>${a.title}${a.current ? ' (current)' : ''}</option>`)}`;
+actions.galAdd = () => modal(html`<h2>Add photos</h2><form data-form="galAdd" class="stack-s">
+  <label class="f"><span>Photos (you can choose several) *</span><input type="file" name="files" accept="image/*" multiple required></label>
+  <label class="f"><span>Title *</span><input type="text" name="title" maxlength="100" required placeholder="e.g. Voter awareness rally, Nadapuram"></label>
+  <div class="formgrid"><label class="f"><span>Album</span><select name="album" id="galalb">${albumOptions()}<option value="new">+ New album…</option></select></label>
+    <label class="f hide" id="galnew"><span>New album title</span><input type="text" name="new_album" maxlength="80" placeholder="e.g. Assembly election 2024"></label>
+    <label class="f"><span>Date</span><input type="date" name="event_date" max="${todayISO()}" value="${todayISO()}"></label></div>
+  <label class="f"><span>Activity or place (optional)</span><input type="text" name="activity" maxlength="60" placeholder="e.g. Rally"></label>
+  <label class="f"><span>Short description (optional)</span><textarea name="description" rows="2" maxlength="500"></textarea></label>
+  <label class="chk"><input type="checkbox" name="home" checked> Also show on the home page</label>
+  <p class="hint">With several photos, the same title is used for all of them. Pictures are resized automatically.</p>${mfoot('Upload')}</form>`, { wide: true });
+document.addEventListener('change', e => { if (e.target.id === 'galalb') $('#galnew')?.classList.toggle('hide', e.target.value !== 'new'); });
+forms.galAdd = async f => {
+  const v = fd(f), files = [...$('input[type=file]', f).files]; if (!files.length) throw new Error('Choose at least one photo');
+  const box = $('[data-err]', f);
+  let album = v.album || null;
+  if (album === 'new') { const t = String(v.new_album || '').trim(); if (!t) throw new Error('Type the new album title'); album = (await api('/api/staff/gallery-albums', 'POST', { title: t, current: false })).id; }
+  let done = 0;
+  for (const file of files) {
+    box.innerHTML = `<div class="alert info">Uploading photo ${done + 1} of ${files.length}… please keep this window open.</div>`;
+    const cv = await readPhoto(file, 2200), blob = await new Promise(res => cv.toBlob(res, 'image/jpeg', 0.86));
+    await api('/api/staff/gallery', 'POST', { title: v.title, description: v.description, activity: v.activity, event_date: v.event_date, album_id: album, home: !!v.home, orientation: cv.height > cv.width ? 'portrait' : 'landscape', mime: 'image/jpeg', thumb: await thumbB64(cv), data: await toB64(blob) });
+    done++;
+  }
+  f.closest('.overlay').close(); toast(done === 1 ? 'Photo added' : `${done} photos added`); apGallery($('#pg'));
+};
+actions.galMove = el => {
+  const g = window.__gal.find(x => x.id === Number(el.dataset.id));
+  modal(html`<h2>Move to an album</h2><form data-form="galMove" data-id="${g.id}" class="stack-s"><p class="muted small">${g.title}</p>
+    <label class="f"><span>Album</span><select name="album">${albumOptions(g.album_id)}</select></label>
+    <label class="chk"><input type="checkbox" name="home" ${g.home ? 'checked' : ''}> Also show on the home page</label>${mfoot('Save')}</form>`);
+};
+forms.galMove = async f => { const v = fd(f); await api(`/api/staff/gallery/${f.dataset.id}/album`, 'POST', { album_id: v.album || null, home: !!v.home }); f.closest('.overlay').close(); toast('Saved'); apGallery($('#pg')); };
+const albumForm = a => html`<form data-form="album" data-id="${a?.id || ''}" class="stack-s"><label class="f"><span>Album title *</span><input type="text" name="title" maxlength="80" required value="${a?.title || ''}" placeholder="e.g. Assembly election 2024"></label>
+  <label class="f"><span>Short description (optional)</span><input type="text" name="description" maxlength="300" value="${a?.description || ''}"></label>
+  <label class="chk"><input type="checkbox" name="current" ${a?.current ? 'checked' : ''}> This is part of the current campaign (shown in the highlighted section and on the home page). Leave off for earlier work.</label>${mfoot(a ? 'Save' : 'Create album')}</form>`;
+actions.albAdd = () => { window.__albums ||= []; modal(html`<h2>New album</h2>${albumForm()}`); };
+actions.albEdit = el => modal(html`<h2>Edit album</h2>${albumForm(window.__albums.find(a => a.id === Number(el.dataset.id)))}`);
+forms.album = async f => { const id = f.dataset.id, v = fd(f); await api(id ? '/api/staff/gallery-albums/' + id : '/api/staff/gallery-albums', id ? 'PUT' : 'POST', { title: v.title, description: v.description, current: !!v.current }); f.closest('.overlay').close(); toast('Saved'); apGallery($('#pg')); };
+actions.albDel = async el => { if (!await confirmBox('Delete this album? It must have no photos.', 'Delete', true)) return; await api('/api/staff/gallery-albums/' + el.dataset.id, 'DELETE'); toast('Deleted'); apGallery($('#pg')); };
 
 // ---------- Dashboard: total coverage, and every college's input and performance ----------
 let DBKIND = '', DBSORT = 'low';

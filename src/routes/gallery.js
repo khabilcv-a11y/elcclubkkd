@@ -35,7 +35,7 @@ async function thumbResponse(ctx, row, scope) {
   if (!row.thumb) return imageResponse(ctx, row, scope);          // photos saved before thumbnails existed
   return { __raw: true, bytes: Uint8Array.from(atob(row.thumb), ch => ch.charCodeAt(0)), headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': scope === 'public' ? 'public, max-age=604800, immutable' : 'private, max-age=604800, immutable' } };
 }
-const LIST = 'id,title,description,activity,event_date,orientation,visible,created_at';
+const LIST = 'id,album_id,title,description,activity,event_date,orientation,visible,created_at';
 
 // ---------- the college's gallery ----------
 route('GET', '/api/college/gallery', 'college', async ctx => ({
@@ -82,27 +82,49 @@ route('DELETE', '/api/college/gallery/:id', 'college', async ctx => {
   return { ok: true };
 });
 
-// ---------- public album on the home page ----------
+
+// ---------- public: home page album and the gallery page ----------
+// A photo is public when it is switched on and its institution is active (photos uploaded by the district office have no institution).
+const PUBLIC_FROM = `FROM gallery g LEFT JOIN colleges c ON c.id=g.college_id LEFT JOIN gallery_albums a ON a.id=g.album_id WHERE g.visible=1 AND (g.college_id IS NULL OR c.active=1)`;
+const PUBLIC_COLS = `g.id,g.title,g.activity,g.event_date,g.orientation,g.album_id,g.college_id,c.logo_at logo_v,COALESCE(c.name,'District Election Office') college,a.title album`;
 async function albumOn(ctx) { if (!(await featureMap(ctx.db)).public.album) throw new HttpError(404, 'Not available'); }
 route('GET', '/api/public/album', null, async ctx => {
   await albumOn(ctx);
-  return ctx.db.all(`SELECT g.id,g.title,g.activity,g.event_date,g.orientation,c.id college_id,c.logo_at logo_v,c.name college FROM gallery g JOIN colleges c ON c.id=g.college_id AND c.active=1 WHERE g.visible=1 ORDER BY g.id DESC LIMIT ${ctx.query.all ? 300 : 40}`);
+  // the home page shows the running campaign; the office can also put a photo from a "previous works" album there
+  return ctx.db.all(`SELECT ${PUBLIC_COLS} ${PUBLIC_FROM} AND (g.album_id IS NULL OR a.current=1 OR g.home=1) ORDER BY g.id DESC LIMIT ${ctx.query.all ? 300 : 40}`);
 });
-route('GET', '/api/public/album/:id/image', null, async ctx => {
+async function publicPhoto(ctx) {
   await albumOn(ctx);
-  const g = await ctx.db.get('SELECT g.* FROM gallery g JOIN colleges c ON c.id=g.college_id AND c.active=1 WHERE g.id=? AND g.visible=1', Number(ctx.params.id));
+  const g = await ctx.db.get(`SELECT g.* ${PUBLIC_FROM} AND g.id=?`, Number(ctx.params.id));
   if (!g) throw new HttpError(404, 'Photo not found');
-  return imageResponse(ctx, g, 'public');
+  return g;
+}
+route('GET', '/api/public/album/:id/image', null, async ctx => imageResponse(ctx, await publicPhoto(ctx), 'public'));
+route('GET', '/api/public/album/:id/thumb', null, async ctx => thumbResponse(ctx, await publicPhoto(ctx), 'public'));
+
+// the gallery page: the running campaign (highlighted) and the albums of previous works
+route('GET', '/api/public/gallery', null, async ctx => {
+  await albumOn(ctx);
+  const [current, albums, counts] = await Promise.all([
+    ctx.db.all(`SELECT ${PUBLIC_COLS} ${PUBLIC_FROM} AND (g.album_id IS NULL OR a.current=1) ORDER BY g.id DESC LIMIT 300`),
+    ctx.db.all('SELECT id,title,description,current,sort_order FROM gallery_albums ORDER BY sort_order,id DESC'),
+    ctx.db.all(`SELECT g.album_id,COUNT(*) n,MAX(g.id) cover,MAX(g.event_date) last ${PUBLIC_FROM} AND g.album_id IS NOT NULL GROUP BY g.album_id`)]);
+  const cnt = new Map(counts.map(r => [r.album_id, r]));
+  return {
+    current,
+    albums: albums.filter(a => cnt.has(a.id)).map(a => ({ ...a, count: cnt.get(a.id).n, last: cnt.get(a.id).last || '', cover: cnt.get(a.id).cover })),
+    stats: { photos: current.length, institutions: new Set(current.filter(x => x.college_id).map(x => x.college_id)).size },
+  };
+});
+route('GET', '/api/public/gallery/album/:id', null, async ctx => {
+  await albumOn(ctx);
+  const a = await ctx.db.get('SELECT id,title,description,current FROM gallery_albums WHERE id=?', Number(ctx.params.id));
+  if (!a) throw new HttpError(404, 'Album not found');
+  return { album: a, photos: await ctx.db.all(`SELECT ${PUBLIC_COLS} ${PUBLIC_FROM} AND g.album_id=? ORDER BY g.event_date DESC,g.id DESC LIMIT 400`, a.id) };
 });
 
-route('GET', '/api/public/album/:id/thumb', null, async ctx => {
-  await albumOn(ctx);
-  const g = await ctx.db.get('SELECT g.* FROM gallery g JOIN colleges c ON c.id=g.college_id AND c.active=1 WHERE g.id=? AND g.visible=1', Number(ctx.params.id));
-  if (!g) throw new HttpError(404, 'Photo not found');
-  return thumbResponse(ctx, g, 'public');
-});
-
-// ---------- staff moderation ----------
+// ---------- staff: every photo, moderation, uploads by the office ----------
+const OPS = ['super_admin', 'admin'];
 route('GET', '/api/staff/gallery/:id/thumb', 'staff', async ctx => {
   const g = await ctx.db.get('SELECT * FROM gallery WHERE id=?', Number(ctx.params.id));
   if (!g) throw new HttpError(404, 'Photo not found');
@@ -110,25 +132,80 @@ route('GET', '/api/staff/gallery/:id/thumb', 'staff', async ctx => {
 });
 route('GET', '/api/staff/gallery', 'staff', async ctx => {
   const s = await scopeOf(ctx);
-  const rows = await ctx.db.all(`SELECT g.id,g.college_id,g.title,g.description,g.activity,g.event_date,g.orientation,g.visible,g.created_at,c.name college FROM gallery g JOIN colleges c ON c.id=g.college_id ORDER BY g.id DESC LIMIT 300`);
-  return rows.filter(r => !s || s.colleges.has(r.college_id));
+  const rows = await ctx.db.all(`SELECT g.id,g.college_id,g.album_id,g.title,g.description,g.activity,g.event_date,g.orientation,g.visible,g.home,g.by_staff,g.created_at,COALESCE(c.name,'District Election Office') college FROM gallery g LEFT JOIN colleges c ON c.id=g.college_id ORDER BY g.id DESC LIMIT 400`);
+  return rows.filter(r => !s || (r.college_id && s.colleges.has(r.college_id)));
 });
 route('GET', '/api/staff/gallery/:id/image', 'staff', async ctx => {
   const g = await ctx.db.get('SELECT * FROM gallery WHERE id=?', Number(ctx.params.id));
   if (!g) throw new HttpError(404, 'Photo not found');
   return imageResponse(ctx, g, 'private');
 });
-route('POST', '/api/staff/gallery/:id/visible', ['super_admin', 'admin'], async ctx => {
+route('POST', '/api/staff/gallery/:id/visible', OPS, async ctx => {
   const r = await ctx.db.run('UPDATE gallery SET visible=? WHERE id=?', ctx.body.visible ? 1 : 0, Number(ctx.params.id));
   if (!r.changes) throw new HttpError(404, 'Photo not found');
   await slog(ctx, ctx.body.visible ? 'gallery_show' : 'gallery_hide', '#' + ctx.params.id);
   return { ok: true };
 });
-route('DELETE', '/api/staff/gallery/:id', ['super_admin', 'admin'], async ctx => {
+route('POST', '/api/staff/gallery/:id/album', OPS, async ctx => {
+  const aid = ctx.body.album_id ? Number(ctx.body.album_id) : null;
+  if (aid && !(await ctx.db.get('SELECT 1 x FROM gallery_albums WHERE id=?', aid))) throw bad('Choose an album');
+  const r = await ctx.db.run('UPDATE gallery SET album_id=?,home=? WHERE id=?', aid, ctx.body.home ? 1 : 0, Number(ctx.params.id));
+  if (!r.changes) throw new HttpError(404, 'Photo not found');
+  await slog(ctx, 'gallery_move', `#${ctx.params.id} to ${aid ? 'album ' + aid : 'the current campaign'}`);
+  return { ok: true };
+});
+route('POST', '/api/staff/gallery', OPS, async ctx => {
+  const b = ctx.body;
+  if (!/^image\/(jpeg|png|webp)$/.test(b.mime || '')) throw bad('The picture must be a JPG, PNG or WebP image');
+  const data = String(b.data || '');
+  if (!data || data.length * 0.75 > MAX_BYTES) throw bad('The picture is too large. Try again with a smaller photo.');
+  const title = reqStr(b.title, 'Please give the photo a title', 100), description = str(b.description, 500), activity = str(b.activity, 60);
+  const aid = b.album_id ? Number(b.album_id) : null, album = aid ? await ctx.db.get('SELECT * FROM gallery_albums WHERE id=?', aid) : null;
+  if (aid && !album) throw bad('Choose an album');
+  const date = isDate(b.event_date) && b.event_date <= todayStr() ? b.event_date : todayStr();
+  const folder = `Gallery/${safe(album ? album.title : 'Current campaign')}`, ext = b.mime.split('/')[1].replace('jpeg', 'jpg');
+  const up = await driveUpload(ctx.env, { name: `${date}_${safe(title).slice(0, 40)}_${Date.now()}.${ext}`, mime: b.mime, data, folder });
+  const id = await ctx.db.insert('INSERT INTO gallery(college_id,title,description,activity,event_date,drive_id,mime,size,orientation,visible,created_at,thumb,album_id,by_staff,home) VALUES (NULL,?,?,?,?,?,?,?,?,1,?,?,?,?,?)',
+    title, description, activity, date, up.id, b.mime, Math.round(data.length * 0.75), b.orientation === 'portrait' ? 'portrait' : 'landscape', nowIso(), /^[A-Za-z0-9+/=]+$/.test(String(b.thumb || '')) && String(b.thumb).length <= 42000 ? String(b.thumb) : null, aid, ctx.user.username, b.home ? 1 : 0);
+  await slog(ctx, 'gallery_upload', `${album ? album.title : 'Current campaign'}: ${title}`);
+  return { ok: true, id };
+});
+route('DELETE', '/api/staff/gallery/:id', OPS, async ctx => {
   const g = await ctx.db.get('SELECT * FROM gallery WHERE id=?', Number(ctx.params.id));
   if (!g) throw new HttpError(404, 'Photo not found');
   await ctx.db.run('DELETE FROM gallery WHERE id=?', g.id);
   ctx.waitUntil(driveDelete(ctx.env, g.drive_id).catch(() => {}));
   await slog(ctx, 'gallery_delete', g.title);
+  return { ok: true };
+});
+
+// albums: the titles that sort the public gallery
+route('GET', '/api/staff/gallery-albums', 'staff', async ctx => {
+  const [albums, counts] = await Promise.all([ctx.db.all('SELECT id,title,description,current,sort_order FROM gallery_albums ORDER BY sort_order,id DESC'), ctx.db.all('SELECT album_id,COUNT(*) n FROM gallery WHERE album_id IS NOT NULL GROUP BY album_id')]);
+  const cnt = new Map(counts.map(r => [r.album_id, r.n]));
+  return albums.map(a => ({ ...a, count: cnt.get(a.id) || 0 }));
+});
+const albumBody = b => ({ title: reqStr(b.title, 'Album title', 80), description: str(b.description, 300), current: b.current ? 1 : 0 });
+route('POST', '/api/staff/gallery-albums', OPS, async ctx => {
+  const o = albumBody(ctx.body);
+  if (await ctx.db.get('SELECT 1 x FROM gallery_albums WHERE lower(title)=lower(?)', o.title)) throw new HttpError(409, 'An album with this title already exists');
+  const id = await ctx.db.insert('INSERT INTO gallery_albums(title,description,current,sort_order,created_by,created_at) VALUES (?,?,?,?,?,?)', o.title, o.description, o.current, 0, ctx.user.username, nowIso());
+  await slog(ctx, 'album_add', o.title);
+  return { ok: true, id };
+});
+route('PUT', '/api/staff/gallery-albums/:id', OPS, async ctx => {
+  const o = albumBody(ctx.body), id = Number(ctx.params.id);
+  if (await ctx.db.get('SELECT 1 x FROM gallery_albums WHERE lower(title)=lower(?) AND id<>?', o.title, id)) throw new HttpError(409, 'An album with this title already exists');
+  const r = await ctx.db.run('UPDATE gallery_albums SET title=?,description=?,current=? WHERE id=?', o.title, o.description, o.current, id);
+  if (!r.changes) throw new HttpError(404, 'Album not found');
+  await slog(ctx, 'album_edit', o.title);
+  return { ok: true };
+});
+route('DELETE', '/api/staff/gallery-albums/:id', OPS, async ctx => {
+  const id = Number(ctx.params.id), a = await ctx.db.get('SELECT * FROM gallery_albums WHERE id=?', id);
+  if (!a) throw new HttpError(404, 'Album not found');
+  if (await ctx.db.get('SELECT 1 x FROM gallery WHERE album_id=?', id)) throw bad('This album still has photos. Move or delete them first.');
+  await ctx.db.run('DELETE FROM gallery_albums WHERE id=?', id);
+  await slog(ctx, 'album_delete', a.title);
   return { ok: true };
 });

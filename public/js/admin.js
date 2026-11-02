@@ -14,11 +14,11 @@ async function boot() {
   window.addEventListener('hashchange', route);
   route();
 }
-const STAFF_FEATURED = ['colleges', 'schools', 'enrol', 'desk', 'gallery', 'issues', 'notices', 'resources', 'reports', 'villages', 'allot', 'officers', 'requests', 'cert'];
-const PAGES = () => ({ dashboard: apDashboard, colleges: pgColleges, schools: pgSchools, enrol: apEnrol, ...(typeof apDesk === 'function' ? { desk: apDesk } : {}), ...(typeof apGallery === 'function' ? { gallery: apGallery } : {}), ...(isSuper() ? { features: apFeatures } : {}), villages: pgVillages, allot: pgAllot, ...(isOps() ? { officers: pgOfficers, notices: pgNotices, resources: pgResources } : {}),
+const STAFF_FEATURED = ['colleges', 'schools', 'enrol', 'desk', 'gallery', 'templates', 'issues', 'notices', 'resources', 'reports', 'villages', 'allot', 'officers', 'requests', 'cert'];
+const PAGES = () => ({ dashboard: apDashboard, colleges: pgColleges, schools: pgSchools, enrol: apEnrol, ...(typeof apDesk === 'function' ? { desk: apDesk } : {}), ...(typeof apGallery === 'function' ? { gallery: apGallery } : {}), ...(typeof apTemplates === 'function' && isOps() ? { templates: apTemplates } : {}), ...(isSuper() ? { features: apFeatures } : {}), villages: pgVillages, allot: pgAllot, ...(isOps() ? { officers: pgOfficers, notices: pgNotices, resources: pgResources } : {}),
   requests: pgRequests, cert: pgCert, issues: pgIssues, reports: pgReports, ...(isSuper() ? { team: pgTeam, logs: pgLogs } : {}) });
 const TITLES = { dashboard: 'Dashboard', colleges: 'Colleges', villages: 'Villages', allot: 'Allotments', officers: 'Village officers', requests: 'Change requests', cert: 'Certification', issues: 'Help desk issues', notices: 'Announcements',
-  resources: 'Resource centre', reports: 'Reports & exports', team: 'Team', logs: 'Activity log', schools: 'Schools', enrol: 'Enrolment drive', desk: 'Help desk reports', gallery: 'Gallery', features: 'Access control' };
+  resources: 'Resource centre', reports: 'Reports & exports', team: 'Team', logs: 'Activity log', schools: 'Schools', enrol: 'Enrolment drive', desk: 'Help desk reports', gallery: 'Gallery', templates: 'Frames and posters', features: 'Access control' };
 
 async function route() {
   if (!SU) return renderLogin();
@@ -27,7 +27,7 @@ async function route() {
   try { DASH = (await api('/api/staff/dashboard')); } catch (e) { if (e.status === 401) return; }
   const t = DASH?.totals || {};
   const navAll = [{ group: 'Overview', items: [{ id: 'dashboard', label: 'Dashboard', icon: 'grid' }] },
-    { group: 'Campus to booth', items: [{ id: 'enrol', label: 'Enrolment drive', icon: 'target' }, { id: 'desk', label: 'Help desk reports', icon: 'clipboard' }, { id: 'gallery', label: 'Gallery', icon: 'image' }] },
+    { group: 'Campus to booth', items: [{ id: 'enrol', label: 'Enrolment drive', icon: 'target' }, { id: 'desk', label: 'Help desk reports', icon: 'clipboard' }, { id: 'gallery', label: 'Gallery', icon: 'image' }, { id: 'templates', label: 'Frames and posters', icon: 'crop' }] },
     { group: 'Manage', items: [{ id: 'colleges', label: 'Colleges', icon: 'building' }, { id: 'schools', label: 'Schools', icon: 'book' }, { id: 'villages', label: 'Villages', icon: 'map-pin' }, { id: 'allot', label: 'Allotments', icon: 'link' }, ...(isOps() ? [{ id: 'officers', label: 'Village officers', icon: 'landmark' }] : [])] },
     { group: 'Operations', items: [{ id: 'requests', label: 'Change requests', icon: 'refresh', count: t.pending_requests }, { id: 'cert', label: 'Certification', icon: 'certificate', count: t.awaiting_ack }, { id: 'issues', label: 'Help desk issues', icon: 'help', count: t.open_issues },
       ...(isOps() ? [{ id: 'notices', label: 'Announcements', icon: 'megaphone' }, { id: 'resources', label: 'Resources', icon: 'book' }] : [])] },
@@ -114,7 +114,6 @@ const staffCreds = (name, role, username, pw) => `${SITE}\nStaff login (${ROLE[r
 const newPassword = () => { const A = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'; let x = ''; for (const b of crypto.getRandomValues(new Uint8Array(12))) x += A[b % A.length]; return x; };
 const collegeCreds = r => `${SITE}\nCollege login\n\nCollege: ${r.college}\nWebsite: ${location.origin}/\nPassword: ${r.code}\n\nOpen the website, choose your college, tap "College login" and enter the password. You can change it after signing in (Password button, top right). Keep it private.`;
 function passToast(r) { credsModal(`Password reset for ${r.college}`, collegeCreds(r)); }
-const copyText = async t => { try { await navigator.clipboard.writeText(t); } catch { prompt('Copy this', t); return; } toast('Copied'); };
 actions.copyPass = el => copyText(window.__colleges.find(x => x.id === Number(el.dataset.id)).passcode);
 actions.copyMsg = el => { const c = window.__colleges.find(x => x.id === Number(el.dataset.id)); copyText(collegeCreds({ college: c.name, code: c.passcode })); };
 actions.pushPass = async el => { const c = window.__colleges.find(x => x.id === Number(el.dataset.id)); if (c.passcode_sent_at && !await confirmBox(`Reset the password of ${c.name} to the default? Their current password stops working and they are signed out.`, 'Reset password')) return; passToast(await api(`/api/staff/colleges/${c.id}/passcode`, 'POST')); refresh(); };
@@ -283,9 +282,9 @@ async function pgResources(el) {
   const list = await api('/api/resources'); window.__res = list;
   const aud = { public: 'Public', colleges: 'Colleges', officers: 'Village officers', staff: 'Staff only' };
   show(el, html`${pageHead('Resource centre', 'Share manuals, forms and guides with colleges, officers or everyone.', html`<button class="btn primary" data-act="addRes">${icon('plus')} Add resource</button>`, 'Operations')}
-    ${list.length ? html`<div class="card pad0">${tbl(['Title', 'Category', 'Visible to', 'Type', 'Added', ''], list.map(r => html`<tr><td><b>${r.title}</b><div class="small muted">${r.description || ''}</div></td><td>${r.category}</td><td>${badge(aud[r.audience], r.audience === 'public' ? 'ok' : 'info')}</td>
+    ${list.length ? html`<div class="card pad0">${tbl(['Title', 'Category', 'Visible to', 'Type', 'Added', ''], list.map(r => html`<tr><td><div class="nmav">${r.kind === 'file' && r.has_thumb ? html`<img class="rthumb sm" src="/api/resources/${r.id}/thumb" alt="" loading="lazy">` : fileTile(r.filename, r.mime, r.kind === 'link')}<span><b>${r.title}</b><div class="small muted">${r.description || ''}</div></span></div></td><td>${r.category}</td><td>${badge(aud[r.audience], r.audience === 'public' ? 'ok' : 'info')}</td>
       <td>${r.kind === 'link' ? html`${icon('link')} Link` : html`${icon('file')} ${r.filename}${r.size ? html` <span class="xs muted">${Math.round(r.size / 1024)} KB</span>` : ''}`}</td><td class="small">${fdt(r.created_at)}</td>
-      <td><div class="row gap-s nowrap">${r.kind === 'link' ? html`<a class="btn sm secondary" href="${r.url}" target="_blank" rel="noopener">${icon('external')} Open</a>` : html`<a class="btn sm secondary" href="/api/resources/${r.id}/download">${icon('download')} Download</a>`}${rowBtn('editRes', 'Edit', 'edit', `data-id="${r.id}"`)}${rowBtn('delRes', '', 'trash', `data-id="${r.id}" aria-label="Delete ${esc(r.title)}"`, 'danger')}</div></td></tr>`))}</div>` : empty('Nothing shared yet', 'Add manuals, circulars and forms here.', 'book')}`);
+      <td><div class="row gap-s nowrap"><button class="btn sm primary" data-act="copyRes" data-id="${r.id}" title="Copy the portal link to this file">${icon('copy')} Copy link</button><a class="btn sm secondary" href="/#/resource/${r.id}" target="_blank" rel="noopener">${icon('eye')} View</a>${r.kind === 'file' && !r.has_thumb && /pdf|png|jpe?g|webp/i.test(r.filename || '') ? html`<button class="btn sm secondary" data-act="resPreview" data-id="${r.id}">Make preview</button>` : ''}${r.kind === 'link' ? html`<a class="btn sm secondary" href="${r.url}" target="_blank" rel="noopener">${icon('external')} Open</a>` : html`<a class="btn sm secondary" href="/api/resources/${r.id}/download">${icon('download')} Download</a>`}${rowBtn('editRes', 'Edit', 'edit', `data-id="${r.id}"`)}${rowBtn('delRes', '', 'trash', `data-id="${r.id}" aria-label="Delete ${esc(r.title)}"`, 'danger')}</div></td></tr>`))}</div>` : empty('Nothing shared yet', 'Add manuals, circulars and forms here.', 'book')}`);
 }
 const CATS = ['Manual', 'Form', 'Circular', 'Template', 'Training', 'General'];
 actions.addRes = () => modal(html`<h2>Add resource</h2><form data-form="res" class="stack-s"><label class="f"><span>Title *</span><input type="text" name="title" required maxlength="140"></label><label class="f"><span>Description</span><input type="text" name="description" maxlength="500"></label>
@@ -299,7 +298,7 @@ forms.res = async f => {
   if (v.kind === 'link') body.url = v.url;
   else {
     const file = $('input[type=file]', f).files[0]; if (!file) throw new Error('Choose a file to upload'); if (file.size > 5 * 1024 * 1024) throw new Error('Files can be up to 5 MB');
-    body.filename = file.name; body.mime = file.type; body.data = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = () => rej(new Error('Could not read the file')); r.readAsDataURL(file); });
+    body.filename = file.name; body.mime = file.type; body.thumb = await fileThumb(file); body.data = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = () => rej(new Error('Could not read the file')); r.readAsDataURL(file); });
   }
   await api('/api/staff/resources', 'POST', body); f.closest('.overlay').close(); toast('Added'); refresh();
 };
@@ -308,11 +307,17 @@ actions.editRes = el => { const r = window.__res.find(x => x.id === Number(el.da
   <div class="formgrid"><label class="f"><span>Category</span><select name="category">${[...new Set([...CATS, r.category])].map(c => html`<option ${c === r.category ? 'selected' : ''}>${c}</option>`)}</select></label>
   <label class="f"><span>Visible to</span><select name="audience">${[['colleges', 'Colleges and schools'], ...(feat('staff', 'officers') || r.audience === 'officers' ? [['officers', 'Village officers']] : []), ['public', 'Everyone (public)'], ['staff', 'Staff only']].map(([k, l]) => html`<option value="${k}" ${r.audience === k ? 'selected' : ''}>${l}</option>`)}</select></label></div>${mfoot('Save')}</form>`); };
 forms.resEdit = async f => { await api('/api/staff/resources/' + f.dataset.id, 'PUT', fd(f)); f.closest('.overlay').close(); toast('Saved'); refresh(); };
+actions.resPreview = async el => {
+  const r = window.__res.find(x => x.id === Number(el.dataset.id)); toast('Making the preview…');
+  const blob = await (await fetch(`/api/resources/${r.id}/download`)).blob(), file = new File([blob], r.filename, { type: r.mime || blob.type }), thumb = await fileThumb(file);
+  if (!thumb) return toast('A preview could not be made for this file', true);
+  await api('/api/staff/resources/' + r.id, 'PUT', { title: r.title, description: r.description, category: r.category, audience: r.audience, thumb }); toast('Preview added'); refresh();
+};
 actions.delRes = async el => { if (!await confirmBox('Delete this resource? Anyone who had access loses it.', 'Delete', true)) return; await api('/api/staff/resources/' + el.dataset.id, 'DELETE'); refresh(); };
 
 // ---------- reports & exports ----------
 const RF = { daily: ['college', 'taluk', 'village', 'lsgi', 'dates', 'attendance', 'verified', 'ack', 'q'], students: ['college', 'taluk', 'village', 'dates', 'q'], colleges: ['college', 'taluk', 'dates', 'q'],
-  villages: ['college', 'taluk', 'village', 'lsgi', 'dates', 'ack', 'q'], allotments: ['college', 'taluk', 'village', 'lsgi', 'ack', 'q'], issues: ['college', 'status', 'dates', 'q'], performance: ['college', 'kind', 'q'], enrol_inst: ['college', 'kind', 'q'], desk_inst: ['college', 'kind', 'dates', 'q'], desk: ['college', 'kind', 'dates', 'q'], activities: ['college', 'kind', 'dates', 'q'], activity_summary: ['college', 'kind', 'dates'], enrol_dept: ['college', 'kind', 'q'], enrol: ['college', 'kind', 'q'] };
+  villages: ['college', 'taluk', 'village', 'lsgi', 'dates', 'ack', 'q'], allotments: ['college', 'taluk', 'village', 'lsgi', 'ack', 'q'], issues: ['college', 'status', 'dates', 'q'], performance: ['college', 'kind', 'q'], enrol_inst: ['college', 'kind', 'q'], desk_inst: ['college', 'kind', 'dates', 'q'], desk: ['college', 'kind', 'dates', 'q'], activities: ['college', 'kind', 'dates', 'q'], student_wise: ['college', 'kind', 'dates', 'q'], activity_summary: ['college', 'kind', 'dates'], enrol_dept: ['college', 'kind', 'q'], enrol: ['college', 'kind', 'q'] };
 let REP = { type: 'performance', filters: {}, sort: '', dir: 'asc', cols: null }, OPTS = null;
 async function pgReports(el) {
   OPTS ||= await api('/api/staff/report-options');

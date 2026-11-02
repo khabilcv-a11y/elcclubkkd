@@ -51,8 +51,34 @@ function canSee(who, audience) {
 }
 route('GET', '/api/resources', null, async ctx => {
   const who = await whoIs(ctx);
-  const rows = await ctx.db.all('SELECT id,title,description,category,audience,kind,url,filename,mime,size,created_by,created_at FROM resources ORDER BY category,title');
-  return rows.filter(r => canSee(who, r.audience)).map(r => (who === 'staff' || r.kind === 'file' ? r : r)).map(r => ({ ...r, url: r.kind === 'link' ? r.url : null }));
+  const rows = await ctx.db.all('SELECT id,title,description,category,audience,kind,url,filename,mime,size,created_by,created_at,(thumb IS NOT NULL) has_thumb FROM resources ORDER BY category,title');
+  return rows.filter(r => canSee(who, r.audience)).map(r => ({ ...r, url: r.kind === 'link' ? r.url : null }));
+});
+// one resource: this is what a shared portal link (/#/resource/12) opens. Someone who may not see it is told who it is for.
+const AUD_NAME = { colleges: 'colleges and schools', officers: 'village officers', staff: 'the district staff' };
+async function resourceFor(ctx) {
+  const who = await whoIs(ctx);
+  const r = await ctx.db.get('SELECT * FROM resources WHERE id=?', Number(ctx.params.id));
+  if (!r) throw new HttpError(404, 'This file is not available any more');
+  if (!canSee(who, r.audience)) throw new HttpError(403, 'This file is shared with ' + (AUD_NAME[r.audience] || 'signed-in users') + ' only. Please sign in to open it.');
+  return r;
+}
+route('GET', '/api/resources/:id', null, async ctx => {
+  const r = await resourceFor(ctx);
+  return { id: r.id, title: r.title, description: r.description, category: r.category, audience: r.audience, kind: r.kind, url: r.kind === 'link' ? r.url : null, filename: r.filename, mime: r.mime, size: r.size, created_at: r.created_at, has_thumb: !!r.thumb };
+});
+route('GET', '/api/resources/:id/thumb', null, async ctx => {
+  const r = await resourceFor(ctx);
+  if (!r.thumb) throw new HttpError(404, 'No preview');
+  return { __raw: true, bytes: Uint8Array.from(atob(r.thumb), ch => ch.charCodeAt(0)), headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=86400' } };
+});
+// shown inside the page (images and PDFs); other types are offered as a download
+route('GET', '/api/resources/:id/view', null, async ctx => {
+  const r = await resourceFor(ctx);
+  if (r.kind !== 'file') throw bad('This resource is a link');
+  if (!['image/png', 'image/jpeg', 'image/webp', 'application/pdf'].includes(r.mime || '')) throw bad('This file type cannot be previewed. Please download it.');
+  const f = await driveGet(ctx.env, r.drive_id);
+  return { __raw: true, bytes: Uint8Array.from(atob(f.data), ch => ch.charCodeAt(0)), headers: { 'Content-Type': r.mime, 'Content-Disposition': 'inline', 'X-Frame-Options': 'SAMEORIGIN', 'Cache-Control': 'private, max-age=300' } };
 });
 route('GET', '/api/resources/:id/download', null, async ctx => {
   const who = await whoIs(ctx);
@@ -80,15 +106,17 @@ route('POST', '/api/staff/resources', OPS, async ctx => {
     mime = str(b.mime, 100) || 'application/octet-stream';
     driveId = (await driveUpload(ctx.env, { name: filename, mime, data, folder: 'Resources' })).id;
   }
-  const id = await ctx.db.insert('INSERT INTO resources(title,description,category,audience,kind,url,drive_id,filename,mime,size,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
-    base.title, base.description, base.category, base.audience, kind, url, driveId, filename, mime, size, ctx.user.username, nowIso());
+  const thumb = /^[A-Za-z0-9+/=]+$/.test(String(b.thumb || '')) && String(b.thumb).length <= 42000 ? String(b.thumb) : null;
+  const id = await ctx.db.insert('INSERT INTO resources(title,description,category,audience,kind,url,drive_id,filename,mime,size,created_by,created_at,thumb) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+    base.title, base.description, base.category, base.audience, kind, url, driveId, filename, mime, size, ctx.user.username, nowIso(), thumb);
   await slog(ctx, 'resource_add', base.title);
   return { ok: true, id };
 });
 route('PUT', '/api/staff/resources/:id', OPS, async ctx => {
   const b = ctx.body;
-  const r = await ctx.db.run('UPDATE resources SET title=?,description=?,category=?,audience=? WHERE id=?', reqStr(b.title, 'Title', 140), str(b.description, 500), str(b.category, 40) || 'General',
-    RES_AUDIENCES.includes(b.audience) ? b.audience : 'colleges', Number(ctx.params.id));
+  const newThumb = /^[A-Za-z0-9+/=]+$/.test(String(b.thumb || '')) && String(b.thumb).length <= 42000 ? String(b.thumb) : null;
+  const r = await ctx.db.run('UPDATE resources SET title=?,description=?,category=?,audience=?,thumb=COALESCE(?,thumb) WHERE id=?', reqStr(b.title, 'Title', 140), str(b.description, 500), str(b.category, 40) || 'General',
+    RES_AUDIENCES.includes(b.audience) ? b.audience : 'colleges', newThumb, Number(ctx.params.id));
   if (!r.changes) throw new HttpError(404, 'Resource not found');
   await slog(ctx, 'resource_edit', '#' + ctx.params.id);
   return { ok: true };

@@ -37,7 +37,7 @@ export const TABLES = {
   issues: { pk: ['id'], cols: [['id', 'INTEGER'], ['college_id', 'INTEGER', { nn: 1, ref: ['colleges', 'CASCADE'] }], ['category', 'TEXT'], ['subject', 'TEXT', { nn: 1 }], ['message', 'TEXT'],
     ['status', 'TEXT', { nn: 1, def: "'open'" }], ['staff_reply', 'TEXT'], ['replied_by', 'TEXT'], ['replied_at', 'TEXT'], ['created_at', 'TEXT'], ['updated_at', 'TEXT']] },
   resources: { pk: ['id'], cols: [['id', 'INTEGER'], ['title', 'TEXT', { nn: 1 }], ['description', 'TEXT'], ['category', 'TEXT'], ['audience', 'TEXT', { nn: 1, def: "'colleges'" }], ['kind', 'TEXT', { nn: 1, def: "'file'" }],
-    ['url', 'TEXT'], ['drive_id', 'TEXT'], ['filename', 'TEXT'], ['mime', 'TEXT'], ['size', 'INTEGER'], ['created_by', 'TEXT'], ['created_at', 'TEXT']] },
+    ['url', 'TEXT'], ['drive_id', 'TEXT'], ['filename', 'TEXT'], ['mime', 'TEXT'], ['size', 'INTEGER'], ['created_by', 'TEXT'], ['created_at', 'TEXT'], ['thumb', 'TEXT']] },
   // switches the super admin uses to turn sections on or off for colleges, schools, staff and the public site (key = "audience.section")
   features: { pk: ['key'], cols: [['key', 'TEXT', { nn: 1 }], ['enabled', 'INTEGER', { nn: 1, def: 1 }], ['updated_by', 'TEXT'], ['updated_at', 'TEXT']] },
   // Campus to booth drive: classes of each department with their enrolment numbers (entered by department coordinators through the college's link)
@@ -49,8 +49,13 @@ export const TABLES = {
   activity_log: { pk: ['id'], unique: [['college_id', 'date', 'activity', 'activity_other', 'name']], cols: [['id', 'INTEGER'], ['college_id', 'INTEGER', { nn: 1, ref: ['colleges', 'CASCADE'] }], ['date', 'TEXT', { nn: 1 }],
     ['activity', 'TEXT', { nn: 1 }], ['activity_other', 'TEXT'], ['name', 'TEXT', { nn: 1 }], ['contact', 'TEXT'], ['created_at', 'TEXT']] },
   // photos made with the frame editor (files live in Google Drive)
-  gallery: { pk: ['id'], cols: [['id', 'INTEGER'], ['college_id', 'INTEGER', { nn: 1, ref: ['colleges', 'CASCADE'] }], ['title', 'TEXT', { nn: 1 }], ['description', 'TEXT'], ['activity', 'TEXT'],
-    ['event_date', 'TEXT'], ['drive_id', 'TEXT', { nn: 1 }], ['mime', 'TEXT'], ['size', 'INTEGER'], ['orientation', 'TEXT'], ['visible', 'INTEGER', { nn: 1, def: 1 }], ['created_at', 'TEXT'], ['thumb', 'TEXT']] },
+  gallery: { pk: ['id'], cols: [['id', 'INTEGER'], ['college_id', 'INTEGER', { ref: ['colleges', 'CASCADE'] }], ['title', 'TEXT', { nn: 1 }], ['description', 'TEXT'], ['activity', 'TEXT'],
+    ['event_date', 'TEXT'], ['drive_id', 'TEXT', { nn: 1 }], ['mime', 'TEXT'], ['size', 'INTEGER'], ['orientation', 'TEXT'], ['visible', 'INTEGER', { nn: 1, def: 1 }], ['created_at', 'TEXT'], ['thumb', 'TEXT'], ['album_id', 'INTEGER'], ['by_staff', 'TEXT'], ['home', 'INTEGER']] },
+  // albums the district office creates to sort the public gallery (current = part of the running campaign, otherwise "previous works")
+  gallery_albums: { pk: ['id'], cols: [['id', 'INTEGER'], ['title', 'TEXT', { nn: 1 }], ['description', 'TEXT'], ['current', 'INTEGER', { nn: 1, def: 0 }], ['sort_order', 'INTEGER', { nn: 1, def: 0 }], ['created_by', 'TEXT'], ['created_at', 'TEXT']] },
+  // photo frames and poster / banner templates: an image plus the boxes where text (or the logo) is placed
+  templates: { pk: ['id'], cols: [['id', 'INTEGER'], ['title', 'TEXT', { nn: 1 }], ['kind', 'TEXT', { nn: 1, def: "'poster'" }], ['category', 'TEXT'], ['width', 'INTEGER'], ['height', 'INTEGER'], ['fields', 'TEXT'],
+    ['drive_id', 'TEXT'], ['mime', 'TEXT'], ['size', 'INTEGER'], ['thumb', 'TEXT'], ['active', 'INTEGER', { nn: 1, def: 1 }], ['sort_order', 'INTEGER', { nn: 1, def: 0 }], ['created_by', 'TEXT'], ['created_at', 'TEXT']] },
   outbox: { pk: ['id'], cols: [['id', 'INTEGER'], ['ts', 'TEXT'], ['to_addr', 'TEXT'], ['subject', 'TEXT'], ['body', 'TEXT'], ['status', 'TEXT'], ['error', 'TEXT']] },
 };
 export const TABLE_NAMES = Object.keys(TABLES);

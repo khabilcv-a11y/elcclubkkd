@@ -4,8 +4,6 @@
 const STRIP = { w: 2000, h: 508, name: { x: 738, y: 259, w: 868, h: 117 }, act: { x: 736, y: 388, w: 814, h: 70 } };
 const LAND = { w: 1883, h: 1080, name: { x: 830, y: 901, w: 534, h: 72 }, act: { x: 830, y: 980, w: 500, h: 43 }, chip: { w: 432, h: 118 } };
 const FRAME = { landscape: { w: LAND.w, h: LAND.h }, portrait: { w: 1080, h: 1350 } };
-const imgCache = {};
-const loadImg = src => imgCache[src] ||= new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
 let ED = null;
 
 // ---------- text that always stays inside its box ----------
@@ -36,14 +34,11 @@ function drawInBox(c, text, box, o) {
   let s = floor1; while (s > 8 && !one(s)) s -= 1; c.fillText(t, cx, cy); c.restore();
 }
 
-// ---------- the photo inside the whole frame ----------
-function photoGeom(slot, W, H) {
-  const im = slot.img; if (!im) return null;
-  const sc = Math.max(W / im.width, H / im.height) * slot.zoom, dw = im.width * sc, dh = im.height * sc, mx = Math.max(0, (dw - W) / 2), my = Math.max(0, (dh - H) / 2);
-  slot.ox = Math.max(-mx, Math.min(mx, slot.ox)); slot.oy = Math.max(-my, Math.min(my, slot.oy));
-  return { dw, dh };
-}
+const frameSize = ed => (ed.tpl ? { w: ed.tpl.width, h: ed.tpl.height } : FRAME[ed.orient]);
+// text for the boxes of a template the district office added: the first "typed" box takes the activity title, further ones get their own input
+const valuesFor = ed => { const v = {}; let first = true; for (const f of ed.tpl.fields) { if (f.src === 'college') v[f.id] = ed.inst; else if (f.src === 'ask') { v[f.id] = first ? ed.title : (ed.extra[f.id] || ''); first = false; } } return v; };
 function drawFrame(c, scale, ed, art) {
+  if (ed.tpl) { c.save(); c.scale(scale, scale); drawTemplate(c, ed.tpl, { img: art.timg, photo: ed.slot, values: valuesFor(ed), logo: art.logo, exporting: ed.exporting, showEmpty: !ed.exporting }); c.restore(); return; }
   const land = ed.orient === 'landscape', W = FRAME[ed.orient].w, H = FRAME[ed.orient].h;
   c.save(); c.scale(scale, scale);
   c.fillStyle = '#e9ecf7'; c.fillRect(0, 0, W, H);
@@ -65,31 +60,25 @@ function drawFrame(c, scale, ed, art) {
   drawInBox(c, ed.title || (ed.exporting ? '' : 'Activity title'), actBox, { color: '#d96a0b', lines: 1 });
   c.restore();
 }
-const artwork = async () => ({ frame: await loadImg('/img/frame-landscape.png'), strip: await loadImg('/img/frame-strip.webp') });
+const artwork = async () => ({ frame: await loadImg('/img/frame-landscape.png'), strip: await loadImg('/img/frame-strip.webp'), timg: ED?.tpl ? await loadImg(`/api/templates/${ED.tpl.id}/image`) : null, logo: ED?.logo || null });
 async function paintEditor() {
   const cv = $('#edcv'); if (!cv || !ED) return;
-  const F = FRAME[ED.orient], pw = cv.clientWidth || 640, scale = pw / F.w;
+  const F = frameSize(ED), pw = cv.clientWidth || 640, scale = pw / F.w;
   cv.width = Math.round(F.w * scale); cv.height = Math.round(F.h * scale); cv.style.aspectRatio = `${F.w} / ${F.h}`;
   drawFrame(cv.getContext('2d'), cv.width / F.w, ED, await artwork());
 }
-// shrink big camera photos so editing stays smooth on phones
-async function readPhoto(file) {
-  const url = URL.createObjectURL(file);
-  try {
-    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error(`${file.name} isn't a readable image`)); i.src = url; });
-    const s = Math.min(1, 2400 / Math.max(img.width, img.height)), cv = document.createElement('canvas'); cv.width = Math.round(img.width * s); cv.height = Math.round(img.height * s);
-    cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height); return cv;
-  } finally { URL.revokeObjectURL(url); }
-}
-
 // ---------- the editor dialog ----------
 actions.newFrame = async () => {
   await document.fonts?.load?.('800 40px Inter').catch(() => {});
-  ED = { orient: 'landscape', slot: { img: null, zoom: 1, ox: 0, oy: 0 }, inst: COL.college.name, title: '' };
+  const tpls = await api('/api/templates?kind=photo').catch(() => []), logo = COL.college.logo_v ? await loadImg(logoUrl(COL.college.id, COL.college.logo_v)) : null;
+  ED = { orient: 'landscape', tpl: null, extra: {}, logo, slot: { img: null, zoom: 1, ox: 0, oy: 0 }, inst: COL.college.name, title: '' };
+  const frames = [{ key: 'landscape', title: 'Landscape', sub: 'Standard · 1883 × 1080', img: '/img/frame-landscape.png', plain: 1 }, { key: 'portrait', title: 'Portrait', sub: 'Standard · 1080 × 1350', img: '/img/frame-strip.webp', plain: 1 },
+    ...tpls.map(t => ({ key: 't' + t.id, title: t.title, sub: t.category || 'Photo frame', img: tplThumbUrl(t), tpl: t }))];
   const m = modal(html`<h2>Make a framed photo</h2>
     <div class="edgrid"><div class="edpreview"><canvas id="edcv" aria-label="Preview of the framed photo. Drag the photo to move it; pinch or scroll to zoom."></canvas><p class="hint">Drag the photo to move it. Pinch, scroll or use the zoom slider to fit it in the frame.</p></div>
       <form data-form="saveFrame" class="stack-s edform">
-        <label class="f"><span>Shape</span><select id="edorient"><option value="landscape">Landscape (1883 × 1080)</option><option value="portrait">Portrait (1080 × 1350)</option></select></label>
+        <div class="f"><span>Frame</span><div class="tplpick" id="edframes" role="radiogroup" aria-label="Choose a frame">${frames.map((fr, i) => html`<button type="button" role="radio" aria-checked="${i === 0}" class="${i === 0 ? 'on' : ''}" data-fr="${fr.key}"><span class="checker"><img src="${fr.img}" alt="" loading="lazy"></span><b>${fr.title}</b><small>${fr.sub}</small></button>`)}</div></div>
+        <div id="edextra"></div>
         <div class="edslot"><div class="row between"><b>Photo</b><label class="btn secondary sm"><input type="file" accept="image/*" hidden data-pick="1">${icon('image')} <span id="pickl">Choose photo</span></label></div>
           <label class="f"><span class="sr">Zoom</span><input type="range" min="1" max="3" step="0.01" value="1" id="edzoom" aria-label="Zoom the photo" disabled></label></div>
         <label class="f"><span>College or school name (shown on the frame)</span><input type="text" id="edinst" maxlength="120" value="${COL.college.name}"></label>
@@ -101,7 +90,18 @@ actions.newFrame = async () => {
         <div data-err></div>
         <div class="row" style="justify-content:flex-end"><button type="button" class="btn secondary" data-act="closeModal">Close</button><button type="button" class="btn secondary" data-act="frameDownload">${icon('download')} Download JPG</button><button class="btn primary" type="submit">${icon('upload')} Save to gallery</button></div></form></div>`, { wide: true });
   const $r = s => $(s, m);
-  $r('#edorient').addEventListener('change', e => { ED.orient = e.target.value; ED.slot.ox = 0; ED.slot.oy = 0; paintEditor(); });
+  const paintExtra = () => {
+    const asks = ED.tpl ? ED.tpl.fields.filter(f => f.type === 'text' && f.src === 'ask').slice(1) : [];
+    show($r('#edextra'), html`${asks.map(f => html`<label class="f"><span>${f.label}</span><input type="text" maxlength="120" data-xf="${f.id}" value="${ED.extra[f.id] || ''}"></label>`)}`);
+  };
+  $r('#edextra').addEventListener('input', e => { const id = e.target.dataset.xf; if (id) { ED.extra[id] = e.target.value; paintEditor(); } });
+  $r('#edframes').addEventListener('click', e => {
+    const b = e.target.closest('[data-fr]'); if (!b) return; const fr = frames.find(x => x.key === b.dataset.fr);
+    $$('[data-fr]', m).forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', x === b); });
+    ED.slot.ox = 0; ED.slot.oy = 0; ED.extra = {};
+    if (fr.tpl) { ED.tpl = fr.tpl; ED.orient = fr.tpl.width >= fr.tpl.height ? 'landscape' : 'portrait'; } else { ED.tpl = null; ED.orient = fr.key; }
+    paintExtra(); paintEditor();
+  });
   $r('#edinst').addEventListener('input', e => { ED.inst = e.target.value; paintEditor(); });
   $r('#edtitle').addEventListener('input', e => { ED.title = e.target.value; paintEditor(); });
   $r('#edact').addEventListener('change', e => $r('#edother').classList.toggle('hide', e.target.value !== 'Other'));
@@ -124,7 +124,7 @@ function wireCanvas() {
   cv.addEventListener('pointermove', ev => {
     if (!pts.has(ev.pointerId) || !ED.slot.img) return; pts.set(ev.pointerId, ev);
     if (pts.size === 2) { const [a, b] = [...pts.values()]; setZoom(startZoom * Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) / (startDist || 1)); }
-    else if (last) { const k = FRAME[ED.orient].w / cv.getBoundingClientRect().width; ED.slot.ox += (ev.clientX - last.x) * k; ED.slot.oy += (ev.clientY - last.y) * k; last = { x: ev.clientX, y: ev.clientY }; }
+    else if (last) { const k = frameSize(ED).w / cv.getBoundingClientRect().width; ED.slot.ox += (ev.clientX - last.x) * k; ED.slot.oy += (ev.clientY - last.y) * k; last = { x: ev.clientX, y: ev.clientY }; }
     paintEditor();
   });
   const end = ev => { pts.delete(ev.pointerId); last = pts.size === 1 ? { x: [...pts.values()][0].clientX, y: [...pts.values()][0].clientY } : null; };
@@ -134,27 +134,14 @@ function wireCanvas() {
 
 // ---------- export, download, save ----------
 async function frameBlob() {
-  const F = FRAME[ED.orient], cv = document.createElement('canvas'); cv.width = F.w; cv.height = F.h;
-  drawFrame(cv.getContext('2d'), 1, { ...ED, exporting: true }, await artwork());
+  const F = frameSize(ED), k = Math.min(1, 2400 / Math.max(F.w, F.h)), cv = document.createElement('canvas'); cv.width = Math.round(F.w * k); cv.height = Math.round(F.h * k);
+  drawFrame(cv.getContext('2d'), k, { ...ED, exporting: true }, await artwork());
   return new Promise(res => cv.toBlob(res, 'image/jpeg', 0.85));
 }
-// a small picture kept in the sheet so galleries open instantly
-async function thumbB64(blob) {
-  const im = await createImageBitmap(blob);
-  for (const [w, q] of [[520, 0.7], [440, 0.65], [360, 0.6], [300, 0.55]]) {
-    const cv = document.createElement('canvas'); cv.width = w; cv.height = Math.round(w * im.height / im.width);
-    cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
-    const out = cv.toDataURL('image/jpeg', q).split(',')[1];
-    if (out.length <= 40000) return out;
-  }
-  return null;
-}
 const needPhoto = () => { if (!ED.slot.img) throw new Error('Add a photo first'); };
-const slug = s => String(s || 'photo').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
 actions.frameDownload = async () => {
-  try { needPhoto(); const b = await frameBlob(), a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `elc-${slug(ED.inst)}-${ED.orient}.jpg`; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); toast('Downloaded'); } catch (e) { toast(e.message, true); }
+  try { needPhoto(); const b = await frameBlob(); saveBlob(b, `elc-${slug(ED.inst)}-${ED.orient}.jpg`); toast('Downloaded'); } catch (e) { toast(e.message, true); }
 };
-const toB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = () => rej(new Error('Could not read the picture')); r.readAsDataURL(blob); });
 forms.saveFrame = async f => {
   needPhoto(); const v = fd(f);
   const box = $('[data-err]', f); if (box) box.innerHTML = '<div class="alert info">Saving your photo. This can take a few seconds, please keep this window open…</div>';

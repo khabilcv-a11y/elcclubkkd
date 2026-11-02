@@ -60,18 +60,60 @@ async function renderCampusBoard() {
   clearInterval(boardTimer); boardTimer = setInterval(async () => { if (location.hash !== '#/board') return clearInterval(boardTimer); try { BOARD = await api('/api/public/board'); paintCampus(); } catch {} }, 30000);
 }
 
-// ---------- the photo gallery page ----------
-let GALQ = '';
-async function renderPublicGallery() {
+// ---------- the gallery page: the running campaign (highlighted) and the albums of previous works ----------
+let GALQ = '', GALACT = '', GALSHOW = 24, GALDATA = null;
+const photoCard = g => html`<button class="pcard rv" data-act="viewPhoto" data-id="${g.id}" aria-label="Open photo: ${g.title}, ${g.college}"><img src="/api/public/album/${g.id}/thumb" alt="${g.title}, ${g.college}" loading="lazy" decoding="async"><span class="cap">${albumName(g, 24)}<span>${g.title}</span>${albumMeta(g) ? html`<small>${albumMeta(g)}</small>` : ''}</span></button>`;
+async function renderPublicGallery(albumId) {
   if (!feat('public', 'album')) { location.hash = '#/'; return; }
   show($('#app'), publicShell(html`<div class="wrap section"><div class="loading"><div class="spin"></div>Loading the photos…</div></div>`, 'gallery'));
-  let items = []; try { items = await api('/api/public/album?all=1'); } catch (e) { return show($('#app'), publicShell(html`<div class="wrap section"><div class="alert err">${e.message}</div></div>`, 'gallery')); }
-  window.__pubgal = items; window.__pubgalList = items;
-  show($('#app'), publicShell(html`<div class="wrap" style="padding-top:26px">${pageHead('Photo gallery', 'Moments from the Campus to booth drive, shared by colleges and schools.', html`<a class="btn secondary" href="#/">${icon('home')} Home</a>`, 'Electoral Literacy Clubs')}
-    <div class="row between" style="margin-bottom:14px"><span class="small muted">${items.length} photo${items.length === 1 ? '' : 's'}</span><label class="f" style="margin:0;min-width:240px"><span class="sr">Search photos</span><input type="search" id="gq" placeholder="Search by college or activity…" value="${esc(GALQ)}"></label></div>
-    <div id="pgrid"></div></div>`, 'gallery'));
-  const paint = () => { const q = GALQ.toLowerCase(), list = items.filter(g => !q || [g.college, g.title, g.activity].some(x => String(x || '').toLowerCase().includes(q))); window.__pubgalList = list;
-    show($('#pgrid'), list.length ? html`<div class="pgrid">${list.map(g => html`<button class="pcard rv" data-act="viewPhoto" data-id="${g.id}" aria-label="Open photo: ${g.title}, ${g.college}"><img src="/api/public/album/${g.id}/thumb" alt="${g.title}, ${g.college}" loading="lazy" decoding="async"><span class="cap">${albumName(g, 24)}<span>${g.title}</span>${albumMeta(g) ? html`<small>${albumMeta(g)}</small>` : ''}</span></button>`)}</div>` : empty('No photos yet', 'Photos appear here as colleges and schools share them.', 'image')); };
-  paint(); $('#gq').addEventListener('input', e => { GALQ = e.target.value; paint(); });
+  try {
+    if (albumId) return renderAlbumPage(await api('/api/public/gallery/album/' + encodeURIComponent(albumId)));
+    GALDATA = await api('/api/public/gallery');
+  } catch (e) { return show($('#app'), publicShell(html`<div class="wrap section"><div class="alert err">${e.message}</div><p style="margin-top:12px"><a class="btn secondary" href="#/gallery">Back to the gallery</a></p></div>`, 'gallery')); }
+  const G = GALDATA;
+  show($('#app'), publicShell(html`<div class="wrap" style="padding-top:26px">${pageHead('Gallery', 'Moments from our campaigns: what is happening now, and the work we have done before.', html`<a class="btn secondary" href="#/">${icon('home')} Home</a>`, 'Electoral Literacy Clubs')}
+    <section class="gnow rv" aria-labelledby="gnowh"><div class="gnow-top"><div><span class="eyebrow"><span class="live"></span> Happening now</span><h2 id="gnowh">Campus to booth</h2><p>Photos from the help desks, flash mobs, class campaigns and events of colleges and schools across Kozhikode, as they happen.</p></div>
+      <div class="gnow-stats"><div><b>${n(G.stats.photos)}</b><span>photos</span></div><div><b>${n(G.stats.institutions)}</b><span>colleges and schools</span></div></div></div>
+      <div class="gnow-tools"><div class="chips" id="gactchips" role="group" aria-label="Filter by activity"></div><label class="f" style="margin:0;min-width:240px"><span class="sr">Search photos and albums</span><input type="search" id="gq" placeholder="Search photos, colleges, albums…" value="${esc(GALQ)}"></label></div>
+      <div id="gnowgrid"></div><p class="center" id="gmore" style="margin-top:14px"></p></section>
+    <section class="gprev" style="margin-top:44px" aria-labelledby="gprevh"><div class="section-head"><div><h2 id="gprevh">Previous works</h2><p>Albums of earlier campaigns and events. Open an album to see all its photos.</p></div></div><div id="galbums"></div></section></div>`, 'gallery'));
+  paintGallery();
+  $('#gq').addEventListener('input', e => { GALQ = e.target.value; GALSHOW = 24; paintGallery(); });
 }
-actions.viewPhoto = el => { const list = window.__pubgalList || window.__pubgal; openLightbox(list, Math.max(0, list.findIndex(x => x.id === Number(el.dataset.id)))); };
+function paintGallery() {
+  const G = GALDATA, q = GALQ.toLowerCase().trim();
+  const acts = [...G.current.reduce((m, g) => { if (g.activity) m.set(g.activity, (m.get(g.activity) || 0) + 1); return m; }, new Map())].sort((a, b) => b[1] - a[1]).slice(0, 7);
+  if (GALACT && !acts.some(a => a[0] === GALACT)) GALACT = '';
+  show($('#gactchips'), acts.length > 1 ? html`<button class="chip ${GALACT ? '' : 'on'}" data-act="galAct" data-k="">All (${G.current.length})</button>${acts.map(([a, c]) => html`<button class="chip ${GALACT === a ? 'on' : ''}" data-act="galAct" data-k="${a}">${a} (${c})</button>`)}` : '');
+  const list = G.current.filter(g => (!GALACT || g.activity === GALACT) && (!q || [g.college, g.title, g.activity, g.album].some(x => String(x || '').toLowerCase().includes(q))));
+  window.__pubgalList = list;
+  show($('#gnowgrid'), list.length ? html`<div class="pgrid">${list.slice(0, GALSHOW).map(photoCard)}</div>` : empty(q || GALACT ? 'No photos match' : 'No photos yet', q || GALACT ? 'Try another search.' : 'Photos appear here as colleges and schools share them.', 'image'));
+  show($('#gmore'), list.length > GALSHOW ? html`<button class="btn secondary" data-act="galMore">Show more photos (${list.length - GALSHOW} more) ${icon('chevron-down')}</button>` : '');
+  const albums = G.albums.filter(a => !q || [a.title, a.description].some(x => String(x || '').toLowerCase().includes(q)));
+  show($('#galbums'), albums.length ? html`<div class="albgrid">${albums.map(a => html`<a class="albcard rv" href="#/gallery/${a.id}" aria-label="Open album: ${a.title}, ${a.count} photos"><span class="albstack"><i></i><i></i><img src="/api/public/album/${a.cover}/thumb" alt="" loading="lazy" decoding="async"></span><span class="albinfo"><b>${a.title}</b><small>${a.count} photo${a.count === 1 ? '' : 's'}${a.last ? ' · ' + new Date(a.last + 'T00:00:00').getFullYear() : ''}</small>${a.description ? html`<em>${a.description}</em>` : ''}</span></a>`)}</div>`
+    : empty(G.albums.length ? 'No album matches' : 'Albums are coming soon', G.albums.length ? 'Try another search.' : 'Our earlier campaigns will be shown here as albums.', 'folder'));
+}
+actions.galAct = el => { GALACT = el.dataset.k; GALSHOW = 24; paintGallery(); };
+actions.galMore = () => { GALSHOW += 24; paintGallery(); };
+function renderAlbumPage(d) {
+  const a = d.album; window.__pubgalList = d.photos;
+  show($('#app'), publicShell(html`<div class="wrap" style="padding-top:26px">${pageHead(a.title, a.description || `${d.photos.length} photo${d.photos.length === 1 ? '' : 's'}`, html`<a class="btn secondary" href="#/gallery">${icon('arrow-left')} All albums</a>`, a.current ? 'Happening now' : 'Previous works')}
+    ${d.photos.length ? html`<div class="pgrid">${d.photos.map(photoCard)}</div>` : empty('No photos in this album yet', '', 'image')}</div>`, 'gallery'));
+}
+actions.viewPhoto = el => { const list = window.__pubgalList || []; openLightbox(list, Math.max(0, list.findIndex(x => x.id === Number(el.dataset.id)))); };
+
+// ---------- a shared resource: preview, download, and a link that can be passed on ----------
+async function renderResource(id) {
+  show($('#app'), publicShell(html`<div class="wrap section"><div class="loading"><div class="spin"></div>Opening the file…</div></div>`, ''));
+  let r;
+  try { r = await api('/api/resources/' + encodeURIComponent(id)); }
+  catch (e) { return show($('#app'), publicShell(html`<div class="wrap section"><div class="card" style="max-width:640px;margin:0 auto">${empty(e.status === 403 ? 'Sign in to open this file' : 'File not found', e.message, 'lock')}<div class="row" style="justify-content:center;margin-top:12px"><a class="btn primary" href="#/login/college">${icon('building')} College sign-in</a><a class="btn secondary" href="#/login/school">${icon('book')} School sign-in</a><a class="btn secondary" href="/admin">${icon('shield')} Staff sign-in</a></div></div></div>`, '')); }
+  const pic = r.kind === 'link' ? html`<div class="rv-tile">${fileTile('', '', true)}<p>This resource is a web link.</p></div>`
+    : r.mime === 'application/pdf' ? html`<iframe class="pdfview" src="/api/resources/${r.id}/view" title="${r.title}"></iframe>`
+    : /^image\//.test(r.mime || '') ? html`<img class="resview" src="/api/resources/${r.id}/view" alt="${r.title}">`
+    : html`<div class="rv-tile">${r.has_thumb ? html`<img class="resview" src="/api/resources/${r.id}/thumb" alt="">` : fileTile(r.filename, r.mime)}<p>A preview is not available for this type of file. Download it to open it.</p></div>`;
+  show($('#app'), publicShell(html`<div class="wrap" style="padding-top:26px">${pageHead(r.title, r.description || r.category, html`<a class="btn secondary" href="#/">${icon('home')} Home</a>`, r.category || 'Resource')}
+    <div class="card" style="margin-bottom:16px"><div class="row between"><div class="small muted">${r.kind === 'file' ? html`${r.filename}${r.size ? ' · ' + (r.size > 1048576 ? (r.size / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(r.size / 1024)) + ' KB') : ''}` : 'Web link'}</div>
+      <div class="row gap-s">${r.kind === 'link' ? html`<a class="btn primary" href="${r.url}" target="_blank" rel="noopener">${icon('external')} Open link</a>` : html`<a class="btn primary" href="/api/resources/${r.id}/download">${icon('download')} Download</a>`}<button class="btn secondary" data-act="copyRes" data-id="${r.id}">${icon('copy')} Copy link</button></div></div></div>
+    <div class="card resprev">${pic}</div></div>`, ''));
+}

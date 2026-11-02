@@ -3,7 +3,8 @@ import { route, scopeOf } from '../lib/router.js';
 import { log } from '../lib/db.js';
 import { HttpError, bad, isDate, todayStr, nowIso, str, reqStr, int } from '../lib/util.js';
 
-export const ACTIVITIES = ['Flash Mob', 'Class to Class Campaign', 'Game Zone', 'Other'];
+export const ACTIVITIES = ['Help desk', 'Flash Mob', 'Class to Class Campaign', 'Game Zone', 'Other'];
+const OTHER_ACTIVITIES = ACTIVITIES.slice(1);
 const clog = (ctx, action, detail) => log(ctx.db, 'college', ctx.college.name, null, action, detail, ctx.ip);
 const kindOf = c => (c.kind === 'school' ? 'school' : 'college');
 
@@ -11,6 +12,13 @@ function checkDate(d) {
   if (!isDate(d)) throw bad('Choose a valid date');
   if (d > todayStr()) throw bad('That date is in the future. You can report a day once it has happened.');
   return d;
+}
+
+// the number of volunteers at the help desk on a day is the number of names added for it
+async function syncDeskVolunteers(ctx, id, date) {
+  const n = (await ctx.db.get("SELECT COUNT(*) n FROM activity_log WHERE college_id=? AND date=? AND activity='Help desk'", id, date)).n, now = nowIso();
+  const r = await ctx.db.run('UPDATE desk_days SET volunteers=?,updated_at=? WHERE college_id=? AND date=?', n, now, id, date);
+  if (!r.changes && n > 0) await ctx.db.run('INSERT INTO desk_days(college_id,date,registrations,volunteers,notes,created_at,updated_at) VALUES (?,?,0,?,?,?,?)', id, date, n, '', now, now);
 }
 
 // ---------- the college's own page ----------
@@ -25,14 +33,18 @@ route('GET', '/api/college/desk', 'college', async ctx => {
   const seen = new Set(), suggestions = [];
   for (const n of [...names.map(r => r.name), ...poolNames.map(r => r.name)]) { const k = n.toLowerCase(); if (!seen.has(k)) { seen.add(k); suggestions.push(n); } }
   const totals = await ctx.db.get('SELECT COALESCE(SUM(registrations),0) registrations,COUNT(*) days,COALESCE(SUM(volunteers),0) volunteer_days FROM desk_days WHERE college_id=?', id);
-  return { date, today: todayStr(), day: day || null, activities: acts, suggestions, history: hist, totals, choices: ACTIVITIES };
+  return { date, today: todayStr(), day: day || null, activities: acts, suggestions, history: hist, totals, choices: OTHER_ACTIVITIES };
 });
 route('GET', '/api/college/desk/summary', 'college', ctx => ctx.db.get('SELECT COALESCE(SUM(registrations),0) registrations,COUNT(*) days FROM desk_days WHERE college_id=?', ctx.college.id));
 
 route('PUT', '/api/college/desk', 'college', async ctx => {
   ctx.db.deferred = true;
   const b = ctx.body, id = ctx.college.id, date = checkDate(b.date);
-  const registrations = int(b.registrations, 'Registrations made', { max: 100000 }), volunteers = int(b.volunteers, 'Volunteers present at the help desk', { max: 5000 }), notes = str(b.notes, 400), now = nowIso();
+  const registrations = int(b.registrations, 'Registrations made', { max: 100000 }), notes = str(b.notes, 400), now = nowIso();
+  // volunteers present = the names added for the help desk; reports made before names existed keep their number
+  const named = (await ctx.db.get("SELECT COUNT(*) n FROM activity_log WHERE college_id=? AND date=? AND activity='Help desk'", id, date)).n;
+  const prev = await ctx.db.get('SELECT volunteers FROM desk_days WHERE college_id=? AND date=?', id, date);
+  const volunteers = named > 0 ? named : (b.volunteers === undefined || b.volunteers === null || b.volunteers === '' ? (prev ? prev.volunteers : 0) : int(b.volunteers, 'Volunteers present at the help desk', { max: 5000 }));
   const r = await ctx.db.run('UPDATE desk_days SET registrations=?,volunteers=?,notes=?,updated_at=? WHERE college_id=? AND date=?', registrations, volunteers, notes, now, id, date);
   if (!r.changes) await ctx.db.run('INSERT INTO desk_days(college_id,date,registrations,volunteers,notes,created_at,updated_at) VALUES (?,?,?,?,?,?,?)', id, date, registrations, volunteers, notes, now, now);
   await clog(ctx, 'desk_report', `${date}: ${registrations} registrations, ${volunteers} volunteers`);
@@ -56,14 +68,22 @@ route('POST', '/api/college/desk/activity', 'college', async ctx => {
     added++;
   }
   if (!added) throw bad('That volunteer is already listed for this activity today');
+  if (activity === 'Help desk') await syncDeskVolunteers(ctx, id, date);
   await clog(ctx, 'desk_activity', `${date}: ${activity}${other ? ' (' + other + ')' : ''} +${added}`);
   return { ok: true, added };
 });
 route('DELETE', '/api/college/desk/activity/:id', 'college', async ctx => {
   ctx.db.deferred = true;
-  const r = await ctx.db.run('DELETE FROM activity_log WHERE id=? AND college_id=?', Number(ctx.params.id), ctx.college.id);
-  if (!r.changes) throw new HttpError(404, 'Not found');
+  const row = await ctx.db.get('SELECT activity,date FROM activity_log WHERE id=? AND college_id=?', Number(ctx.params.id), ctx.college.id);
+  if (!row) throw new HttpError(404, 'Not found');
+  await ctx.db.run('DELETE FROM activity_log WHERE id=? AND college_id=?', Number(ctx.params.id), ctx.college.id);
+  if (row.activity === 'Help desk') await syncDeskVolunteers(ctx, ctx.college.id, row.date);
   return { ok: true };
+});
+// every name the college has entered: the student-wise list and the day-by-day list are built from this on the page
+route('GET', '/api/college/desk/volunteers', 'college', async ctx => {
+  const rows = await ctx.db.all('SELECT id,date,activity,activity_other,name FROM activity_log WHERE college_id=? ORDER BY date DESC,id DESC LIMIT 6000', ctx.college.id);
+  return rows.map(r => ({ id: r.id, date: r.date, activity: r.activity === 'Other' && r.activity_other ? 'Other: ' + r.activity_other : r.activity, name: r.name }));
 });
 
 // ---------- reports for the district ----------
@@ -72,7 +92,8 @@ const T = (key, label) => ({ key, label });
 export const DESK_DATASETS = [
   { key: 'desk_inst', title: 'Help desk totals by college / school' },
   { key: 'desk', title: 'Help desk day by day' },
-  { key: 'activities', title: 'Volunteers in other activities' },
+  { key: 'activities', title: 'Volunteers: activity and date' },
+  { key: 'student_wise', title: 'Volunteers: student-wise list' },
   { key: 'activity_summary', title: 'Activities summary' },
 ];
 export async function deskReport(ctx, type, q) {
@@ -87,8 +108,14 @@ export async function deskReport(ctx, type, q) {
   const actName = r => (r.activity === 'Other' && r.activity_other ? `Other: ${r.activity_other}` : r.activity);
   if (type === 'desk') return { title: 'Help desk day by day', cols: [T('date', 'Date'), T('college', 'Institution'), T('type', 'Type'), N('registrations', 'Registrations made'), N('volunteers', 'Volunteers at help desk'), T('notes', 'Notes')],
     rows: days.map(r => ({ date: r.date, college: info.get(r.college_id).name, type: typeOf(r.college_id), registrations: r.registrations, volunteers: r.volunteers, notes: r.notes })) };
-  if (type === 'activities') return { title: 'Volunteers in other activities', cols: [T('date', 'Date'), T('college', 'Institution'), T('type', 'Type'), T('activity', 'Activity'), T('name', 'Volunteer'), T('contact', 'Contact')],
+  if (type === 'activities') return { title: 'Volunteers: activity and date', cols: [T('date', 'Date'), T('college', 'Institution'), T('type', 'Type'), T('activity', 'Activity'), T('name', 'Volunteer'), T('contact', 'Contact')],
     rows: acts.map(r => ({ date: r.date, college: info.get(r.college_id).name, type: typeOf(r.college_id), activity: actName(r), name: r.name, contact: r.contact })) };
+  if (type === 'student_wise') {
+    const m = new Map();
+    for (const r of acts) { const k = r.college_id + '|' + r.name.toLowerCase(), g = m.get(k) || { college: info.get(r.college_id).name, type: typeOf(r.college_id), name: r.name, acts: new Set(), dates: new Set(), first: r.date, last: r.date }; g.acts.add(actName(r)); g.dates.add(r.date); if (r.date < g.first) g.first = r.date; if (r.date > g.last) g.last = r.date; m.set(k, g); }
+    return { title: 'Volunteers: student-wise list', cols: [T('name', 'Volunteer'), T('college', 'Institution'), T('type', 'Type'), T('activities', 'Activities'), N('days', 'Days taken part'), T('first', 'First day'), T('last', 'Latest day')],
+      rows: [...m.values()].map(g => ({ name: g.name, college: g.college, type: g.type, activities: [...g.acts].join(', '), days: g.dates.size, first: g.first, last: g.last })).sort((a, b) => a.college.localeCompare(b.college) || a.name.localeCompare(b.name)) };
+  }
   if (type === 'activity_summary') {
     const m = new Map();
     for (const r of acts) { const k = actName(r), g = m.get(k) || { activity: k, entries: 0, people: new Set(), colleges: new Set(), dates: new Set() }; g.entries++; g.people.add(`${r.college_id}|${r.name.toLowerCase()}`); g.colleges.add(r.college_id); g.dates.add(r.date); m.set(k, g); }
@@ -99,7 +126,7 @@ export async function deskReport(ctx, type, q) {
   const by = new Map();
   for (const r of days) { const g = by.get(r.college_id) || { days: 0, regs: 0, vols: 0, last: '' }; g.days++; g.regs += r.registrations; g.vols += r.volunteers; if (r.date > g.last) g.last = r.date; by.set(r.college_id, g); }
   const actBy = new Map();
-  for (const r of acts) actBy.set(r.college_id, (actBy.get(r.college_id) || 0) + 1);
+  for (const r of acts) if (r.activity !== 'Help desk') actBy.set(r.college_id, (actBy.get(r.college_id) || 0) + 1);
   return { title: 'Help desk totals by college / school', cols: [T('college', 'Institution'), T('type', 'Type'), N('days', 'Days reported'), N('registrations', 'Registrations made'), N('avg', 'Registrations per day'), N('volunteers', 'Volunteer-days at help desk'), N('activity', 'Volunteer-days in other activities'), T('last', 'Last report')],
     rows: cs.filter(c => inScope(c.id) && (!text || c.name.toLowerCase().includes(text))).map(c => { const g = by.get(c.id) || { days: 0, regs: 0, vols: 0, last: '' };
       return { college: c.name, type: typeOf(c.id), days: g.days, registrations: g.regs, avg: g.days ? Math.round(g.regs / g.days * 10) / 10 : null, volunteers: g.vols, activity: actBy.get(c.id) || 0, last: g.last }; }) };

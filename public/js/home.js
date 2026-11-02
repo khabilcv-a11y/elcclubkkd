@@ -52,8 +52,8 @@ async function renderHome() {
     <div role="listitem"><div class="v" data-count="${t.colleges}">0</div><div class="l">Participating colleges</div></div>
     <div role="listitem"><div class="v" data-count="${t.addressed}">0</div><div class="l">People reached</div></div>` : html`<div role="listitem"><div class="v" data-count="${C.totals.registered}">0</div><div class="l">Students registered</div></div>
     <div role="listitem"><div class="v">${C.totals.pct == null ? '—' : C.totals.pct + '%'}</div><div class="l">Coverage of eligible students</div></div>
-    <div role="listitem"><div class="v">${C.totals.active}<span class="of">/${C.totals.institutions}</span></div><div class="l">Active colleges and schools</div></div>
-    <div role="listitem"><div class="v" data-count="${C.totals.institutions}">0</div><div class="l">Colleges and schools joined</div></div></div></div>`}</div></div>
+    <div role="listitem"><div class="v">${C.totals.active}<span class="of">/${C.totals.joined}</span></div><div class="l">Active colleges and schools</div></div>
+    <div role="listitem"><div class="v" data-count="${C.totals.joined}">0</div><div class="l">Colleges and schools joined</div></div></div></div>`}</div></div>
 
   ${ANN.length ? html`<section class="section" id="notices"><div class="wrap"><div class="section-head"><div><h2>Announcements</h2><p>Latest updates from the district election office.</p></div></div>
     <div class="grid g2">${ANN.slice(0, 4).map(a => html`<article class="notice rv ${a.pinned ? 'pinned' : ''}"><h3>${a.pinned ? html`${icon('pin')} ` : ''}${a.title}</h3>${a.body ? html`<p>${a.body}</p>` : ''}<div class="when">${fdt(a.created_at)}</div></article>`)}</div></div></section>` : ''}
@@ -74,12 +74,16 @@ async function renderHome() {
     <div id="podium"></div><div class="board" id="lb"></div></div></section>
 
 ` : ''}
-  <section class="section" id="colleges"><div class="wrap"><div class="section-head"><div><h2>${vil ? 'Participating colleges' : 'Participating colleges and schools'} <span class="badge">${vil ? t.colleges : C.colleges + C.schools}</span></h2><p>Every institution on the programme.</p></div><label class="f" style="margin:0;min-width:240px"><span class="sr">Search colleges</span><input type="search" id="cq" placeholder="Search colleges…"></label></div><div class="collegegrid" id="cg"></div><div class="pager" id="cgpager"></div></div></section>
+  <section class="section" id="colleges"><div class="wrap"><div class="section-head"><div><h2>Participating colleges and schools <span class="badge" id="cgcount"></span></h2><p>The colleges and schools that have joined the campaign on this portal.</p></div>
+    <label class="f" style="margin:0;min-width:240px"><span class="sr">Search colleges and schools</span><input type="search" id="cq" placeholder="Search colleges and schools…"></label></div>
+    <div class="row between cg-tools"><div class="chips" id="cgkinds" role="group" aria-label="Show"></div><button class="btn secondary sm" data-act="cgMode" id="cgmode"></button></div>
+    <div class="cgslider" id="cgslider"><button class="cf-btn prev" data-act="cgScroll" data-d="-1" aria-label="Scroll left">${icon('arrow-left')}</button><div class="cgtrack" id="cg" role="list" tabindex="0" aria-label="Participating colleges and schools"></div><button class="cf-btn next" data-act="cgScroll" data-d="1" aria-label="Scroll right">${icon('arrow-right')}</button></div>
+    <div class="pager" id="cgpager"></div></div></section>
 
   <section class="section"><div class="wrap grid g2">
     ${vil ? html`<div><div class="section-head"><div><h2>Live activity</h2></div></div><div class="card rv"><ul class="feed" id="feed"></ul></div></div>` : ''}
     <div id="resources"><div class="section-head"><div><h2>Resource centre</h2></div></div><div class="stack-s" id="reslist"></div></div></div></section>`, 'home'));
-  paintHome(); paintCampus(); wireMap(); startAlbum(); $('#main').focus({ preventScroll: true });
+  paintHome(); paintCampus(); wireMap(); startAlbum(); startColleges(); $('#main').focus({ preventScroll: true });
 }
 
 let ALBUM = [], albumTimer = null, albumAt = 0, albumList = [];
@@ -124,7 +128,7 @@ function campusSection(C) {
   const T = C.totals;
   return html`<section class="section" id="campus"><div class="wrap"><div class="section-head"><div><h2>Campus to booth</h2><p>The target is 100%: every eligible student in every college and school on the electoral roll.</p></div><a class="btn secondary" href="#/board">Full display board ${icon('arrow-right')}</a></div>
     <div class="card rv campus-top"><div class="row between" style="align-items:flex-end;gap:16px"><div><div class="campus-big">${T.pct == null ? '—' : T.pct + '%'}</div><div class="muted">total coverage of eligible students</div></div>
-      <div class="campus-facts"><div><b>${n(T.registered)}</b><span>students registered</span></div><div><b>${T.active}/${T.institutions}</b><span>active this week</span></div></div></div>
+      <div class="campus-facts"><div><b>${n(T.registered)}</b><span>students registered</span></div><div><b>${T.active}/${T.joined}</b><span>active this week</span></div></div></div>
       ${progress(T.pct || 0, 'green')}</div>
     <h3 style="margin:26px 0 12px">Leading colleges and schools</h3><div id="cpodium"></div><div class="board" id="cboard" data-limit="10"></div></div></section>`;
 }
@@ -149,12 +153,11 @@ function paintHome() {
   show($('#taluks'), tl.length ? html`${tl.map(x => html`<div class="bar"><span>${x.taluk}</span><div class="t" title="${x.active} of ${x.villages} villages active"><i data-w="${Math.round(x.registered * 100 / mx)}"></i></div><b class="tnum">${n(x.registered)}</b></div>`)}` : empty('No data yet'));
   paintTrend('#trend');
   show($('#feed'), BOARD.feed.length ? html`${BOARD.feed.map(f => html`<li><span class="d">${icon('check-circle')}</span><div><b>${f.college}</b> worked in <b>${f.village}</b><div class="small muted">${f.present} volunteer${f.present > 1 ? 's' : ''} · ${f.addressed} reached · <b>${f.registered} enrolled</b> · ${fdate(f.date)}</div></div></li>`)}` : html`<li class="muted">Field activity will appear here.</li>`);
-  paintColleges();
   show($('#reslist'), RES.length ? html`${RES.slice(0, 6).map(resCard)}` : empty('No resources yet', 'Manuals and forms will be shared here.', 'book'));
-  $('#cq')?.addEventListener('input', paintColleges);
 }
-const resCard = r => html`<div class="res rv"><span class="ico">${icon(r.kind === 'link' ? 'link' : 'file')}</span><div class="grow"><h3>${r.title}</h3><p>${r.description || r.category}</p></div>
-  ${r.kind === 'link' ? html`<a class="btn secondary sm" href="${r.url}" target="_blank" rel="noopener">${icon('external')} Open</a>` : html`<a class="btn secondary sm" href="/api/resources/${r.id}/download">${icon('download')} Download</a>`}</div>`;
+const resPic = r => (r.kind === 'file' && r.has_thumb ? html`<a class="rthumb" href="#/resource/${r.id}" tabindex="-1" aria-hidden="true"><img src="/api/resources/${r.id}/thumb" alt="" loading="lazy" decoding="async"></a>` : html`<a href="#/resource/${r.id}" tabindex="-1" aria-hidden="true">${fileTile(r.filename, r.mime, r.kind === 'link')}</a>`);
+const resCard = r => html`<div class="res rv">${resPic(r)}<div class="grow"><h3><a href="#/resource/${r.id}">${r.title}</a></h3><p>${r.description || r.category}</p></div>
+  <div class="resact"><button class="iconbtn" data-act="copyRes" data-id="${r.id}" aria-label="Copy link to ${r.title}" title="Copy link">${icon('copy')}</button>${r.kind === 'link' ? html`<a class="btn secondary sm" href="${r.url}" target="_blank" rel="noopener">${icon('external')} Open</a>` : html`<a class="btn secondary sm" href="/api/resources/${r.id}/download">${icon('download')} Download</a>`}</div></div>`;
 
 function paintTrend(sel, data) {
   const tr = data || BOARD.trend, mx = Math.max(1, ...tr.map(x => x.registered));
@@ -209,17 +212,47 @@ function paintVillageList() {
 actions.flyto = el => { const m = MAPMARK.get(Number(el.dataset.id)); if (m && MAP) { MAP.flyTo(m.getLatLng(), 12); m.openPopup(); $('#map').scrollIntoView({ block: 'center', behavior: reduced() ? 'auto' : 'smooth' }); } };
 document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('.vrow')) { e.preventDefault(); e.target.click(); } });
 
-const CG_PAGE = 12; let cgPage = 0;
+// ---------- participating colleges and schools: only those that have joined, by type, sliding or all at once, searchable ----------
+const CG_PAGE = 12; let cgPage = 0, cgKind = '', cgMode = 'slide', cgTimer = null;
+const cgList = () => (BOARD?.campus?.institutions || []).filter(i => i.joined);
+function startColleges() {
+  clearInterval(cgTimer);
+  $('#cq')?.addEventListener('input', () => { cgPage = 0; paintColleges(); });
+  paintColleges();
+  const tr = $('#cg'); if (!tr) return;
+  let paused = false;
+  ['mouseenter', 'focusin', 'touchstart', 'pointerdown'].forEach(ev => tr.parentElement.addEventListener(ev, () => { paused = true; }, { passive: true }));
+  ['mouseleave', 'focusout'].forEach(ev => tr.parentElement.addEventListener(ev, () => { paused = false; }));
+  tr.parentElement.addEventListener('touchend', () => { setTimeout(() => { paused = false; }, 4000); }, { passive: true });
+  if (!reduced()) cgTimer = setInterval(() => {
+    const t = document.getElementById('cg'); if (!t) return clearInterval(cgTimer);
+    if (paused || cgMode !== 'slide' || ($('#cq')?.value || '').trim() || document.querySelector('.overlay')) return;
+    const step = (t.firstElementChild?.getBoundingClientRect().width || 260) + 10;
+    if (t.scrollLeft >= t.scrollWidth - t.clientWidth - 4) t.scrollTo({ left: 0, behavior: 'smooth' }); else t.scrollBy({ left: step * Math.max(1, Math.floor(t.clientWidth / step) - 1), behavior: 'smooth' });
+  }, 3600);
+}
+function cgCard(c) {
+  return html`<div class="cg rv" role="listitem">${c.logo_v ? avatar(c.id, c.logo_v, c.name, 40) : html`<span class="lt">${initials(c.short_name)}</span>`}<div class="grow"><b>${c.name}</b><small>${c.kind === 'school' ? 'School' : 'College'} · ${c.pct == null ? 'just joined' : c.pct + '% covered'}${c.status === 'active' ? ' · active' : ''}</small></div></div>`;
+}
 function paintColleges(keepPage) {
   keepPage = keepPage === true;
-  const q = ($('#cq')?.value || '').toLowerCase();
+  const q = ($('#cq')?.value || '').toLowerCase().trim(), all = cgList(), nCol = all.filter(i => i.kind !== 'school').length, nSch = all.length - nCol;
   if (!keepPage) cgPage = 0;
-  const cs = (feat('public', 'map') ? [...BOARD.colleges] : BOARD.campus.institutions.map(i => ({ ...i, villages: 0 }))).sort((a, b) => a.name.localeCompare(b.name)).filter(c => !q || c.name.toLowerCase().includes(q));
+  $('#cgcount') && ($('#cgcount').textContent = all.length);
+  show($('#cgkinds'), html`${[['', 'All', all.length], ['college', 'Colleges', nCol], ['school', 'Schools', nSch]].map(([k, l, c]) => html`<button class="chip ${cgKind === k ? 'on' : ''}" data-act="cgKind" data-k="${k}" aria-pressed="${cgKind === k}">${l} (${c})</button>`)}`);
+  const cs = all.filter(c => (!cgKind || (cgKind === 'school' ? c.kind === 'school' : c.kind !== 'school')) && (!q || c.name.toLowerCase().includes(q))).sort((a, b) => (b.status === 'active') - (a.status === 'active') || (b.pct ?? -1) - (a.pct ?? -1) || a.name.localeCompare(b.name));
+  const mode = q ? 'grid' : cgMode, box = $('#cg'), slider = $('#cgslider');
+  if (!box) return;
+  slider.classList.toggle('grid', mode === 'grid'); $('#cgmode').textContent = cgMode === 'slide' ? 'Show all' : 'Slide view'; $('#cgmode').style.display = q ? 'none' : '';
+  if (!cs.length) { show(box, empty(all.length ? 'No match' : 'No colleges or schools have joined yet', all.length ? 'Try another name.' : 'They appear here as soon as they sign in and start.', 'search')); return show($('#cgpager'), ''); }
+  if (mode === 'slide') { show(box, html`${cs.map(cgCard)}`); return show($('#cgpager'), ''); }
   const pages = Math.max(1, Math.ceil(cs.length / CG_PAGE)); cgPage = Math.min(cgPage, pages - 1);
-  const shown = cs.slice(cgPage * CG_PAGE, cgPage * CG_PAGE + CG_PAGE);
-  show($('#cg'), cs.length ? html`${shown.map(c => html`<div class="cg rv">${c.logo_v ? avatar(c.id, c.logo_v, c.name, 36) : html`<span class="lt">${initials(c.short_name)}</span>`}<div class="grow"><b>${c.name}</b><small>${feat('public', 'map') ? `${c.villages} village${c.villages === 1 ? '' : 's'} · ${n(c.registered)} enrolled` : `${c.kind === 'school' ? 'School' : 'College'} · ${c.pct == null ? 'not started' : c.pct + '% covered'}${c.status === 'active' ? ' · active' : ''}`}</small></div></div>`)}` : empty('No college matches', '', 'search'));
-  show($('#cgpager'), pages > 1 ? html`<button class="btn secondary sm" data-act="cgPrev" ${cgPage === 0 ? 'disabled' : ''}>${icon('arrow-left')} Previous</button><span class="small muted" aria-live="polite">Colleges ${cgPage * CG_PAGE + 1}–${Math.min(cs.length, cgPage * CG_PAGE + CG_PAGE)} of ${cs.length} · page ${cgPage + 1} of ${pages}</span><button class="btn secondary sm" data-act="cgNext" ${cgPage >= pages - 1 ? 'disabled' : ''}>Next ${icon('arrow-right')}</button>` : '');
+  show(box, html`${cs.slice(cgPage * CG_PAGE, cgPage * CG_PAGE + CG_PAGE).map(cgCard)}`);
+  show($('#cgpager'), pages > 1 ? html`<button class="btn secondary sm" data-act="cgPrev" ${cgPage === 0 ? 'disabled' : ''}>${icon('arrow-left')} Previous</button><span class="small muted" aria-live="polite">${cgPage * CG_PAGE + 1}–${Math.min(cs.length, cgPage * CG_PAGE + CG_PAGE)} of ${cs.length} · page ${cgPage + 1} of ${pages}</span><button class="btn secondary sm" data-act="cgNext" ${cgPage >= pages - 1 ? 'disabled' : ''}>Next ${icon('arrow-right')}</button>` : '');
 }
+actions.cgKind = el => { cgKind = el.dataset.k; if (cgMode === 'slide') $('#cg')?.scrollTo({ left: 0 }); paintColleges(); };
+actions.cgMode = () => { cgMode = cgMode === 'slide' ? 'grid' : 'slide'; paintColleges(); };
+actions.cgScroll = el => { const t = $('#cg'); t?.scrollBy({ left: Number(el.dataset.d) * t.clientWidth * 0.8, behavior: 'smooth' }); };
 actions.cgPrev = () => { cgPage--; paintColleges(true); $('#colleges')?.scrollIntoView({ block: 'start', behavior: reduced() ? 'auto' : 'smooth' }); };
 actions.cgNext = () => { cgPage++; paintColleges(true); $('#colleges')?.scrollIntoView({ block: 'start', behavior: reduced() ? 'auto' : 'smooth' }); };
 
