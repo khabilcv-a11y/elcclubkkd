@@ -83,11 +83,17 @@ function parseCsv(text) {
   return rows;
 }
 const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
-function parseDay(s) {
+// Reads the many ways a day is typed: 2026-10-30, 30/10/2026, 30-10-26, 30 Oct 2026, 30 Oct, 30th October, Oct 30, an Excel day number.
+// When the year is missing, `yr` is used; a day that would then fall in the future is taken to be from the year before.
+function parseDay(s, yr) {
   s = String(s || '').trim(); let m;
+  const mon = x => MONTHS[String(x).slice(0, 3).toLowerCase()], full = y => (String(y).length === 2 ? '20' + y : String(y));
+  const noYear = (mo, d) => { const y = Number(yr) || new Date().getFullYear(); let r = iso(y, mo, d); if (r && r > todayISO()) r = iso(y - 1, mo, d); return r; };
   if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) return iso(m[1], m[2], m[3]);
-  if ((m = s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})/))) return iso(m[3].length === 2 ? '20' + m[3] : m[3], m[2], m[1]);
-  if ((m = s.match(/^(\d{1,2})\s+([A-Za-z]{3})[a-z]*\.?,?\s+(\d{4})/))) return iso(m[3], MONTHS[m[2].toLowerCase()], m[1]);
+  if ((m = s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})\b/))) return iso(full(m[3]), m[2], m[1]);
+  if (/^\d{5}$/.test(s)) { const d = new Date(Date.UTC(1899, 11, 30) + Number(s) * 864e5); return iso(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()); }
+  if ((m = s.match(/^(\d{1,2})(?:st|nd|rd|th)?[\s\-\/.,]*([A-Za-z]{3,9})\.?(?:[\s,.\-\/]+(\d{2,4}))?\s*$/)) && mon(m[2])) return m[3] ? iso(full(m[3]), mon(m[2]), m[1]) : noYear(mon(m[2]), m[1]);
+  if ((m = s.match(/^([A-Za-z]{3,9})\.?[\s\-\/.]*(\d{1,2})(?:st|nd|rd|th)?(?:[\s,.\-\/]+(\d{2,4}))?\s*$/)) && mon(m[1])) return m[3] ? iso(full(m[3]), mon(m[1]), m[2]) : noYear(mon(m[1]), m[2]);
   return '';
 }
 const iso = (y, mo, d) => (Number(mo) >= 1 && Number(mo) <= 12 && Number(d) >= 1 && Number(d) <= 31 ? `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}` : '');
@@ -96,6 +102,18 @@ const iso = (y, mo, d) => (Number(mo) >= 1 && Number(mo) <= 12 && Number(d) >= 1
 let IMP = null;
 const nrmName = s => String(s || '').toLowerCase().replace(/&/g, ' and ').replace(/\b(the|of)\b/g, ' ').replace(/[^a-z0-9]+/g, '');
 const wordsOf = s => new Set(String(s || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter(w => w.length > 2 && !['the', 'and', 'for', 'college', 'school', 'arts', 'science'].includes(w)));
+// Closest portal institution for a typed name ("DIGNITY COLLAGE OF ART'S AND SCIENCE PERAMBRA"): compares the distinctive words (spelling slips of one letter
+// allowed). A suggestion is made only when one institution is clearly the best.
+const fixWord = w => ({ collage: 'college', colleges: 'college', govt: 'government', gov: 'government', sci: 'science', scnce: 'science' })[w] || w;
+const keyWords = s => [...new Set(String(s || '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).map(fixWord).filter(w => w && !['the', 'of', 'and', 'for', 'college', 'school', 'arts', 'art', 's', 'science', 'sc', 'autonomous', 'higher', 'secondary', 'hss', 'vhse', 'hs', 'ghss', 'women', 'womens', 'kozhikode', 'calicut'].includes(w)))];
+const sameWord = (a, b) => a === b || (a.length >= 5 && b.length >= 5 && Math.abs(a.length - b.length) <= 1 && editOne(a, b));
+function editOne(a, b) { if (a.length < b.length) [a, b] = [b, a]; let i = 0; while (i < b.length && a[i] === b[i]) i++; return a.length === b.length ? a.slice(i + 1) === b.slice(i + 1) : a.slice(i + 1) === b.slice(i); }
+function impSuggest(name) {
+  const w = keyWords(name); if (!w.length) return null;
+  const scored = IMP.cs.map(c => { const cw = keyWords(c.name); if (!cw.length) return { c, s: 0 }; const hit = w.filter(x => cw.some(y => sameWord(x, y))).length; return { c, s: hit / Math.max(w.length, cw.length) * 0.5 + hit / Math.min(w.length, cw.length) * 0.5, hit }; }).sort((a, b) => b.s - a.s);
+  const a = scored[0], b = scored[1];
+  return a && a.hit >= 1 && a.s >= 0.75 && (!b || a.s - b.s >= 0.15) ? a.c.name : null;
+}
 async function openImport(campId) {
   let camps = [], cs = [];
   try { [camps, cs] = await Promise.all([api('/api/staff/certs/campaigns').then(d => d.campaigns), api('/api/staff/colleges')]); } catch (e) { return toast(e.message, true); }
@@ -135,15 +153,16 @@ function impLoad(rows) {
   const width = Math.max(...rows.slice(0, 50).map(r => r.length));
   IMP.head = Array.from({ length: width }, (_, i) => String(rows[0][i] || '').trim()); IMP.rows = rows.slice(1).map(r => Array.from({ length: width }, (_, i) => String(r[i] || '').trim()));
   const find = re => { const i = IMP.head.findIndex(h => re.test(h)); return i < 0 ? '' : String(i); };
-  IMP.map = { college: find(/college|school|institution/i), name: find(/student|volunteer|participant|name/i), date: find(/date|day/i), activity: find(/activity|event|programme|program/i) };
+  IMP.map = { college: find(/college|school|institution/i), name: find(/(student|volunteer|participant).*name|name.*(student|volunteer|participant)/i) || find(/student|volunteer|participant|name/i), date: find(/^(date|day)\b|\b(date|day)$/i) || find(/date|day/i), activity: find(/activity|event|programme|program/i) };
   if (IMP.map.name === IMP.map.college) IMP.map.name = '';
   $('#impstep1').classList.add('hide'); $('#impstep2').classList.remove('hide'); impPaint();
 }
 function impPaint() {
   const s2 = $('#impstep2'), sel = (k, req) => html`<label class="f"><span>${{ college: 'Institution column', name: 'Student name column *', date: 'Date column', activity: 'Event / activity column' }[k]}</span><select data-imp="${k}"><option value="">${req ? 'Choose…' : '— none —'}</option>${IMP.head.map((h, i) => html`<option value="${i}" ${IMP.map[k] === String(i) ? 'selected' : ''}>${h || 'Column ' + (i + 1)}</option>`)}</select></label>`;
-  const old = { one: $('#impcol')?.value || '', camp: $('#impcamp')?.value ?? IMP.campId, vols: $('#impvols') ? $('#impvols').checked : true };
+  const old = { one: $('#impcol')?.value || '', camp: $('#impcamp')?.value ?? IMP.campId, vols: $('#impvols') ? $('#impvols').checked : true, year: $('#impyear')?.value || String(new Date().getFullYear()) };
   show(s2, html`<p><b>${IMP.rows.length}</b> rows found${IMP.wb && IMP.wb.SheetNames.length > 1 ? html`. Sheet: <select id="impsheet" aria-label="Sheet">${IMP.wb.SheetNames.map(n => html`<option ${n === IMP.sheet ? 'selected' : ''}>${n}</option>`)}</select>` : ''}. Tell us which column holds what:</p>
-    <div class="formgrid">${sel('college')}${sel('name', true)}${sel('date')}${sel('activity')}</div>
+    <div class="formgrid">${sel('college')}${sel('name', true)}${sel('date')}${sel('activity')}<label class="f"><span>Year, for dates typed without one</span><input type="number" id="impyear" min="2000" max="2100" value="${esc(old.year)}"></label></div>
+    <div id="impdates"></div>
     <p class="hint">No institution column? Choose the one institution all rows belong to. No date column: the campaign's start date is used for the certificate list, and the volunteer records skip rows without a date. No activity column: "Participation" is used.</p>
     <label class="f"><span>All rows belong to (leave empty if the file has an institution column)</span><select id="impcol"><option value="">— use the institution column —</option>${IMP.cs.map(c => html`<option value="${c.id}" ${String(c.id) === old.one ? 'selected' : ''}>${c.name}</option>`)}</select></label>
     <div class="card" style="background:#fafbff"><b>Add the students to</b>
@@ -153,7 +172,7 @@ function impPaint() {
     <div id="impmatch" style="margin-top:12px"></div><div id="imperr2"></div>
     <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn secondary" data-act="closeModal">Cancel</button><button class="btn primary" data-act="impGo">${icon('upload')} Import</button></div>`);
   $$('[data-imp]', s2).forEach(x => x.addEventListener('change', () => { IMP.map[x.dataset.imp] = x.value; impMatch(); }));
-  $('#impcol', s2).addEventListener('change', impMatch);
+  $('#impcol', s2).addEventListener('change', impMatch); $('#impyear', s2).addEventListener('input', impDates);
   $('#impsheet', s2)?.addEventListener('change', e => { IMP.sheet = e.target.value; IMP.fix = {}; impSheet(); });
   impMatch();
 }
@@ -162,15 +181,26 @@ function impNames() {
   const m = IMP.map, one = $('#impcol')?.value; if (one || m.college === '') return null;
   const by = new Map(); for (const r of IMP.rows) { const n = (r[Number(m.college)] || '').trim(); if (n) by.set(n, (by.get(n) || 0) + 1); } return by;
 }
+const impYear = () => Number($('#impyear')?.value) || new Date().getFullYear();
+// how many dates in the file can be read, and how they will be read
+function impDates() {
+  const box = $('#impdates'); if (!box) return; const c = IMP.map.date;
+  if (c === '') { box.innerHTML = ''; return; }
+  const seen = new Map(); let bad = 0, blank = 0;
+  for (const r of IMP.rows) { const v = (r[Number(c)] || '').trim(); if (!v) { blank++; continue; } const d = parseDay(v, impYear()); if (d) seen.set(v, d); else bad++; }
+  const sample = [...seen].slice(0, 6).map(([v, d]) => `${v} → ${d}`).join(', ');
+  show(box, html`<div class="alert ${bad || blank ? 'warn' : 'ok'}">${icon(bad || blank ? 'alert' : 'check-circle')}<div>${seen.size ? html`Dates are read like this: <b>${sample}</b>${seen.size > 6 ? ', …' : ''}.` : 'No date could be read in this column.'}${bad ? html` <b>${bad}</b> row${bad === 1 ? ' has' : 's have'} a date that cannot be read.` : ''}${blank ? html` <b>${blank}</b> row${blank === 1 ? ' has' : 's have'} no date.` : ''}${bad || blank ? ' Those rows are not added to the volunteer records (they are listed in the file you can download after the import).' : ''}</div></div>`);
+}
 function impMatch() {
-  const box = $('#impmatch'); if (!box) return;
+  const box = $('#impmatch'); if (!box) return; impDates();
   const by = impNames(); if (!by) { show(box, $('#impcol')?.value ? html`<div class="alert info">${icon('check-circle')}<div>All rows will be added to <b>${IMP.cs.find(c => String(c.id) === $('#impcol').value)?.name}</b>.</div></div>` : html`<p class="muted small">Choose the institution column to check the names.</p>`); return; }
   const exact = new Map(IMP.cs.map(c => [nrmName(c.name), c])); let ok = 0, okRows = 0; const bad = [];
   for (const [n, k] of by) { if (exact.has(nrmName(n))) { ok++; okRows += k; } else bad.push([n, k]); }
-  bad.sort((a, b) => b[1] - a[1]);
-  const options = n => { const w = wordsOf(n), scored = IMP.cs.map(c => { const cw = wordsOf(c.name); let hit = 0; w.forEach(x => { if (cw.has(x)) hit++; }); return { c, hit }; }).sort((a, b) => b.hit - a.hit || a.c.name.localeCompare(b.c.name)); return scored; };
-  show(box, html`<div class="alert ${bad.length ? 'warn' : 'ok'}">${icon(bad.length ? 'alert' : 'check-circle')}<div><b>${ok} of ${by.size} institution names match the portal</b> (${okRows} rows).${bad.length ? ` ${bad.length} name${bad.length === 1 ? ' does' : 's do'} not match exactly. Choose the right institution for each below, or skip those rows.` : ''}</div></div>
-    ${bad.length ? html`<div class="tablewrap" style="max-height:230px;margin-top:8px"><table data-nosort><thead><tr><th>Name in the file</th><th class="num">Rows</th><th>Portal institution</th></tr></thead><tbody>${bad.slice(0, 60).map(([n, k]) => html`<tr><td>${n}</td><td class="num">${k}</td><td><select data-fix="${esc(n)}" aria-label="Institution for ${esc(n)}"><option value="">Skip these rows</option>${options(n).slice(0, 400).map(({ c, hit }, i) => html`<option value="${esc(c.name)}" ${IMP.fix[n] === c.name ? 'selected' : ''}>${hit && i < 3 ? 'Suggested: ' : ''}${c.name}</option>`)}</select></td></tr>`)}</tbody></table></div>${bad.length > 60 ? html`<p class="hint">${bad.length - 60} more names are not shown. Fix the spelling in the file for those and import again.</p>` : ''}` : ''}`);
+  let auto = 0; for (const [n] of bad) { if (IMP.fix[n] === undefined) { const g = impSuggest(n); if (g) IMP.fix[n] = g; } if (IMP.fix[n] && IMP.fix[n] !== '') auto++; }
+  bad.sort((a, b) => (IMP.fix[a[0]] ? 1 : 0) - (IMP.fix[b[0]] ? 1 : 0) || b[1] - a[1]);
+  const options =n => { const w = wordsOf(n), scored = IMP.cs.map(c => { const cw = wordsOf(c.name); let hit = 0; w.forEach(x => { if (cw.has(x)) hit++; }); return { c, hit }; }).sort((a, b) => b.hit - a.hit || a.c.name.localeCompare(b.c.name)); return scored; };
+  show(box, html`<div class="alert ${bad.length ? 'warn' : 'ok'}">${icon(bad.length ? 'alert' : 'check-circle')}<div><b>${ok} of ${by.size} institution names match the portal</b> (${okRows} rows).${bad.length ? ` ${bad.length} name${bad.length === 1 ? ' is' : 's are'} spelled differently${auto ? `; for ${auto} of them the closest institution is already chosen below` : ''}. Please check them, and choose the right institution for the rest (or skip those rows).` : ''}</div></div>
+    ${bad.length ? html`<div class="tablewrap" style="max-height:230px;margin-top:8px"><table data-nosort><thead><tr><th>Name in the file</th><th class="num">Rows</th><th>Portal institution</th></tr></thead><tbody>${bad.slice(0, 60).map(([n, k]) => html`<tr><td>${n}</td><td class="num">${k}</td><td><select data-fix="${esc(n)}" aria-label="Institution for ${esc(n)}"><option value="">Skip these rows</option>${options(n).slice(0, 400).map(({ c, hit }, i) => html`<option value="${esc(c.name)}" ${IMP.fix[n] === c.name ? 'selected' : ''}>${hit && i < 3 && IMP.fix[n] !== c.name ? 'Similar: ' : ''}${c.name}</option>`)}</select></td></tr>`)}</tbody></table></div>${bad.length > 60 ? html`<p class="hint">${bad.length - 60} more names are not shown. Fix the spelling in the file for those and import again.</p>` : ''}` : ''}`);
   $$('[data-fix]', box).forEach(s => s.addEventListener('change', () => { IMP.fix[s.dataset.fix] = s.value; }));
 }
 actions.impGo = async el => {
@@ -180,10 +210,14 @@ actions.impGo = async el => {
   if (!camp && !vols) return toast('Choose where to add the students', true);
   const fb = camp?.start_date || camp?.end_date || today, oneName = one ? IMP.cs.find(c => String(c.id) === one)?.name : '';
   const exact = new Map(IMP.cs.map(c => [nrmName(c.name), c.name]));
+  IMP.rej = [];
   const rows = IMP.rows.map(r => {
     const raw = one ? oneName : (r[Number(m.college)] || '').trim(), college = one ? oneName : (exact.get(nrmName(raw)) || IMP.fix[raw] || '');
-    const d = m.date !== '' ? parseDay(r[Number(m.date)]) : '';
-    return { college, name: (r[Number(m.name)] || '').trim(), date: d || (camp && !vols ? (fb > today ? today : fb) : (camp && m.date === '' ? (fb > today ? today : fb) : '')), activity: (m.activity !== '' ? (r[Number(m.activity)] || '').trim() : '') || 'Participation' };
+    const d = m.date !== '' ? parseDay(r[Number(m.date)], impYear()) : '';
+    const o = { college, name: (r[Number(m.name)] || '').trim(), date: d || (camp && !vols ? (fb > today ? today : fb) : (camp && m.date === '' ? (fb > today ? today : fb) : '')), activity: (m.activity !== '' ? (r[Number(m.activity)] || '').trim() : '') || 'Participation' };
+    const why = !o.name ? 'No student name' : !college ? (raw ? 'Institution not matched to the portal' : 'No institution') : (vols && !o.date ? 'Date missing or not readable (not added to volunteer records)' : '');
+    if (why) IMP.rej.push([why, ...r]);
+    return o;
   }).filter(r => r.name && r.college);
   const skipped = IMP.rows.length - rows.length;
   if (!rows.length) return toast('No rows could be matched to an institution', true);
@@ -197,9 +231,10 @@ actions.impGo = async el => {
     }
     show($('#impstep2'), html`<div class="alert ok">${icon('check-circle')}<div><b>Imported</b> for ${tot.instN || 0} institution${tot.instN === 1 ? '' : 's'}.<ul style="margin:6px 0 0 18px">${vols ? html`<li>${tot.recorded} volunteer record${tot.recorded === 1 ? '' : 's'} added to the colleges' and schools' Daily report pages and reports${tot.no_date ? ` (${tot.no_date} student${tot.no_date === 1 ? '' : 's'} had no valid date and were not recorded)` : ''}.</li>` : ''}${camp ? html`<li>Certificate list of <b>${camp.title}</b>: ${tot.people} new student${tot.people === 1 ? '' : 's'}, ${tot.merged} updated.</li>` : ''}</ul></div></div>
       ${skipped ? html`<div class="alert warn" style="margin-top:10px">${icon('alert')}<div>${skipped} row${skipped === 1 ? ' was' : 's were'} skipped (no student name, or the institution did not match the portal).</div></div>` : ''}
-      <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn primary" data-act="closeModal">Done</button></div>`);
+      <div class="row" style="justify-content:flex-end;margin-top:12px">${IMP.rej.length ? html`<button class="btn secondary" data-act="impRej">${icon('download')} Download the ${IMP.rej.length} rows that were not added</button>` : ''}<button class="btn primary" data-act="closeModal">Done</button></div>`);
     if ($('#certstatus')) paintCertStatus();
   } catch (e) { $('#imperr2').innerHTML = `<div class="alert err">${esc(e.message)}</div>`; el.disabled = false; }
 };
-actions.certImport = () => openImport(CRA.id);
+actions.impRej = () => download('rows-not-added.csv', toCsv(['Reason', ...IMP.head.map((h, i) => h || 'Column ' + (i + 1))], IMP.rej));
+actions.certImport =() => openImport(CRA.id);
 actions.partImport = () => openImport(null);

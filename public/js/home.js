@@ -61,7 +61,6 @@ async function renderHome() {
 
   ${campusSection(C)}
   ${ALBUM.length ? albumSection() : ''}
-  ${SOCIAL?.posts?.length ? socialSection() : ''}
   ${vil ? html`<section class="section" id="villagemap"><div class="wrap"><div class="section-head"><div><h2>Where our volunteers are working</h2><p>${t.villages_active} of ${t.villages_total} village offices have students present in the field, and ${t.villages_registered} have voters registered. Select a village to see its progress.</p></div>
     <div class="chips" id="mapfilter" role="group" aria-label="Filter villages"></div></div>
     <div class="map-wrap rv"><div id="map" role="application" aria-label="Map of Kozhikode villages with ELC activity"></div><div class="map-side"><label class="f"><span class="sr">Search villages</span><input type="search" id="vq" placeholder="Search a village or college…"></label><div id="vlist" role="list"></div></div></div>
@@ -84,7 +83,8 @@ async function renderHome() {
 
   <section class="section"><div class="wrap grid g2">
     ${vil ? html`<div><div class="section-head"><div><h2>Live activity</h2></div></div><div class="card rv"><ul class="feed" id="feed"></ul></div></div>` : ''}
-    <div id="resources"><div class="section-head"><div><h2>Resource centre</h2></div></div><div class="resgrid" id="reslist"></div><p class="center" id="resmore" style="margin-top:14px"></p></div></div></section>`, 'home'));
+    <div id="resources"><div class="section-head"><div><h2>Resource centre</h2></div></div><div class="resgrid" id="reslist"></div><p class="center" id="resmore" style="margin-top:14px"></p></div></div></section>
+  ${SOCIAL?.posts?.length ? socialSection() : ''}`, 'home'));
   paintHome(); paintCampus(); wireMap(); startAlbum(); startColleges(); startSocial(); $('#main').focus({ preventScroll: true });
 }
 
