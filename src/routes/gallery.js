@@ -96,7 +96,10 @@ async function albumOn(ctx) { if (!(await featureMap(ctx.db)).public.album) thro
 route('GET', '/api/public/album', null, async ctx => {
   await albumOn(ctx);
   // the home page shows the running campaign; the office can also put a photo from a "previous works" album there
-  return ctx.db.all(`SELECT ${PUBLIC_COLS} ${PUBLIC_FROM} AND (g.album_id IS NULL OR a.current=1 OR g.home=1) ORDER BY ${DISTRICT_FIRST}, g.id DESC LIMIT ${ctx.query.all ? 300 : 40}`);
+  // the district office's photos and the colleges' and schools' photos are fetched separately so neither crowds out the other
+  const w = `SELECT ${PUBLIC_COLS} ${PUBLIC_FROM} AND (g.album_id IS NULL OR a.current=1 OR g.home=1)`, lim = ctx.query.all ? 300 : 40;
+  const [office, inst] = await Promise.all([ctx.db.all(`${w} AND g.college_id IS NULL ORDER BY g.id DESC LIMIT ${lim}`), ctx.db.all(`${w} AND g.college_id IS NOT NULL ORDER BY g.id DESC LIMIT ${lim}`)]);
+  return [...office, ...inst];
 });
 async function publicPhoto(ctx) {
   await albumOn(ctx);

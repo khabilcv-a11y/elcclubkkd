@@ -115,10 +115,21 @@ function albumSection() {
       <button class="fan-btn prev" data-act="albPrev" aria-label="Previous photo">${icon('arrow-left')}</button><button class="fan-btn next" data-act="albNext" aria-label="Next photo">${icon('arrow-right')}</button></div>
     <div class="fan-cap" id="fancap" aria-live="polite"></div></section>`;
 }
+// The cycle mixes the district office's photos with those the colleges and schools uploaded (one after another from different institutions):
+// office, college, office, office, college, office … so the office photos come round twice as often as any college photo.
+function fanMix(list) {
+  const offs = list.filter(g => !g.college_id), by = new Map();
+  list.filter(g => g.college_id).forEach(g => { if (!by.has(g.college_id)) by.set(g.college_id, []); by.get(g.college_id).push(g); });
+  const cols = []; for (let r = 0; ; r++) { let any = false; for (const a of by.values()) if (a[r]) { cols.push(a[r]); any = true; } if (!any) break; }
+  if (!offs.length || !cols.length) return list.slice(0, 14);
+  const out = [], nC = Math.min(cols.length, 7); let a = 0;
+  for (let c = 0; c < nC; c++) out.push(offs[a++ % offs.length], cols[c], offs[a++ % offs.length]);
+  return out;
+}
 function startAlbum() {
   if (FAN?.raf) cancelAnimationFrame(FAN.raf);
   const st = $('#fanstage'), box = $('#fan'); if (!st) return;
-  albumList = ALBUM.slice(0, 14);
+  albumList = fanMix(ALBUM);
   st.innerHTML = albumList.map((g, i) => `<figure class="fan-card" data-i="${i}" aria-label="${esc(g.title)}, ${esc(g.college)}"><span class="fan-in"><img src="${gUrl(g, 'large', `/api/public/album/${g.id}/thumb`)}" alt="${esc(g.title)}, ${esc(g.college)}" draggable="false"></span></figure>`).join('');
   const N = albumList.length, cards = $$('.fan-card', st), F = FAN = { pos: 0, vel: 0, target: null, drag: null, hold: 0, raf: 0, last: 0, N, shown: -1 };
   const step = Math.max(13.5, 170 / N);                               // degrees between neighbouring cards
