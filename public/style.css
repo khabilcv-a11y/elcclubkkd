@@ -583,11 +583,12 @@ hr.soft{border:0;border-top:1px solid var(--line);margin:18px 0}
 .tdused{display:flex;flex-direction:column;gap:6px;border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;background:#fff}.tdu{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0;font-size:.86rem}.tdu select{width:auto;min-height:34px}
 
 /* ---------- home: photos fanned along an arc ---------- */
-.fan{--cw:196px;--ch:262px;--R:430px;position:relative;height:calc(var(--ch) + var(--R) * .46 + 34px);margin-top:6px;overflow:hidden;outline:none;touch-action:pan-y;user-select:none;cursor:grab;-webkit-mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent);mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent)}
+.fan{--cw:196px;--ch:262px;--R:430px;position:relative;height:calc(var(--ch) + var(--R) * .46 + 46px);margin-top:6px;overflow:hidden;outline:none;touch-action:pan-y;user-select:none;cursor:grab;-webkit-mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent);mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent)}
 .fan:active{cursor:grabbing}.fan:focus-visible{box-shadow:inset 0 0 0 3px var(--saffron)}
-.fan-stage{position:absolute;left:0;right:0;top:18px;height:calc(100% - 18px)}
-.fan-card{position:absolute;left:50%;top:0;width:var(--cw);height:var(--ch);margin:0 0 0 calc(var(--cw) / -2);border-radius:18px;overflow:hidden;background:#10143f;box-shadow:0 22px 40px -22px rgba(20,24,90,.65),0 0 0 3px #fff;transform-origin:50% calc(var(--ch) + var(--R));will-change:transform}
-.fan-card img{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none}.fan-card.mid{box-shadow:0 30px 56px -22px rgba(20,24,90,.7),0 0 0 4px #fff,0 0 0 7px rgba(247,134,29,.55)}
+.fan-stage{position:absolute;left:0;right:0;top:30px;height:calc(100% - 30px)}
+.fan-card{position:absolute;left:50%;top:0;width:var(--cw);height:var(--ch);margin:0 0 0 calc(var(--cw) / -2);transform-origin:50% calc(var(--ch) + var(--R));will-change:transform;cursor:pointer}
+.fan-in{display:block;width:100%;height:100%;border-radius:18px;overflow:hidden;background:#10143f;box-shadow:0 22px 40px -22px rgba(20,24,90,.65),0 0 0 3px #fff;will-change:transform}
+.fan-card img{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none}.fan-card.mid .fan-in{box-shadow:0 30px 56px -22px rgba(20,24,90,.7),0 0 0 4px #fff,0 0 0 7px rgba(247,134,29,.55)}
 .fan-btn{position:absolute;bottom:14px;width:44px;height:44px;border-radius:50%;border:0;background:rgba(255,255,255,.95);color:var(--brand);display:grid;place-items:center;cursor:pointer;z-index:200;box-shadow:var(--shadow);transition:transform .2s}.fan-btn:hover{transform:scale(1.08)}.fan-btn.prev{left:calc(50% - 120px)}.fan-btn.next{right:calc(50% - 120px)}
 .fan-cap{text-align:center;padding:0 16px;display:flex;flex-direction:column;align-items:center;gap:3px;margin-top:2px;min-height:84px}.fan-cap .withav{justify-content:center}.fan-cap b{font-size:clamp(1.05rem,2.4vw,1.45rem);font-weight:800;color:var(--ink)}.fan-cap span{color:var(--brand);font-weight:700}.fan-cap small{color:var(--muted);text-transform:uppercase;letter-spacing:.07em;font-size:.74rem}.fan-cap.in{animation:capin .6s ease both}
 @media(max-width:720px){.fan{--cw:140px;--ch:190px;--R:300px}.fan-btn.prev{left:12px}.fan-btn.next{right:12px}}
@@ -614,3 +615,7 @@ body.noscroll{overflow:hidden}
 .lb-cap{padding:8px 18px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:2px}.lb-cap b{font-size:1.05rem}.lb-by{display:inline-flex;align-items:center;gap:7px;font-size:.88rem;color:#ffd9ad}.lb-desc{font-size:.84rem;opacity:.85;max-width:640px}.lb-album{font-size:.82rem;color:#fff;opacity:.85;text-decoration:underline}
 .lb-strip{display:flex;gap:6px;overflow-x:auto;padding:8px 14px 14px;justify-content:safe center}.lb-strip button{flex:none;width:64px;height:48px;padding:0;border:2px solid transparent;border-radius:8px;overflow:hidden;background:#1b1f4d;cursor:pointer;opacity:.6}.lb-strip button.on{border-color:var(--saffron);opacity:1}.lb-strip img{width:100%;height:100%;object-fit:cover;display:block}
 @media(max-width:640px){.lb-stage img{max-width:calc(100% - 16px)}.lb-nav{display:none}.lb-strip button{width:54px;height:42px}}
+
+.tdstage canvas#tdlive{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
+.tdstage.live .tdbox{background:transparent!important}.tdstage.live .tdbox span{display:none}.tdstage.live .tdbox.on span{display:block;position:absolute;left:0;top:-1.5em;background:var(--brand);color:#fff}
+.tdsize{display:grid;grid-template-columns:1.4fr 1fr;gap:10px;align-items:start}@media(max-width:560px){.tdsize{grid-template-columns:1fr}}

@@ -99,16 +99,16 @@ function startAlbum() {
   if (FAN?.raf) cancelAnimationFrame(FAN.raf);
   const st = $('#fanstage'), box = $('#fan'); if (!st) return;
   albumList = ALBUM.slice(0, 14);
-  st.innerHTML = albumList.map((g, i) => `<figure class="fan-card" data-i="${i}" aria-label="${esc(g.title)}, ${esc(g.college)}"><img src="${gUrl(g, 'large', `/api/public/album/${g.id}/thumb`)}" alt="${esc(g.title)}, ${esc(g.college)}" draggable="false"></figure>`).join('');
+  st.innerHTML = albumList.map((g, i) => `<figure class="fan-card" data-i="${i}" aria-label="${esc(g.title)}, ${esc(g.college)}"><span class="fan-in"><img src="${gUrl(g, 'large', `/api/public/album/${g.id}/thumb`)}" alt="${esc(g.title)}, ${esc(g.college)}" draggable="false"></span></figure>`).join('');
   const N = albumList.length, cards = $$('.fan-card', st), F = FAN = { pos: 0, vel: 0, target: null, drag: null, hold: 0, raf: 0, last: 0, N, shown: -1 };
-  const step = Math.max(12.5, 170 / N);                               // degrees between neighbouring cards
+  const step = Math.max(13.5, 170 / N);                               // degrees between neighbouring cards
   const wrap = o => ((o + N / 2) % N + N) % N - N / 2;
   const paint = () => {
     for (let i = 0; i < N; i++) {
       const o = wrap(i - F.pos), ang = o * step, a = Math.abs(ang), c = cards[i];
       const op = a > 66 ? 0 : a > 46 ? 1 - (a - 46) / 20 : 1;
       c.style.opacity = op; c.style.visibility = op <= 0.02 ? 'hidden' : 'visible'; c.style.zIndex = 100 - Math.round(Math.abs(o) * 10);
-      c.style.transform = `rotate(${ang.toFixed(2)}deg) scale(${(1 + 0.1 * Math.max(0, 1 - Math.abs(o))).toFixed(3)})`;
+      c.style.transform = `rotate(${ang.toFixed(2)}deg)`; c.firstChild.style.transform = `scale(${(1 + 0.08 * Math.max(0, 1 - Math.abs(o))).toFixed(3)})`;
       c.classList.toggle('mid', Math.abs(o) < 0.5);
     }
     const k = ((Math.round(F.pos) % N) + N) % N; if (k !== F.shown) { F.shown = k; const g = albumList[k], cap = $('#fancap'); cap.classList.remove('in'); void cap.offsetWidth;
@@ -124,12 +124,12 @@ function startAlbum() {
     paint(); F.raf = requestAnimationFrame(tick);
   };
   const pxPerCard = () => (cards[0]?.offsetWidth || 190) * 0.7;
-  let sx = 0, sp = 0, moved = 0, lx = 0, lt = 0, v = 0;
-  box.onpointerdown = e => { if (e.target.closest('.fan-btn')) return; F.drag = true; F.target = null; F.vel = 0; sx = lx = e.clientX; sp = F.pos; moved = 0; lt = performance.now(); v = 0; box.setPointerCapture?.(e.pointerId); };
+  let sx = 0, sp = 0, moved = 0, lx = 0, lt = 0, v = 0, down = null;
+  box.onpointerdown = e => { if (e.target.closest('.fan-btn')) return; down = e.target.closest?.('.fan-card') || null; F.drag = true; F.target = null; F.vel = 0; sx = lx = e.clientX; sp = F.pos; moved = 0; lt = performance.now(); v = 0; box.setPointerCapture?.(e.pointerId); };
   box.onpointermove = e => { if (!F.drag) return; const dx = e.clientX - sx; moved = Math.max(moved, Math.abs(dx)); F.pos = sp - dx / pxPerCard(); const now = performance.now(); v = (-(e.clientX - lx) / pxPerCard()) / Math.max(1, now - lt); lx = e.clientX; lt = now; };
   box.onpointerup = box.onpointercancel = e => {
     if (!F.drag) return; F.drag = null; F.hold = performance.now() + 2500;
-    if (moved < 6) { const c = e.target.closest?.('.fan-card'); if (c) { const i = Number(c.dataset.i), k = ((Math.round(F.pos) % N) + N) % N; if (i === k) openLightbox(albumList, i); else F.target = F.pos + wrap(i - F.pos); } else F.target = Math.round(F.pos); }
+    if (moved < 6) { const c = down; if (c) { const i = Number(c.dataset.i), k = ((Math.round(F.pos) % N) + N) % N; if (i === k) openLightbox(albumList, i); else F.target = F.pos + wrap(i - F.pos); } else F.target = Math.round(F.pos); }
     else { F.vel = Math.max(-0.01, Math.min(0.01, v * 0.9)); if (Math.abs(F.vel) < 0.0004) F.target = Math.round(F.pos); }
   };
   box.onkeydown = e => { if (e.key === 'ArrowRight') { F.target = Math.round(F.pos) + 1; F.hold = performance.now() + 2500; } else if (e.key === 'ArrowLeft') { F.target = Math.round(F.pos) - 1; F.hold = performance.now() + 2500; } else if (e.key === 'Enter' || e.key === ' ') { if (e.target === box) { e.preventDefault(); openLightbox(albumList, ((Math.round(F.pos) % N) + N) % N); } } };
@@ -176,7 +176,7 @@ function paintHome() {
 }
 // a resource is a thumbnail card: the picture first, then the title, with copy-link and open / download underneath
 let RESALL = false;
-const resPic = r => (r.kind === 'file' && r.has_thumb ? html`<img src="/api/resources/${r.id}/thumb" alt="" loading="lazy" decoding="async">` : html`<span class="rtile">${fileTile(r.filename, r.mime, r.kind === 'link')}</span>`);
+const resPic = r => (r.has_thumb ? html`<img src="/api/resources/${r.id}/thumb" alt="" loading="lazy" decoding="async">` : html`<span class="rtile">${fileTile(r.filename, r.mime, r.kind === 'link')}</span>`);
 const resCard = r => html`<article class="rcard rv"><a class="rpic" href="#/resource/${r.id}" aria-label="Open ${r.title}">${resPic(r)}</a><div class="rbody"><h3><a href="#/resource/${r.id}">${r.title}</a></h3><p>${r.category || 'General'}</p></div>
   <div class="ract"><button class="iconbtn" data-act="copyRes" data-s="${resSlug(r)}" aria-label="Copy link to ${r.title}" title="Copy link">${icon('copy')}</button>${r.kind === 'link' ? html`<a class="btn secondary sm" href="${r.url}" target="_blank" rel="noopener">${icon('external')} Open</a>` : html`<a class="btn secondary sm" href="/api/resources/${r.id}/download">${icon('download')} Download</a>`}</div></article>`;
 actions.resAll = () => { RESALL = true; show($('#reslist'), html`${RES.map(resCard)}`); show($('#resmore'), ''); };

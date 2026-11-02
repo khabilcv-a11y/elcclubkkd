@@ -22,7 +22,8 @@ async function openDesigner(t) {
     : { id: null, title: '', kind: 'poster', category: '', active: true, w: 0, h: 0, fields: [], img: null, file: null, sel: 0 };
   const cats = [...new Set((window.__tpls || []).map(x => x.category).filter(Boolean)), 'Photo frames', 'Posters', 'Banners'].filter((v, i, a) => a.indexOf(v) === i);
   const m = modal(html`<h2>${t ? 'Edit template' : 'Add a template'}</h2>
-    <div class="edgrid"><div class="edpreview"><div class="tdstage checker" id="tdstage"><img id="tdimg" alt="Template picture" hidden><div id="tdboxes"></div><div class="tdempty" id="tdempty">${t ? 'Loading…' : 'Choose the template image to start'}</div></div>
+    <div class="edgrid"><div class="edpreview"><div class="tdstage checker live" id="tdstage"><img id="tdimg" alt="Template picture" hidden><canvas id="tdlive" aria-hidden="true"></canvas><div id="tdboxes"></div><div class="tdempty" id="tdempty">${t ? 'Loading…' : 'Choose the template image to start'}</div></div>
+      <label class="chk" style="margin-top:8px"><input type="checkbox" id="tdlivechk" checked> Show sample text on the picture, to see how it lays out</label>
       <p class="hint">Drag a box to move it, and drag its corner square to resize it. Photo frames should be PNG or WebP with a transparent window where the photo shows.</p></div>
       <form data-form="tplSave" class="stack-s edform">
         ${t ? html`<label class="f"><span>Replace the design image (optional)</span><input type="file" id="tdfile" accept="image/png,image/webp,image/jpeg"><span class="hint">Choose a new picture, for example one with the sentence area left blank. Your boxes stay where they are.</span></label>` : html`<label class="f"><span>Template image (PNG, WebP or JPG, up to 6 MB) *</span><input type="file" id="tdfile" accept="image/png,image/webp,image/jpeg" required></label>`}
@@ -79,13 +80,39 @@ function tdWire(m) {
     if (!k || !TD.fields[TD.sel]) return; const f = TD.fields[TD.sel];
     if (k === 'mode') { const v = e.target.value; f.type = v === 'logo' ? 'logo' : 'text'; f.src = v === 'logo' ? 'college' : v; if (v === 'fixed' && TD.kind === 'certificate' && !f.value) { f.value = 'of {college:b} has actively volunteered as part of the {campaign:b} from {dates:b}, in {activities:n}. Their contribution towards voter awareness is sincerely acknowledged and appreciated.'; f.lines = Math.max(f.lines, 4); f.weight = 400; f.align = 'justify'; } tdPaint(); return; }
     if (['x', 'y', 'w', 'h'].includes(k)) { f[k] = Math.round(Math.max(k === 'w' || k === 'h' ? 20 : 0, Number(e.target.value) || 0)); tdBoxes(); return; }
-    if (['caps', 'italic', 'boldMerge'].includes(k)) f[k] = e.target.checked; else if (['weight', 'lines', 'size'].includes(k)) f[k] = Number(e.target.value) || 0; else f[k] = e.target.value;
+    if (['caps', 'italic', 'boldMerge', 'exact'].includes(k)) f[k] = e.target.checked; else if (['weight', 'lines', 'size'].includes(k)) f[k] = Number(e.target.value) || 0; else if (k === 'lh') f.lh = Number(e.target.value) || 0; else f[k] = e.target.value;
+    tdLive();
     if (k === 'label') { tdBoxes(); tdList(); }
   };
   m.addEventListener('input', upd); m.addEventListener('change', e => { upd(e); if (e.target.dataset.tf === 'mode') tdField(); });
 }
+let tdLiveTimer = 0;
+// the sample text drawn over the design picture, exactly as it will be printed, so size and layout can be judged while adjusting
+function tdLive() {
+  clearTimeout(tdLiveTimer);
+  tdLiveTimer = setTimeout(async () => {
+    const cv = $('#tdlive'), stage = $('#tdstage'); if (!cv || !stage || !TD?.img) return;
+    const on = $('#tdlivechk')?.checked !== false; stage.classList.toggle('live', on); cv.style.display = on ? 'block' : 'none';
+    const t = tdObject(), k = stage.clientWidth / TD.w; await ensureFonts(t);
+    const hint = $('#tdsizehint'), f = TD.fields[TD.sel];
+    if (on) {
+      cv.width = Math.round(TD.w * k); cv.height = Math.round(TD.h * k); const c = cv.getContext('2d'); c.scale(k, k);
+      const values = {}; t.fields.forEach(x => { values[x.id] = CERT_SAMPLE[x.src] ?? ('Sample ' + x.label); });
+      drawFields(c, t, { values, merge: CERT_SAMPLE, exporting: false, showEmpty: false, logo: null });
+    }
+    if (hint && f && f.type === 'text') {
+      const x = t.fields[TD.sel], txt = x.src === 'fixed' ? (hasTokens(x.value) ? tokenRuns(x.value, CERT_SAMPLE, x.boldMerge, false) : x.value) : (CERT_SAMPLE[x.src] ?? 'Sample ' + x.label);
+      const r = txt && txt.length ? fitText(document.createElement('canvas').getContext('2d'), txt, x, { ...x, dry: true }) : null;
+      hint.textContent = r ? (r.fits ? 'Drawn at ' + r.size + ' px.' : 'Does not fit the box at ' + r.size + ' px: make the box bigger or the text smaller.') : '';
+      hint.style.color = r && !r.fits ? 'var(--danger)' : '';
+    }
+  }, 40);
+}
+actions.tdSize = el => { const f = TD.fields[TD.sel]; if (!f) return; const cur = f.size || Number(($('#tdsizehint')?.textContent.match(/(\d+) px/) || [])[1]) || 36; f.size = Math.max(8, Math.min(600, cur + Number(el.dataset.d))); const i = $('[data-tf=size]'); if (i) i.value = f.size; tdLive(); };
+document.addEventListener('change', e => { if (e.target.id === 'tdlivechk') tdLive(); });
 const tdBoxes = () => {
   const b = $('#tdboxes'); if (!b) return;
+  tdLive();
   b.innerHTML = TD.fields.map((f, i) => `<div class="tdbox ${i === TD.sel ? 'on' : ''} ${f.type === 'logo' ? 'logo' : ''}" data-i="${i}" style="left:${f.x * 100 / TD.w}%;top:${f.y * 100 / TD.h}%;width:${f.w * 100 / TD.w}%;height:${f.h * 100 / TD.h}%"><span>${esc(f.label)}</span><i class="tdh" title="Resize"></i></div>`).join('');
 };
 const tdList = () => show($('#tdlist'), html`${TD.fields.map((f, i) => html`<button type="button" class="chip ${i === TD.sel ? 'on' : ''}" data-act="tdSel" data-i="${i}">${f.label}</button>`)}`);
@@ -102,9 +129,12 @@ function tdField() {
         ${(() => { const seen = new Map(); for (const m of String(f.value || '').matchAll(/\{([a-z]+)(?::([bn]))?\}/g)) seen.set(m[1], m[2] || (f.boldMerge ? 'b' : 'n')); return seen.size ? html`<div class="tdused"><span class="small muted">Placeholders in this sentence (bold or normal):</span>${[...seen].map(([k, st]) => html`<label class="tdu"><span>${(MERGE_TOKENS.find(x => x[0] === k) || [k, k])[1]}</span><select data-tok="${k}"><option value="b" ${st === 'b' ? 'selected' : ''}>Bold</option><option value="n" ${st === 'n' ? 'selected' : ''}>Normal</option></select></label>`)}</div>` : ''; })()}
         <p class="hint">To make other words bold, put ** on both sides of them, like **SVEEP Election Awareness Campaign**.</p>` : ''}` : ''}
     ${f.type === 'text' ? html`<div class="formgrid"><label class="f"><span>Font</span>${sel('font', Object.entries(FONTS).map(([k, v]) => [k, v[0]]), f.font || 'sans')}</label><label class="f"><span>Colour</span><input type="color" data-tf="color" value="${f.color}"></label><label class="f"><span>Weight</span>${sel('weight', [[400, 'Normal'], [600, 'Semi-bold'], [700, 'Bold'], [800, 'Extra bold']], f.weight)}</label>
-      <label class="f"><span>Alignment</span>${sel('align', [['left', 'Left'], ['center', 'Centre'], ['right', 'Right'], ['justify', 'Justified']], f.align)}</label><label class="f"><span>Lines (at most)</span>${sel('lines', [1, 2, 3, 4, 5, 6, 8, 10, 12].map(n => [n, n]), f.lines)}</label><label class="f"><span>Largest font size (pixels, optional)</span><input type="number" data-tf="size" min="0" max="600" value="${f.size || ''}" placeholder="automatic"></label></div>
+      <label class="f"><span>Alignment</span>${sel('align', [['left', 'Left'], ['center', 'Centre'], ['right', 'Right'], ['justify', 'Justified']], f.align)}</label><label class="f"><span>Lines (at most)</span>${sel('lines', [1, 2, 3, 4, 5, 6, 8, 10, 12].map(n => [n, n]), f.lines)}</label></div>
+      <div class="tdsize"><label class="f"><span>Font size (pixels)</span><div class="row nowrap" style="gap:6px"><button type="button" class="btn secondary sm" data-act="tdSize" data-d="-2" aria-label="Smaller text">A−</button><input type="number" data-tf="size" min="0" max="600" value="${f.size || ''}" placeholder="automatic" style="flex:1;min-width:0"><button type="button" class="btn secondary sm" data-act="tdSize" data-d="2" aria-label="Larger text">A+</button></div><span class="hint" id="tdsizehint"></span></label>
+        <label class="f"><span>Line spacing</span>${sel('lh', [[0, 'Automatic'], [1, 'Tight (1.0)'], [1.15, 'Normal (1.15)'], [1.3, 'Relaxed (1.3)'], [1.5, 'Open (1.5)'], [1.8, 'Airy (1.8)']], f.lh || 0)}</label></div>
+      <label class="chk"><input type="checkbox" data-tf="exact" ${f.exact ? 'checked' : ''}> Use exactly this size (do not shrink to fit the box)</label>
       <div class="row gap-s"><label class="chk"><input type="checkbox" data-tf="italic" ${f.italic ? 'checked' : ''}> <i>Italic</i></label><label class="chk"><input type="checkbox" data-tf="caps" ${f.caps ? 'checked' : ''}> CAPITAL LETTERS</label></div>
-      <p class="hint">The text shrinks to fit the box, never larger than the size you set. Words wrap onto the next line.</p>` : ''}
+      <p class="hint">Leave the size empty to fit the box automatically. With a size set, the text starts at that size and only shrinks if it does not fit, unless you tick &quot;exactly&quot;. Words wrap onto the next line.</p>` : ''}
     <details class="tdnums"><summary>Exact position and size (pixels)</summary><div class="formgrid">${['x', 'y', 'w', 'h'].map(k => html`<label class="f"><span>${{ x: 'Left', y: 'Top', w: 'Width', h: 'Height' }[k]}</span><input type="number" data-tf="${k}" value="${f[k]}" min="0"></label>`)}</div></details>
     <button type="button" class="btn ghost sm" data-act="tdRemove">${icon('trash')} Remove this box</button></div>`);
 }

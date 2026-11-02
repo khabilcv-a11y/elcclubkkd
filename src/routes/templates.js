@@ -22,7 +22,7 @@ function cleanFields(raw, w, h) {
     return { id: 'f' + (i + 1), label: str(f.label, 40) || 'Text ' + (i + 1), type: f.type === 'logo' ? 'logo' : 'text',
       src: ['college', 'ask', 'fixed', 'student', 'activities', 'dates', 'days', 'campaign', 'serial', 'issued'].includes(f.src) ? f.src : 'ask', value: str(String(f.value || '').replace(/\s+/g, ' '), 1200), x, y, w: num(f.w, 4, w - x), h: num(f.h, 4, h - y),
       color: hex(f.color), weight: [400, 600, 700, 800].includes(Number(f.weight)) ? Number(f.weight) : 800, align: ['left', 'center', 'right', 'justify'].includes(f.align) ? f.align : 'center',
-      caps: !!f.caps, lines: num(f.lines || 1, 1, 12), font: FONT_KEYS.includes(f.font) ? f.font : 'sans', italic: !!f.italic, boldMerge: !!f.boldMerge, size: f.size ? num(f.size, 8, 600) : 0 };
+      caps: !!f.caps, lines: num(f.lines || 1, 1, 12), font: FONT_KEYS.includes(f.font) ? f.font : 'sans', italic: !!f.italic, boldMerge: !!f.boldMerge, size: f.size ? num(f.size, 8, 600) : 0, exact: !!(f.exact && f.size), lh: Number(f.lh) > 0 ? Math.round(Math.max(0.9, Math.min(2.2, Number(f.lh))) * 100) / 100 : 0 };
   });
   if (!out.length) throw bad('Add at least one text box');
   return out;

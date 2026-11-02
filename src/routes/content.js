@@ -130,6 +130,29 @@ route('POST', '/api/staff/resources', OPS, async ctx => {
   await slog(ctx, 'resource_add', base.title);
   return { ok: true, id };
 });
+// A preview picture for a web-link resource, taken from the linked page itself (its Open Graph or Twitter picture). Best effort: some sites refuse,
+// and then a picture can be uploaded by hand.
+const decodeEnt = s => String(s || '').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#0?39;|&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim();
+route('POST', '/api/staff/resources/link-preview', OPS, async ctx => {
+  let u; try { u = new URL(String(ctx.body.url || '').trim()); } catch { throw bad('Enter the full link first'); }
+  if (u.protocol !== 'https:' || !u.hostname.includes('.') || /^(localhost|127\.|10\.|0\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/.test(u.hostname) || /\.(local|internal)$/.test(u.hostname)) throw bad('That address cannot be used');
+  const H = { 'User-Agent': 'Mozilla/5.0 (compatible; ELCPortal/1.0)', Accept: 'text/html,application/xhtml+xml,*/*;q=0.8' };
+  let res; try { res = await fetch(u, { redirect: 'follow', headers: H }); } catch { throw bad('The site could not be reached. You can upload a picture instead.'); }
+  if (!res.ok) throw bad(`That site does not allow previews (error ${res.status}). You can upload a picture instead.`);
+  const html = (await res.text()).slice(0, 600000);
+  const pick = names => { for (const n of names) { for (const re of [new RegExp(`<meta[^>]+(?:property|name)=["']${n}["'][^>]*>`, 'i'), new RegExp(`<meta[^>]+content=["'][^"']*["'][^>]+(?:property|name)=["']${n}["'][^>]*>`, 'i')]) { const tag = html.match(re)?.[0], m = tag && tag.match(/content=["']([^"']*)["']/i); if (m && m[1]) return decodeEnt(m[1]); } } return ''; };
+  let img = pick(['og:image:secure_url', 'og:image', 'twitter:image', 'twitter:image:src']) || decodeEnt((html.match(/<link[^>]+rel=["']image_src["'][^>]*href=["']([^"']+)["']/i) || [])[1]);
+  const title = pick(['og:title', 'twitter:title']) || decodeEnt((html.match(/<title[^>]*>([^<]*)/i) || [])[1]), description = pick(['og:description', 'description']).slice(0, 300);
+  if (!img) return { ok: true, title, description, image: null, mime: null };
+  let target; try { target = new URL(img, res.url); } catch { return { ok: true, title, description, image: null, mime: null }; }
+  if (!/^https?:$/.test(target.protocol) || /^(localhost|127\.|10\.|192\.168\.|169\.254\.)/.test(target.hostname)) return { ok: true, title, description, image: null, mime: null };
+  let ir; try { ir = await fetch(target, { redirect: 'follow', headers: { 'User-Agent': H['User-Agent'], Accept: 'image/*' } }); } catch { return { ok: true, title, description, image: null, mime: null }; }
+  const mime = (ir.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+  if (!ir.ok || !/^image\/(jpeg|png|webp|gif)$/.test(mime)) return { ok: true, title, description, image: null, mime: null };
+  const bytes = new Uint8Array(await ir.arrayBuffer()); if (bytes.length > 4 * 1024 * 1024) return { ok: true, title, description, image: null, mime: null };
+  let bin = ''; for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode(...bytes.subarray(i, i + 8192));
+  return { ok: true, title, description, image: btoa(bin), mime };
+});
 route('PUT', '/api/staff/resources/:id', OPS, async ctx => {
   const b = ctx.body;
   const newThumb = /^[A-Za-z0-9+/=]+$/.test(String(b.thumb || '')) && String(b.thumb).length <= 42000 ? String(b.thumb) : null;

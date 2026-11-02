@@ -293,20 +293,24 @@ async function pgResources(el) {
   show(el, html`${pageHead('Resource centre', 'Share manuals, forms and guides with colleges, officers or everyone.', html`<button class="btn secondary" data-act="resPreviewAll">${icon('image')} Make previews for older files</button><button class="btn primary" data-act="addRes">${icon('plus')} Add resource</button>`, 'Operations')}
     ${list.length ? html`<div class="card pad0">${tbl(['Title', 'Category', 'Visible to', 'Type', 'Added', ''], list.map(r => html`<tr><td><div class="nmav">${r.kind === 'file' && r.has_thumb ? html`<img class="rthumb sm" src="/api/resources/${r.id}/thumb" alt="" loading="lazy">` : fileTile(r.filename, r.mime, r.kind === 'link')}<span><b>${r.title}</b><div class="small muted">${r.description || ''}</div></span></div></td><td>${r.category}</td><td>${badge(aud[r.audience], r.audience === 'public' ? 'ok' : 'info')}</td>
       <td>${r.kind === 'link' ? html`${icon('link')} Link` : html`${icon('file')} ${r.filename}${r.size ? html` <span class="xs muted">${Math.round(r.size / 1024)} KB</span>` : ''}`}</td><td class="small">${fdt(r.created_at)}</td>
-      <td><div class="row gap-s nowrap"><button class="btn sm primary" data-act="copyRes" data-s="${resSlug(r)}" title="Copy the portal link to this file">${icon('copy')} Copy link</button><a class="btn sm secondary" href="/#/resource/${r.id}" target="_blank" rel="noopener">${icon('eye')} View</a>${r.kind === 'file' && !r.has_thumb && /pdf|png|jpe?g|webp/i.test(r.filename || '') ? html`<button class="btn sm secondary" data-act="resPreview" data-id="${r.id}">Make preview</button>` : ''}${r.kind === 'link' ? html`<a class="btn sm secondary" href="${r.url}" target="_blank" rel="noopener">${icon('external')} Open</a>` : html`<a class="btn sm secondary" href="/api/resources/${r.id}/download">${icon('download')} Download</a>`}${rowBtn('editRes', 'Edit', 'edit', `data-id="${r.id}"`)}${rowBtn('delRes', '', 'trash', `data-id="${r.id}" aria-label="Delete ${esc(r.title)}"`, 'danger')}</div></td></tr>`))}</div>` : empty('Nothing shared yet', 'Add manuals, circulars and forms here.', 'book')}`);
+      <td><div class="row gap-s nowrap"><button class="btn sm primary" data-act="copyRes" data-s="${resSlug(r)}" title="Copy the portal link to this file">${icon('copy')} Copy link</button><a class="btn sm secondary" href="/#/resource/${r.id}" target="_blank" rel="noopener">${icon('eye')} View</a>${!r.has_thumb && (r.kind === 'link' || /pdf|png|jpe?g|webp/i.test(r.filename || '')) ? html`<button class="btn sm secondary" data-act="resPreview" data-id="${r.id}">${r.kind === 'link' ? 'Get preview' : 'Make preview'}</button>` : ''}${r.kind === 'link' ? html`<a class="btn sm secondary" href="${r.url}" target="_blank" rel="noopener">${icon('external')} Open</a>` : html`<a class="btn sm secondary" href="/api/resources/${r.id}/download">${icon('download')} Download</a>`}${rowBtn('editRes', 'Edit', 'edit', `data-id="${r.id}"`)}${rowBtn('delRes', '', 'trash', `data-id="${r.id}" aria-label="Delete ${esc(r.title)}"`, 'danger')}</div></td></tr>`))}</div>` : empty('Nothing shared yet', 'Add manuals, circulars and forms here.', 'book')}`);
 }
 const CATS = ['Manual', 'Form', 'Circular', 'Template', 'Training', 'General'];
 actions.addRes = () => modal(html`<h2>Add resource</h2><form data-form="res" class="stack-s"><label class="f"><span>Title *</span><input type="text" name="title" required maxlength="140"></label><label class="f"><span>Description</span><input type="text" name="description" maxlength="500"></label>
   <div class="formgrid"><label class="f"><span>Category</span><select name="category">${CATS.map(c => html`<option>${c}</option>`)}</select></label><label class="f"><span>Visible to</span><select name="audience"><option value="colleges">Colleges and schools</option>${feat('staff', 'officers') ? html`<option value="officers">Village officers</option>` : ''}<option value="public">Everyone (public)</option><option value="staff">Staff only</option></select></label></div>
   <div class="seg" role="radiogroup" aria-label="Type"><label><input type="radio" name="kind" value="file" checked><span class="na">${icon('upload')} Upload a file</span></label><label><input type="radio" name="kind" value="link"><span class="na">${icon('link')} Link</span></label></div>
   <label class="f" id="rf"><span>File (PDF, Word, Excel, PowerPoint, image, ZIP · up to 5 MB)</span><input type="file" name="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.png,.jpg,.jpeg,.webp,.zip"></label>
-  <label class="f hide" id="rl"><span>Link (https://…)</span><input type="url" name="url" placeholder="https://"></label>${mfoot('Add resource')}</form>`, { wide: true });
-document.addEventListener('change', e => { if (e.target.name === 'kind') { const link = e.target.value === 'link'; $('#rf')?.classList.toggle('hide', link); $('#rl')?.classList.toggle('hide', !link); } });
+  <label class="f hide" id="rl"><span>Link (https://…)</span><input type="url" name="url" placeholder="https://"></label>
+  <label class="f hide" id="rp"><span>Preview picture (optional)</span><input type="file" name="pfile" accept="image/*"><span class="hint">Left empty, the portal takes the picture from the linked page. If that site does not allow it, upload one here.</span></label>${mfoot('Add resource')}</form>`, { wide: true });
+document.addEventListener('change', e => { if (e.target.name === 'kind') { const link = e.target.value === 'link'; $('#rf')?.classList.toggle('hide', link); $('#rl')?.classList.toggle('hide', !link); $('#rp')?.classList.toggle('hide', !link); } });
 forms.res = async f => {
   const v = fd(f), body = { title: v.title, description: v.description, category: v.category, audience: v.audience, kind: v.kind };
-  if (v.kind === 'link') body.url = v.url;
-  else {
-    const file = $('input[type=file]', f).files[0]; if (!file) throw new Error('Choose a file to upload'); if (file.size > 5 * 1024 * 1024) throw new Error('Files can be up to 5 MB');
+  if (v.kind === 'link') {
+    body.url = v.url; const pf = $('input[name=pfile]', f).files[0];
+    try { if (pf) body.thumb = await thumbB64(await readPhoto(pf, 700), [[360, 0.72], [300, 0.62], [240, 0.55]]); else { const p = await linkPreview(v.url); body.thumb = p.thumb; if (!p.thumb) toast('No picture could be taken from that link. You can add one later with Edit.'); } }
+    catch (e) { toast('Added without a preview picture: ' + e.message, true); }
+  } else {
+    const file = $('input[name=file]', f).files[0]; if (!file) throw new Error('Choose a file to upload'); if (file.size > 5 * 1024 * 1024) throw new Error('Files can be up to 5 MB');
     body.filename = file.name; body.mime = file.type; body.thumb = await fileThumb(file); body.data = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = () => rej(new Error('Could not read the file')); r.readAsDataURL(file); });
   }
   await api('/api/staff/resources', 'POST', body); f.closest('.overlay').close(); toast('Added'); refresh();
@@ -314,21 +318,26 @@ forms.res = async f => {
 actions.editRes = el => { const r = window.__res.find(x => x.id === Number(el.dataset.id));
   modal(html`<h2>Edit resource</h2><form data-form="resEdit" data-id="${r.id}" class="stack-s"><label class="f"><span>Title *</span><input type="text" name="title" value="${r.title}" required maxlength="140"></label><label class="f"><span>Description</span><input type="text" name="description" value="${r.description || ''}" maxlength="500"></label>
   <div class="formgrid"><label class="f"><span>Category</span><select name="category">${[...new Set([...CATS, r.category])].map(c => html`<option ${c === r.category ? 'selected' : ''}>${c}</option>`)}</select></label>
-  <label class="f"><span>Visible to</span><select name="audience">${[['colleges', 'Colleges and schools'], ...(feat('staff', 'officers') || r.audience === 'officers' ? [['officers', 'Village officers']] : []), ['public', 'Everyone (public)'], ['staff', 'Staff only']].map(([k, l]) => html`<option value="${k}" ${r.audience === k ? 'selected' : ''}>${l}</option>`)}</select></label></div>${mfoot('Save')}</form>`); };
-forms.resEdit = async f => { await api('/api/staff/resources/' + f.dataset.id, 'PUT', fd(f)); f.closest('.overlay').close(); toast('Saved'); refresh(); };
+  <label class="f"><span>Visible to</span><select name="audience">${[['colleges', 'Colleges and schools'], ...(feat('staff', 'officers') || r.audience === 'officers' ? [['officers', 'Village officers']] : []), ['public', 'Everyone (public)'], ['staff', 'Staff only']].map(([k, l]) => html`<option value="${k}" ${r.audience === k ? 'selected' : ''}>${l}</option>`)}</select></label></div><label class="f"><span>Change the preview picture (optional)</span><input type="file" name="pfile" accept="image/*"></label>${r.kind === 'link' ? html`<label class="chk"><input type="checkbox" name="refetch"> Take the picture from the link again</label>` : ''}${mfoot('Save')}</form>`); };
+forms.resEdit = async f => {
+  const v = fd(f), r = window.__res.find(x => x.id === Number(f.dataset.id)), body = { ...v }, pf = $('input[name=pfile]', f).files[0]; delete body.pfile; delete body.refetch;
+  if (pf) body.thumb = await thumbB64(await readPhoto(pf, 700), [[360, 0.72], [300, 0.62], [240, 0.55]]);
+  else if (v.refetch && r.kind === 'link') { const p = await linkPreview(r.url); if (!p.thumb) throw new Error('No picture could be taken from that link. Upload one instead.'); body.thumb = p.thumb; }
+  await api('/api/staff/resources/' + f.dataset.id, 'PUT', body); f.closest('.overlay').close(); toast('Saved'); refresh(); };
 actions.resPreview = async el => {
   const r = window.__res.find(x => x.id === Number(el.dataset.id)); toast('Making the preview…');
+  if (r.kind === 'link') { try { const p = await linkPreview(r.url); if (!p.thumb) return toast('No picture could be taken from that link. Use Edit to upload one.', true); await api('/api/staff/resources/' + r.id, 'PUT', { title: r.title, description: r.description, category: r.category, audience: r.audience, thumb: p.thumb }); toast('Preview added'); return refresh(); } catch (e) { return toast(e.message, true); } }
   const blob = await (await fetch(`/api/resources/${r.id}/download`)).blob(), file = new File([blob], r.filename, { type: r.mime || blob.type }), thumb = await fileThumb(file);
   if (!thumb) return toast('A preview could not be made for this file', true);
   await api('/api/staff/resources/' + r.id, 'PUT', { title: r.title, description: r.description, category: r.category, audience: r.audience, thumb }); toast('Preview added'); refresh();
 };
 actions.resPreviewAll = async () => {
-  const todo = window.__res.filter(r => r.kind === 'file' && !r.has_thumb && /pdf|png|jpe?g|webp/i.test(r.filename || ''));
+  const todo = window.__res.filter(r => !r.has_thumb && (r.kind === 'link' || /pdf|png|jpe?g|webp/i.test(r.filename || '')));
   if (!todo.length) return toast('Every file that can have a preview already has one');
   let done = 0;
   for (const r of todo) {
     toast(`Making previews… ${done + 1} of ${todo.length}`);
-    try { const blob = await (await fetch(`/api/resources/${r.id}/download`)).blob(), thumb = await fileThumb(new File([blob], r.filename, { type: r.mime || blob.type })); if (thumb) { await api('/api/staff/resources/' + r.id, 'PUT', { title: r.title, description: r.description, category: r.category, audience: r.audience, thumb }); done++; } } catch {}
+    try { const thumb = r.kind === 'link' ? (await linkPreview(r.url)).thumb : await (async () => { const blob = await (await fetch(`/api/resources/${r.id}/download`)).blob(); return fileThumb(new File([blob], r.filename, { type: r.mime || blob.type })); })(); if (thumb) { await api('/api/staff/resources/' + r.id, 'PUT', { title: r.title, description: r.description, category: r.category, audience: r.audience, thumb }); done++; } } catch {}
   }
   toast(`${done} preview${done === 1 ? '' : 's'} added`); refresh();
 };

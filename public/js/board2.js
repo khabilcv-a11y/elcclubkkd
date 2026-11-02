@@ -180,7 +180,7 @@ async function renderResource(id) {
   let r;
   try { r = await api('/api/resources/' + encodeURIComponent(id)); }
   catch (e) { return show($('#app'), publicShell(html`<div class="wrap section"><div class="card" style="max-width:640px;margin:0 auto">${empty(e.status === 403 ? 'Sign in to open this file' : 'File not found', e.message, 'lock')}<div class="row" style="justify-content:center;margin-top:12px"><a class="btn primary" href="#/login/college">${icon('building')} College sign-in</a><a class="btn secondary" href="#/login/school">${icon('book')} School sign-in</a><a class="btn secondary" href="/admin">${icon('shield')} Staff sign-in</a></div></div></div>`, '')); }
-  const pic = r.kind === 'link' ? html`<div class="rv-tile">${fileTile('', '', true)}<p>This resource is a web link.</p></div>`
+  const pic = r.kind === 'link' ? html`<div class="rv-tile">${r.has_thumb ? html`<img class="resview" src="/api/resources/${r.id}/thumb" alt="">` : fileTile('', '', true)}<p>This resource is a web link.</p></div>`
     : r.mime === 'application/pdf' ? html`<iframe class="pdfview" src="/api/resources/${r.id}/view" title="${r.title}"></iframe>`
     : /^image\//.test(r.mime || '') ? html`<img class="resview" src="/api/resources/${r.id}/view" alt="${r.title}">`
     : html`<div class="rv-tile">${r.has_thumb ? html`<img class="resview" src="/api/resources/${r.id}/thumb" alt="">` : fileTile(r.filename, r.mime)}<p>A preview is not available for this type of file. Download it to open it.</p></div>`;

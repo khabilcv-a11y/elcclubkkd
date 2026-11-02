@@ -88,17 +88,18 @@ function fitText(c, text, box, o) {
   for (const r of runs) for (const part of String(r.t || '').split(/(\s+)/)) { if (!part) continue; if (/^\s+$/.test(part)) { cw0 = null; continue; } if (!cw0) { cw0 = { segs: [] }; words.push(cw0); } cw0.segs.push({ t: caps ? part.toUpperCase() : part, b: !!r.b }); }
   if (!words.length) return { fits: true, size: 0 };
   const pad = Math.min(box.w * 0.03, 14), maxW = box.w - pad * 2, maxLines = o.lines || 1, w0 = o.weight || 800, wb = Math.max(700, w0), family = fontStack(o.font), ital = o.italic ? 'italic ' : '';
-  const fnt = (size, b) => `${ital}${b ? wb : w0} ${size}px ${family}`, LH = maxLines > 2 ? 1.3 : 1.12;
-  let size = o.size || Math.floor(box.h / (maxLines > 1 ? maxLines * LH : 1.15)), lines = null, gap = 0;   // a size set by the designer is the starting point; the text only shrinks when it does not fit
-  for (; size >= 8; size -= size > 160 ? 3 : 1) {
+  const fnt = (size, b) => `${ital}${b ? wb : w0} ${size}px ${family}`, LH = o.lh > 0 ? o.lh : (maxLines > 2 ? 1.3 : 1.12), exact = !!(o.exact && o.size);
+  let fitsExact = true, size = o.size || Math.floor(box.h / (maxLines > 1 ? maxLines * LH : 1.15)), lines = null, gap = 0;   // a size set by the designer is the starting point; the text only shrinks when it does not fit
+  for (; size >= 8; size -= exact ? 1e9 : (size > 160 ? 3 : 1)) {
     c.font = fnt(size, false); gap = c.measureText(' ').width;
     for (const x of words) x.m = x.segs.reduce((n, g) => { c.font = fnt(size, g.b); return n + c.measureText(g.t).width; }, 0);
     const ls = []; let cur = [], cw = 0;
     for (const x of words) { const add = cur.length ? gap + x.m : x.m; if (cur.length && cw + add > maxW) { ls.push(cur); cur = [x]; cw = x.m; } else { cur.push(x); cw += add; } }
     if (cur.length) ls.push(cur);
+    if (exact) { lines = ls; fitsExact = ls.length <= maxLines && ls.length * size * LH <= box.h && words.every(x => x.m <= maxW); break; }
     if (ls.length <= maxLines && ls.length * size * LH <= box.h && words.every(x => x.m <= maxW)) { lines = ls; break; }
   }
-  const fits = !!lines;
+  const fits = exact ? fitsExact : !!lines;
   if (!lines) { size = 8; c.font = fnt(8, false); gap = c.measureText(' ').width; for (const x of words) x.m = x.segs.reduce((n, g) => { c.font = fnt(8, g.b); return n + c.measureText(g.t).width; }, 0); lines = [words]; }
   if (o.dry) return { fits, size };
   c.save(); c.fillStyle = o.color || '#1c2162'; c.textBaseline = 'middle'; c.textAlign = 'left';
@@ -145,6 +146,9 @@ function drawTemplate(c, t, st) {
     else if (!st.exporting) { c.fillStyle = '#7a82ad'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.font = `800 ${Math.round(H * 0.05)}px Inter, Arial, sans-serif`; c.fillText('Add a photo', W / 2, H * 0.42); }
   } else { c.fillStyle = '#fff'; c.fillRect(0, 0, W, H); }
   if (st.img) c.drawImage(st.img, 0, 0, W, H);
+  drawFields(c, t, st);
+}
+function drawFields(c, t, st) {
   for (const f of t.fields) {
     if (f.type === 'logo') {
       if (st.logo) { const k = Math.min(f.w / st.logo.width, f.h / st.logo.height), w = st.logo.width * k, h = st.logo.height * k; c.drawImage(st.logo, f.x + (f.w - w) / 2, f.y + (f.h - h) / 2, w, h); }
@@ -153,7 +157,7 @@ function drawTemplate(c, t, st) {
     }
     const text = f.src === 'fixed' ? (hasTokens(f.value) ? tokenRuns(f.value, st.merge, f.boldMerge, st.exporting) : f.value) : (st.values?.[f.id] ?? '');
     if (text && text.length) fitText(c, text, f, f);
-    else if (!st.exporting && st.showEmpty) fitText(c, f.label, f, { ...f, color: '#9aa1c4', weight: 600, font: 'sans', italic: false, align: 'center', lines: 1, size: 0 });
+    else if (!st.exporting && st.showEmpty) fitText(c, f.label, f, { ...f, color: '#9aa1c4', weight: 600, font: 'sans', italic: false, align: 'center', lines: 1, size: 0, exact: false, lh: 0 });
   }
 }
 // a small picture of a template with sample text, kept in the sheet for the template albums
@@ -216,7 +220,7 @@ function certCheck(t, snaps) {
   const c = document.createElement('canvas').getContext('2d'), bad = [];
   for (const s of snaps) {
     const v = certValues(t, s);
-    for (const f of t.fields) { const txt = fieldContent(f, v, s); if (f.type !== 'text' || !txt || !txt.length) continue; const r = fitText(c, txt, f, { ...f, dry: true }); if (!r.fits || r.size < (f.size ? f.size * 0.8 : Math.max(12, f.h / (f.lines || 1) * (f.lines > 2 ? 0.4 : 0.28)))) { bad.push({ name: s.student, field: f.label }); break; } }
+    for (const f of t.fields) { const txt = fieldContent(f, v, s); if (f.type !== 'text' || !txt || !txt.length) continue; const r = fitText(c, txt, f, { ...f, dry: true }); if (!r.fits || r.size < (f.size && !f.exact ? f.size * 0.8 : f.exact ? 0 : Math.max(12, f.h / (f.lines || 1) * (f.lines > 2 ? 0.4 : 0.28)))) { bad.push({ name: s.student, field: f.label }); break; } }
   }
   return bad;
 }
@@ -245,4 +249,12 @@ async function zipStore(files) {
   const cd = central.reduce((s, p) => s + p.length, 0);
   const end = new Uint8Array([0x50, 0x4b, 5, 6, ...u16(0), ...u16(0), ...u16(files.length), ...u16(files.length), ...u32(cd), ...u32(offset), ...u16(0)]);
   return new Blob([...parts, ...central, end], { type: 'application/zip' });
+}
+
+// the picture of a web link: the server takes it from the linked page, the browser shrinks it to a small thumbnail
+async function linkPreview(url) {
+  const r = await api('/api/staff/resources/link-preview', 'POST', { url });
+  if (!r.image) return { ...r, thumb: null };
+  const bmp = await createImageBitmap(new Blob([Uint8Array.from(atob(r.image), ch => ch.charCodeAt(0))], { type: r.mime }));
+  return { ...r, image: null, thumb: await thumbB64(bmp, [[360, 0.72], [300, 0.62], [240, 0.55]]) };
 }
