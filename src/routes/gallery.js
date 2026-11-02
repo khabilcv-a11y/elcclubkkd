@@ -27,11 +27,14 @@ async function driveBytes(env, driveId, mime) {
   })().finally(() => inflight.delete(driveId)));
   return inflight.get(driveId);
 }
+const extGo = (row, size) => ({ __raw: true, status: 302, headers: { Location: row.ext_url.replace('{s}', size), 'Cache-Control': 'public, max-age=86400' } });
 async function imageResponse(ctx, row, scope) {
+  if (row.ext_url) return extGo(row, 'xlarge');
   const rec = await driveBytes(ctx.env, row.drive_id, row.mime);
   return { __raw: true, bytes: rec.bytes, headers: { 'Content-Type': row.mime || rec.mime || 'image/jpeg', 'Cache-Control': scope === 'public' ? 'public, max-age=604800, immutable' : 'private, max-age=86400, immutable' } };
 }
 async function thumbResponse(ctx, row, scope) {
+  if (row.ext_url) return extGo(row, 'large');
   if (!row.thumb) return imageResponse(ctx, row, scope);          // photos saved before thumbnails existed
   return { __raw: true, bytes: Uint8Array.from(atob(row.thumb), ch => ch.charCodeAt(0)), headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': scope === 'public' ? 'public, max-age=604800, immutable' : 'private, max-age=604800, immutable' } };
 }
@@ -86,7 +89,7 @@ route('DELETE', '/api/college/gallery/:id', 'college', async ctx => {
 // ---------- public: home page album and the gallery page ----------
 // A photo is public when it is switched on and its institution is active (photos uploaded by the district office have no institution).
 const PUBLIC_FROM = `FROM gallery g LEFT JOIN colleges c ON c.id=g.college_id LEFT JOIN gallery_albums a ON a.id=g.album_id WHERE g.visible=1 AND (g.college_id IS NULL OR c.active=1)`;
-const PUBLIC_COLS = `g.id,g.title,g.activity,g.event_date,g.orientation,g.album_id,g.college_id,c.logo_at logo_v,COALESCE(c.name,'District Election Office') college,a.title album`;
+const PUBLIC_COLS = `g.ext_url,g.id,g.title,g.activity,g.event_date,g.orientation,g.album_id,g.college_id,c.logo_at logo_v,COALESCE(c.name,'District Election Office') college,a.title album`;
 async function albumOn(ctx) { if (!(await featureMap(ctx.db)).public.album) throw new HttpError(404, 'Not available'); }
 route('GET', '/api/public/album', null, async ctx => {
   await albumOn(ctx);
@@ -109,10 +112,10 @@ route('GET', '/api/public/gallery', null, async ctx => {
     ctx.db.all(`SELECT ${PUBLIC_COLS} ${PUBLIC_FROM} AND (g.album_id IS NULL OR a.current=1) ORDER BY g.id DESC LIMIT 300`),
     ctx.db.all('SELECT id,title,description,current,sort_order FROM gallery_albums ORDER BY sort_order,id DESC'),
     ctx.db.all(`SELECT g.album_id,COUNT(*) n,MAX(g.id) cover,MAX(g.event_date) last ${PUBLIC_FROM} AND g.album_id IS NOT NULL GROUP BY g.album_id`)]);
-  const cnt = new Map(counts.map(r => [r.album_id, r]));
+  const cnt = new Map(counts.map(r => [r.album_id, r])), ext = new Map((await ctx.db.all(`SELECT id,ext_url FROM gallery WHERE id IN (${counts.map(r => Number(r.cover)).join(',') || 0}) AND ext_url IS NOT NULL`)).map(r => [r.id, r.ext_url]));
   return {
     current,
-    albums: albums.filter(a => cnt.has(a.id)).map(a => ({ ...a, count: cnt.get(a.id).n, last: cnt.get(a.id).last || '', cover: cnt.get(a.id).cover })),
+    albums: albums.filter(a => cnt.has(a.id)).map(a => ({ ...a, count: cnt.get(a.id).n, last: cnt.get(a.id).last || '', cover: cnt.get(a.id).cover, cover_ext: ext.get(cnt.get(a.id).cover) || null })),
     stats: { photos: current.length, institutions: new Set(current.filter(x => x.college_id).map(x => x.college_id)).size },
   };
 });
@@ -132,7 +135,7 @@ route('GET', '/api/staff/gallery/:id/thumb', 'staff', async ctx => {
 });
 route('GET', '/api/staff/gallery', 'staff', async ctx => {
   const s = await scopeOf(ctx);
-  const rows = await ctx.db.all(`SELECT g.id,g.college_id,g.album_id,g.title,g.description,g.activity,g.event_date,g.orientation,g.visible,g.home,g.by_staff,g.created_at,COALESCE(c.name,'District Election Office') college FROM gallery g LEFT JOIN colleges c ON c.id=g.college_id ORDER BY g.id DESC LIMIT 400`);
+  const rows = await ctx.db.all(`SELECT g.id,g.college_id,g.album_id,g.title,g.description,g.activity,g.event_date,g.orientation,g.visible,g.home,g.by_staff,g.created_at,g.ext_url,COALESCE(c.name,'District Election Office') college FROM gallery g LEFT JOIN colleges c ON c.id=g.college_id ORDER BY g.id DESC LIMIT 400`);
   return rows.filter(r => !s || (r.college_id && s.colleges.has(r.college_id)));
 });
 route('GET', '/api/staff/gallery/:id/image', 'staff', async ctx => {
@@ -174,7 +177,7 @@ route('DELETE', '/api/staff/gallery/:id', OPS, async ctx => {
   const g = await ctx.db.get('SELECT * FROM gallery WHERE id=?', Number(ctx.params.id));
   if (!g) throw new HttpError(404, 'Photo not found');
   await ctx.db.run('DELETE FROM gallery WHERE id=?', g.id);
-  ctx.waitUntil(driveDelete(ctx.env, g.drive_id).catch(() => {}));
+  if (g.drive_id) ctx.waitUntil(driveDelete(ctx.env, g.drive_id).catch(() => {}));
   await slog(ctx, 'gallery_delete', g.title);
   return { ok: true };
 });
@@ -204,8 +207,33 @@ route('PUT', '/api/staff/gallery-albums/:id', OPS, async ctx => {
 route('DELETE', '/api/staff/gallery-albums/:id', OPS, async ctx => {
   const id = Number(ctx.params.id), a = await ctx.db.get('SELECT * FROM gallery_albums WHERE id=?', id);
   if (!a) throw new HttpError(404, 'Album not found');
-  if (await ctx.db.get('SELECT 1 x FROM gallery WHERE album_id=?', id)) throw bad('This album still has photos. Move or delete them first.');
+  if (await ctx.db.get('SELECT 1 x FROM gallery WHERE album_id=?', id)) {
+    // an album of linked photos (imported from another site) can be removed together with them; uploaded photos must be moved or deleted first
+    if (ctx.query.force === '1' && !(await ctx.db.get('SELECT 1 x FROM gallery WHERE album_id=? AND ext_url IS NULL', id))) await ctx.db.run('DELETE FROM gallery WHERE album_id=?', id);
+    else throw bad('This album still has photos. Move or delete them first.');
+  }
   await ctx.db.run('DELETE FROM gallery_albums WHERE id=?', id);
   await slog(ctx, 'album_delete', a.title);
   return { ok: true };
+});
+
+// Link photos that already live on a Pixieset gallery into an album. Nothing is copied: the picture is shown from images.pixieset.com
+// in the sizes the page needs ({s} stands for thumb, small, medium, large, xlarge or xxlarge). Running it again skips photos already linked.
+const EXT_URL = /^https:\/\/images\.pixieset\.com\/\d+\/[a-f0-9]+-\{s\}\.(jpe?g|png|webp)$/i;
+route('POST', '/api/staff/gallery/import-external', OPS, async ctx => {
+  const b = ctx.body, title = reqStr(b.album_title, 'Album title', 80), photos = Array.isArray(b.photos) ? b.photos.slice(0, 400) : [];
+  if (!photos.length) throw bad('There are no photos to import');
+  let album = await ctx.db.get('SELECT * FROM gallery_albums WHERE lower(title)=lower(?)', title), created = false;
+  if (!album) { const id = await ctx.db.insert('INSERT INTO gallery_albums(title,description,current,sort_order,created_by,created_at) VALUES (?,?,?,?,?,?)', title, str(b.album_description, 300), b.current ? 1 : 0, 0, ctx.user.username, nowIso()); album = { id }; created = true; }
+  const have = new Set((await ctx.db.all('SELECT src_key FROM gallery WHERE album_id=? AND src_key IS NOT NULL', album.id)).map(r => r.src_key));
+  const ptitle = str(b.photo_title, 100) || title, now = nowIso(); let added = 0, skipped = 0;
+  for (const p of photos) {
+    const key = str(p.k, 80), url = String(p.u || '');
+    if (!key || !EXT_URL.test(url) || have.has(key)) { skipped++; continue; }
+    await ctx.db.insert('INSERT INTO gallery(college_id,title,description,activity,event_date,drive_id,mime,size,orientation,visible,created_at,thumb,album_id,by_staff,home,ext_url,src_key) VALUES (NULL,?,?,?,?,?,?,?,?,1,?,NULL,?,?,0,?,?)',
+      ptitle, '', '', isDate(p.d) && p.d <= todayStr() ? p.d : null, '', 'image/jpeg', 0, Number(p.h) > Number(p.w) ? 'portrait' : 'landscape', now, album.id, ctx.user.username, url, key);
+    have.add(key); added++;
+  }
+  if (added) await slog(ctx, 'gallery_import_external', `${title}: ${added} photos`);
+  return { ok: true, album_id: album.id, created, added, skipped };
 });

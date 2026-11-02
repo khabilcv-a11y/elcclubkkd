@@ -2,6 +2,8 @@
 // ---- shared picture tools: reading photos, thumbnails, fitting text into boxes, drawing templates, PDF export, copy link ----
 const imgCache = {};
 const loadImg = src => imgCache[src] ||= new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
+// a photo linked from another site is shown from there in the size the page needs; uploaded photos come from the portal
+const gUrl = (g, size, fallback) => (g.ext_url ? g.ext_url.replace('{s}', size) : fallback);
 const slug = s => String(s || 'photo').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
 const toB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = () => rej(new Error('Could not read the file')); r.readAsDataURL(blob); });
 function saveBlob(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }

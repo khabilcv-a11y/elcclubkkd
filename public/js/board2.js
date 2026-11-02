@@ -8,7 +8,7 @@ function openLightbox(list, start) {
   const m = modal(html`<div id="lbx"></div>`, { wide: true }); let at = start;
   const paintBox = () => {
     const g = list[at];
-    show($('#lbx', m), html`<figure class="lightbox"><img src="/api/public/album/${g.id}/image" alt="${g.title}, ${g.college}"><figcaption>${albumName(g, 36)}<span>${g.title}</span>${albumMeta(g) ? html`<small>${albumMeta(g)}</small>` : ''}</figcaption></figure>
+    show($('#lbx', m), html`<figure class="lightbox"><img src="${gUrl(g, 'xlarge', `/api/public/album/${g.id}/image`)}" alt="${g.title}, ${g.college}"><figcaption>${albumName(g, 36)}<span>${g.title}</span>${albumMeta(g) ? html`<small>${albumMeta(g)}</small>` : ''}</figcaption></figure>
       <div class="row between lbnav"><button class="btn secondary" data-lb="-1" aria-label="Previous photo">${icon('arrow-left')} Previous</button><span class="small muted">${at + 1} of ${list.length}</span><button class="btn secondary" data-lb="1" aria-label="Next photo">Next ${icon('arrow-right')}</button><button class="btn primary" data-act="closeModal">Close</button></div>`);
   };
   const go = d => { at = (at + d + list.length) % list.length; paintBox(); };
@@ -73,7 +73,7 @@ async function renderCampusBoard() {
 
 // ---------- the gallery page: the running campaign (highlighted) and the albums of previous works ----------
 let GALQ = '', GALACT = '', GALSHOW = 24, GALDATA = null;
-const photoCard = g => html`<button class="pcard rv" data-act="viewPhoto" data-id="${g.id}" aria-label="Open photo: ${g.title}, ${g.college}"><img src="/api/public/album/${g.id}/thumb" alt="${g.title}, ${g.college}" loading="lazy" decoding="async"><span class="cap">${albumName(g, 24)}<span>${g.title}</span>${albumMeta(g) ? html`<small>${albumMeta(g)}</small>` : ''}</span></button>`;
+const photoCard = g => html`<button class="pcard rv" data-act="viewPhoto" data-id="${g.id}" aria-label="Open photo: ${g.title}, ${g.college}"><img src="${gUrl(g, 'large', `/api/public/album/${g.id}/thumb`)}" alt="${g.title}, ${g.college}" loading="lazy" decoding="async"><span class="cap">${albumName(g, 24)}<span>${g.title}</span>${albumMeta(g) ? html`<small>${albumMeta(g)}</small>` : ''}</span></button>`;
 async function renderPublicGallery(albumId) {
   if (!feat('public', 'album')) { location.hash = '#/'; return; }
   show($('#app'), publicShell(html`<div class="wrap section"><div class="loading"><div class="spin"></div>Loading the photos…</div></div>`, 'gallery'));
@@ -101,7 +101,7 @@ function paintGallery() {
   show($('#gnowgrid'), list.length ? html`<div class="pgrid">${list.slice(0, GALSHOW).map(photoCard)}</div>` : empty(q || GALACT ? 'No photos match' : 'No photos yet', q || GALACT ? 'Try another search.' : 'Photos appear here as colleges and schools share them.', 'image'));
   show($('#gmore'), list.length > GALSHOW ? html`<button class="btn secondary" data-act="galMore">Show more photos (${list.length - GALSHOW} more) ${icon('chevron-down')}</button>` : '');
   const albums = G.albums.filter(a => !q || [a.title, a.description].some(x => String(x || '').toLowerCase().includes(q)));
-  show($('#galbums'), albums.length ? html`<div class="albgrid">${albums.map(a => html`<a class="albcard rv" href="#/gallery/${a.id}" aria-label="Open album: ${a.title}, ${a.count} photos"><span class="albstack"><i></i><i></i><img src="/api/public/album/${a.cover}/thumb" alt="" loading="lazy" decoding="async"></span><span class="albinfo"><b>${a.title}</b><small>${a.count} photo${a.count === 1 ? '' : 's'}${a.last ? ' · ' + new Date(a.last + 'T00:00:00').getFullYear() : ''}</small>${a.description ? html`<em>${a.description}</em>` : ''}</span></a>`)}</div>`
+  show($('#galbums'), albums.length ? html`<div class="albgrid">${albums.map(a => html`<a class="albcard rv" href="#/gallery/${a.id}" aria-label="Open album: ${a.title}, ${a.count} photos"><span class="albstack"><i></i><i></i><img src="${a.cover_ext ? a.cover_ext.replace('{s}', 'large') : `/api/public/album/${a.cover}/thumb`}" alt="" loading="lazy" decoding="async"></span><span class="albinfo"><b>${a.title}</b><small>${a.count} photo${a.count === 1 ? '' : 's'}${a.last ? ' · ' + new Date(a.last + 'T00:00:00').getFullYear() : ''}</small>${a.description ? html`<em>${a.description}</em>` : ''}</span></a>`)}</div>`
     : empty(G.albums.length ? 'No album matches' : 'Albums are coming soon', G.albums.length ? 'Try another search.' : 'Our earlier campaigns will be shown here as albums.', 'folder'));
 }
 actions.galAct = el => { GALACT = el.dataset.k; GALSHOW = 24; paintGallery(); };

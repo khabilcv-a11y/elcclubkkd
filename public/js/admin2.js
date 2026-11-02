@@ -57,11 +57,11 @@ async function apGallery(el) {
   const ops = isOps(), albumOf = id => albums.find(a => a.id === id);
   const shown = items.filter(g => GALF === 'all' || (GALF === 'inst' && g.college_id) || (GALF === 'office' && !g.college_id) || (GALF === 'cur' && !g.album_id) || String(g.album_id) === GALF);
   const chips = [['all', `All (${items.length})`], ['inst', 'From colleges and schools'], ['office', 'Added by the office'], ['cur', 'Current campaign'], ...albums.map(a => [String(a.id), `${a.title} (${a.count})`])];
-  show(el, html`${pageHead('Gallery', 'Photos from colleges and schools, and photos you add yourself. Create albums with titles to sort the public gallery: the current campaign is highlighted, earlier work is shown as albums.', ops ? html`<button class="btn secondary" data-act="albAdd">${icon('plus')} New album</button><button class="btn primary" data-act="galAdd">${icon('upload')} Add photos</button>` : '', 'Campus to booth')}
+  show(el, html`${pageHead('Gallery', 'Photos from colleges and schools, and photos you add yourself. Create albums with titles to sort the public gallery: the current campaign is highlighted, earlier work is shown as albums.', ops ? html`<button class="btn secondary" data-act="pxImport">${icon('image')} Import from Pixieset</button><button class="btn secondary" data-act="albAdd">${icon('plus')} New album</button><button class="btn primary" data-act="galAdd">${icon('upload')} Add photos</button>` : '', 'Campus to booth')}
     ${ops ? html`<div class="card" style="margin-bottom:16px"><div class="card-head"><h3>${icon('folder')} Albums</h3><a class="btn ghost sm" href="/#/gallery" target="_blank" rel="noopener">${icon('external')} See the public gallery</a></div>
-      ${albums.length ? html`<div class="albrows">${albums.map(a => html`<div class="albrow"><div><b>${a.title}</b> ${a.current ? badge('Current campaign', 'ok') : badge('Previous works', 'grey')}<div class="small muted">${a.count} photo${a.count === 1 ? '' : 's'}${a.description ? ' · ' + a.description : ''}</div></div><div class="row gap-s nowrap">${rowBtn('albEdit', 'Edit', 'edit', `data-id="${a.id}"`)}${rowBtn('albDel', '', 'trash', `data-id="${a.id}" aria-label="Delete album ${esc(a.title)}"`, 'danger')}</div></div>`)}</div>` : html`<p class="muted small">No albums yet. Photos from colleges and schools appear under "Current campaign" automatically. Create an album to add earlier work such as a previous election drive.</p>`}</div>` : ''}
+      ${albums.length ? html`<div class="albrows" style="max-height:320px;overflow:auto">${albums.map(a => html`<div class="albrow"><div><b>${a.title}</b> ${a.current ? badge('Current campaign', 'ok') : badge('Previous works', 'grey')}<div class="small muted">${a.count} photo${a.count === 1 ? '' : 's'}${a.description ? ' · ' + a.description : ''}</div></div><div class="row gap-s nowrap">${rowBtn('albEdit', 'Edit', 'edit', `data-id="${a.id}"`)}${rowBtn('albDel', '', 'trash', `data-id="${a.id}" aria-label="Delete album ${esc(a.title)}"`, 'danger')}</div></div>`)}</div>` : html`<p class="muted small">No albums yet. Photos from colleges and schools appear under "Current campaign" automatically. Create an album to add earlier work such as a previous election drive.</p>`}</div>` : ''}
     <div class="chips" style="margin-bottom:14px" role="group" aria-label="Show">${chips.map(([k, l]) => html`<button class="chip ${GALF === k ? 'on' : ''}" data-act="galFilter" data-k="${k}">${l}</button>`)}</div>
-    ${shown.length ? html`<div class="galgrid">${shown.map(g => html`<article class="galcard ${g.visible ? '' : 'dim'}"><img src="/api/staff/gallery/${g.id}/thumb" alt="${g.title}" loading="lazy" decoding="async"><div class="galbody"><h3>${g.title}</h3><div class="small muted"><b>${g.college}</b>${g.activity ? ' · ' + g.activity : ''} · ${fdate(g.event_date)}</div>${g.description ? html`<p class="small">${g.description}</p>` : ''}
+    ${shown.length ? html`<div class="galgrid">${shown.map(g => html`<article class="galcard ${g.visible ? '' : 'dim'}"><img src="${gUrl(g, 'medium', `/api/staff/gallery/${g.id}/thumb`)}" alt="${g.title}" loading="lazy" decoding="async"><div class="galbody"><h3>${g.title}</h3><div class="small muted"><b>${g.college}</b>${g.activity ? ' · ' + g.activity : ''} · ${fdate(g.event_date)}</div>${g.description ? html`<p class="small">${g.description}</p>` : ''}
       <div class="pillrow" style="margin-top:6px">${g.album_id && albumOf(g.album_id) ? badge(albumOf(g.album_id).title, 'info') : badge('Current campaign', 'ok')}${g.visible ? badge('Public', 'ok') : badge('Hidden', 'grey')}${g.home ? badge('On home page', 'info') : ''}</div>
       ${ops ? html`<div class="row gap-s" style="margin-top:10px"><button class="btn sm secondary" data-act="galVis" data-id="${g.id}" data-v="${g.visible ? 0 : 1}">${g.visible ? 'Hide' : 'Show'}</button><button class="btn sm secondary" data-act="galMove" data-id="${g.id}">${icon('folder')} Album</button><button class="btn sm danger" data-act="galDel" data-id="${g.id}" aria-label="Delete ${g.title}">${icon('trash')}</button></div>` : ''}</div></article>`)}</div>` : html`<div class="card">${empty('No photos here yet', 'Photos appear as colleges and schools save framed photos. You can also add photos yourself.', 'image')}</div>`}`);
 }
@@ -108,7 +108,7 @@ const albumForm = a => html`<form data-form="album" data-id="${a?.id || ''}" cla
 actions.albAdd = () => { window.__albums ||= []; modal(html`<h2>New album</h2>${albumForm()}`); };
 actions.albEdit = el => modal(html`<h2>Edit album</h2>${albumForm(window.__albums.find(a => a.id === Number(el.dataset.id)))}`);
 forms.album = async f => { const id = f.dataset.id, v = fd(f); await api(id ? '/api/staff/gallery-albums/' + id : '/api/staff/gallery-albums', id ? 'PUT' : 'POST', { title: v.title, description: v.description, current: !!v.current }); f.closest('.overlay').close(); toast('Saved'); apGallery($('#pg')); };
-actions.albDel = async el => { if (!await confirmBox('Delete this album? It must have no photos.', 'Delete', true)) return; await api('/api/staff/gallery-albums/' + el.dataset.id, 'DELETE'); toast('Deleted'); apGallery($('#pg')); };
+actions.albDel = async el => { const a = window.__albums.find(x => x.id === Number(el.dataset.id)); if (!await confirmBox(a.count ? `Delete this album and its ${a.count} photos? This works only for albums of photos linked from another site; uploaded photos must be moved or deleted first.` : 'Delete this empty album?', 'Delete', true)) return; await api('/api/staff/gallery-albums/' + el.dataset.id + (a.count ? '?force=1' : ''), 'DELETE'); toast('Deleted'); apGallery($('#pg')); };
 
 // ---------- Dashboard: total coverage, and every college's input and performance ----------
 let DBKIND = '', DBSORT = 'low';
@@ -145,3 +145,34 @@ async function apDashboard(el) {
 }
 actions.dbKind = el => { DBKIND = el.dataset.k; apDashboard($('#pg')); };
 actions.dbSort = el => { DBSORT = el.dataset.k; apDashboard($('#pg')); };
+
+// ---------- link the photos of the district's Pixieset galleries into albums (one album per set; report screenshots and clippings are left out) ----------
+actions.pxImport = async () => {
+  let M; try { M = await (await fetch('/data/pixieset-import.json')).json(); } catch { return toast('The photo list could not be loaded', true); }
+  window.__px = M; const total = M.galleries.reduce((n, g) => n + g.sets.filter(x => !x.report).reduce((m, x) => m + x.photos.length, 0), 0);
+  const mdl = modal(html`<h2>Import photos from Pixieset</h2><p class="muted small">Each set becomes an album in <b>Previous works</b>, with the photos shown straight from the Pixieset gallery (nothing is copied to the portal's storage, so it costs nothing). Sets that hold press clippings and social media statistics are left unticked. Running this again skips photos already imported.</p>
+    <div class="tablewrap" style="max-height:48vh"><table data-nosort><thead><tr><th style="width:36px"><input type="checkbox" id="pxall" checked aria-label="Select all sets"></th><th>Set</th><th class="num">Photos</th></tr></thead><tbody>
+    ${M.galleries.map(g => html`<tr class="total"><td colspan="3"><b>${g.album}</b> <span class="xs muted">${g.host}</span></td></tr>${g.sets.map(x => html`<tr><td><input type="checkbox" data-px="${g.key}|${x.slug}" ${x.report ? '' : 'checked'} aria-label="${esc(x.title)}"></td><td>${x.title}${x.report ? html` <span class="badge grey">press / social media reports</span>` : ''}</td><td class="num">${x.photos.length}</td></tr>`)}`)}</tbody></table></div>
+    <div id="pxinfo" class="small muted" style="margin:10px 0"></div><div id="pxbar" class="progress hide"><i style="width:0%"></i></div>
+    <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn secondary" data-act="closeModal">Close</button><button class="btn primary" id="pxgo" data-act="pxRun">${icon('upload')} Import the ticked sets</button></div>`, { wide: true });
+  const upd = () => { const sel = $$('[data-px]:checked').map(i => i.dataset.px), n = M.galleries.flatMap(g => g.sets.filter(x => sel.includes(g.key + '|' + x.slug))).reduce((m, x) => m + x.photos.length, 0); $('#pxinfo').textContent = `${sel.length} set${sel.length === 1 ? '' : 's'} ticked, ${n.toLocaleString('en-IN')} photos (of ${total.toLocaleString('en-IN')} activity photos).`; };
+  mdl.addEventListener('change', e => { if (e.target.id === 'pxall') { $$('[data-px]').forEach(i => { i.checked = e.target.checked; }); } if (e.target.id === 'pxall' || e.target.dataset?.px) upd(); }); upd();
+};
+actions.pxRun = async el => {
+  const M = window.__px, sel = $$('[data-px]:checked').map(i => i.dataset.px); if (!sel.length) return toast('Tick at least one set', true);
+  el.disabled = true; const bar = $('#pxbar'); bar.classList.remove('hide');
+  const jobs = M.galleries.flatMap(g => g.sets.filter(x => sel.includes(g.key + '|' + x.slug)).map(x => ({ g, x }))), all = jobs.reduce((n, j) => n + j.x.photos.length, 0); let done = 0, added = 0, skipped = 0, albums = 0;
+  try {
+    for (const { g, x } of jobs) {
+      const title = g.album + ': ' + x.title;
+      for (let i = 0; i < x.photos.length; i += 300) {
+        $('#pxinfo').textContent = `Importing ${title}… (${done.toLocaleString('en-IN')} of ${all.toLocaleString('en-IN')})`; $('i', bar).style.width = Math.round(done * 100 / all) + '%';
+        const r = await api('/api/staff/gallery/import-external', 'POST', { album_title: title, album_description: g.about, photo_title: x.title,
+          photos: x.photos.slice(i, i + 300).map(p => ({ k: g.key + ':' + p[0], u: `https://images.pixieset.com/${p[1]}-{s}.${p[2]}`, w: p[3], h: p[4], d: p[5] })) });
+        added += r.added; skipped += r.skipped; if (r.created && i === 0) albums++; done += Math.min(300, x.photos.length - i);
+      }
+    }
+    $('i', bar).style.width = '100%'; $('#pxinfo').innerHTML = `<b>Done.</b> ${added.toLocaleString('en-IN')} photos added in ${albums} new album${albums === 1 ? '' : 's'}${skipped ? `; ${skipped} were already there` : ''}.`;
+    toast(`${added} photos added`); el.textContent = 'Done'; apGallery($('#pg'));
+  } catch (e) { $('#pxinfo').innerHTML = `<span style="color:var(--danger)">${esc(e.message)}</span> Press the button again to continue: photos already added are skipped.`; el.disabled = false; }
+};

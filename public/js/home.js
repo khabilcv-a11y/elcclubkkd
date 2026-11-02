@@ -96,7 +96,7 @@ function albumSection() {
 function startAlbum() {
   clearInterval(albumTimer); const st = $('#cfstage'); if (!st) return;
   albumList = ALBUM.slice(0, 12);
-  st.innerHTML = albumList.map((g, i) => `<figure class="cf-card" data-i="${i}" data-act="cfGo" aria-label="${esc(g.college)}: ${esc(g.title)}"><div class="bg" data-src="/api/public/album/${g.id}/thumb"></div><img data-src="/api/public/album/${g.id}/thumb" data-full="/api/public/album/${g.id}/image" alt="${esc(g.title)}, ${esc(g.college)}" draggable="false"></figure>`).join('');
+  st.innerHTML = albumList.map((g, i) => `<figure class="cf-card" data-i="${i}" data-act="cfGo" aria-label="${esc(g.college)}: ${esc(g.title)}"><div class="bg" data-src="${gUrl(g, 'medium', `/api/public/album/${g.id}/thumb`)}"></div><img data-src="${gUrl(g, 'large', `/api/public/album/${g.id}/thumb`)}" data-full="${gUrl(g, 'xlarge', `/api/public/album/${g.id}/image`)}" alt="${esc(g.title)}, ${esc(g.college)}" draggable="false"></figure>`).join('');
   setAlbum(0);
   const box = $('#cf'); let paused = false, x0 = null;
   box.addEventListener('mouseenter', () => { paused = true; }); box.addEventListener('mouseleave', () => { paused = false; });

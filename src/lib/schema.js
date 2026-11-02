@@ -51,7 +51,7 @@ export const TABLES = {
     ['activity', 'TEXT', { nn: 1 }], ['activity_other', 'TEXT'], ['name', 'TEXT', { nn: 1 }], ['contact', 'TEXT'], ['created_at', 'TEXT']] },
   // photos made with the frame editor (files live in Google Drive)
   gallery: { pk: ['id'], cols: [['id', 'INTEGER'], ['college_id', 'INTEGER', { ref: ['colleges', 'CASCADE'] }], ['title', 'TEXT', { nn: 1 }], ['description', 'TEXT'], ['activity', 'TEXT'],
-    ['event_date', 'TEXT'], ['drive_id', 'TEXT', { nn: 1 }], ['mime', 'TEXT'], ['size', 'INTEGER'], ['orientation', 'TEXT'], ['visible', 'INTEGER', { nn: 1, def: 1 }], ['created_at', 'TEXT'], ['thumb', 'TEXT'], ['album_id', 'INTEGER'], ['by_staff', 'TEXT'], ['home', 'INTEGER']] },
+    ['event_date', 'TEXT'], ['drive_id', 'TEXT', { nn: 1 }], ['mime', 'TEXT'], ['size', 'INTEGER'], ['orientation', 'TEXT'], ['visible', 'INTEGER', { nn: 1, def: 1 }], ['created_at', 'TEXT'], ['thumb', 'TEXT'], ['album_id', 'INTEGER'], ['by_staff', 'TEXT'], ['home', 'INTEGER'], ['ext_url', 'TEXT'], ['src_key', 'TEXT']] },
   // albums the district office creates to sort the public gallery (current = part of the running campaign, otherwise "previous works")
   gallery_albums: { pk: ['id'], cols: [['id', 'INTEGER'], ['title', 'TEXT', { nn: 1 }], ['description', 'TEXT'], ['current', 'INTEGER', { nn: 1, def: 0 }], ['sort_order', 'INTEGER', { nn: 1, def: 0 }], ['created_by', 'TEXT'], ['created_at', 'TEXT']] },
   // photo frames and poster / banner templates: an image plus the boxes where text (or the logo) is placed

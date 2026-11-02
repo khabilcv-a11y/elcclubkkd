@@ -180,7 +180,7 @@ export async function handle(req, env, execCtx, extra) {
     for (const c of ctx.cookies) headers.append('Set-Cookie', c);
     if (out.__raw) {
       for (const [k, v] of Object.entries(out.headers || {})) headers.set(k, v);
-      return new Response(out.bytes || out.text, { headers });
+      return new Response(out.bytes || out.text || null, { headers, status: out.status || 200 });
     }
     headers.set('Content-Type', 'application/json; charset=utf-8');
     return new Response(JSON.stringify(out), { headers });
