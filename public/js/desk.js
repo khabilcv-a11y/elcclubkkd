@@ -93,13 +93,12 @@ function paintVol() {
   const d = volSorted(), [sk, sd] = VSORT[VVIEW];
   $('#volcount').textContent = VVIEW === 'student' ? `${d.rows.length} student${d.rows.length === 1 ? '' : 's'}` : `${d.rows.length} entr${d.rows.length === 1 ? 'y' : 'ies'}`;
   const fmt = (k, v) => (['date', 'first', 'last'].includes(k) && v ? fdate(v) : v);
-  show(box, d.rows.length ? html`<div class="tablewrap" style="max-height:420px"><table><caption class="sr">Volunteer list</caption><thead><tr>${d.cols.map(([k, l]) => html`<th class="sortable ${k === 'days' ? 'num' : ''}" tabindex="0" data-act="volSort" data-k="${k}" aria-sort="${sk === k ? (sd === 1 ? 'ascending' : 'descending') : 'none'}">${l} ${sk === k ? (sd === 1 ? '▲' : '▼') : ''}</th>`)}</tr></thead>
+  show(box, d.rows.length ? html`<div class="tablewrap" style="max-height:420px"><table><caption class="sr">Volunteer list</caption><thead><tr>${d.cols.map(([k, l]) => html`<th class="${k === 'days' ? 'num' : ''}" aria-sort="${sk === k ? (sd === 1 ? 'ascending' : 'descending') : 'none'}"><button type="button" class="sortbtn ${sk === k ? 'on' : ''}" data-act="volSort" data-k="${k}" title="Sort by ${l}">${l}<span class="sico ${sk === k ? (sd === 1 ? 'asc' : 'desc') : ''}" aria-hidden="true"></span></button></th>`)}</tr></thead>
       <tbody>${d.rows.map(r => html`<tr>${d.cols.map(([k]) => html`<td class="${k === 'days' ? 'num' : ''}">${fmt(k, r[k])}</td>`)}</tr>`)}</tbody></table></div>`
     : html`<div style="padding:20px">${empty(VOL.length ? 'No one matches' : 'No volunteers added yet', VOL.length ? 'Try another search or activity.' : 'Names you add above appear here, with their activities and dates.', 'users')}</div>`);
 }
 actions.volView = el => { VVIEW = el.dataset.k; $$('[data-act=volView]').forEach(b => b.classList.toggle('on', b === el)); paintVol(); };
 actions.volSort = el => { const k = el.dataset.k, s = VSORT[VVIEW]; VSORT[VVIEW] = s[0] === k ? [k, -s[1]] : [k, 1]; paintVol(); };
-document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('th[data-act=volSort]')) { e.preventDefault(); e.target.click(); } });
 actions.volCsv = () => {
   const d = volSorted(), q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
   const text = '﻿' + [d.cols.map(c => q(c[1])).join(','), ...d.rows.map(r => d.cols.map(([k]) => q(r[k])).join(','))].join('\r\n');

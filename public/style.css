@@ -541,3 +541,12 @@ hr.soft{border:0;border-top:1px solid var(--line);margin:18px 0}
 .entryrow{display:grid;grid-template-columns:150px 1fr 38px;gap:8px;align-items:center}@media(max-width:560px){.entryrow{grid-template-columns:1fr 1fr 38px}}
 .pill.sm{padding:2px 9px;font-size:.76rem}.pillrow.tight{gap:4px}
 .certfoot{padding:12px 16px;border-top:1px solid var(--line);background:#fafbff;position:sticky;bottom:0}
+.ib .icon{width:16px;height:16px;display:block}.ctable td .icon{width:13px;height:13px;vertical-align:-2px;margin-right:2px;color:var(--muted)}.ctable th .icon{width:15px;height:15px}
+/* sort buttons on every report column */
+.sortbtn{display:inline-flex;align-items:center;gap:6px;border:0;background:none;padding:0;margin:0;font:inherit;font-size:inherit;font-weight:inherit;text-transform:inherit;letter-spacing:inherit;color:inherit;cursor:pointer;text-align:inherit}
+.sortbtn:hover,.sortbtn.on{color:var(--brand)}.sortbtn:focus-visible{outline:2px solid var(--saffron);outline-offset:3px;border-radius:4px}
+.th-num .sortbtn,th.num .sortbtn{flex-direction:row-reverse}
+.sico{display:inline-flex;flex-direction:column;gap:2px;width:8px}
+.sico::before,.sico::after{content:"";border-left:4px solid transparent;border-right:4px solid transparent;opacity:.35}
+.sico::before{border-bottom:5px solid currentColor}.sico::after{border-top:5px solid currentColor}
+.sico.asc::before{opacity:1}.sico.desc::after{opacity:1}

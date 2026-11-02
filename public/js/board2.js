@@ -18,14 +18,14 @@ function openLightbox(list, start) {
 }
 const kindLabel = i => (i.kind === 'school' ? 'School' : 'College');
 // badges earned: Epic of Kozhikode (100%), milestones on the way, steady reporting and photos
-const BADGE = { epic: ['★ Epic of Kozhikode', 'gold'], p75: ['75% club', 'ok'], p50: ['Halfway there', 'info'], p25: ['First quarter', 'grey'], reporter: ['Daily reporter', 'saffron'], lens: ['Photo champion', 'info'] };
+const BADGE = { epic: ['Epic of Kozhikode', 'gold'], p75: ['75% club', 'ok'], p50: ['Halfway there', 'info'], p25: ['First quarter', 'grey'], reporter: ['Daily reporter', 'saffron'], lens: ['Photo champion', 'info'] };
 const badgeChips = (list, max = 3) => html`${(list || []).slice(0, max).map(b => BADGE[b] ? html`<span class="badge ${BADGE[b][1]}">${BADGE[b][0]}</span>` : '')}`;
 const raceNote = k => html`<div class="card rv racenote" style="margin-top:24px">${icon('trophy')}<div><b>The ranking opens soon</b><p>${k ? `${k} college${k === 1 ? ' has' : 's and schools have'} entered numbers so far. ` : ''}The leaderboard appears once more than 5 colleges and schools are in the race. Every registration counts, so keep your daily report up to date.</p></div></div>`;
 // 100% covered: the Epic of Kozhikode
 function epicSection(C) {
   const epics = C.institutions.filter(i => i.epic); if (!epics.length) return '';
   return html`<div class="epic rv"><div class="epic-head"><span class="epic-ic">${icon('award')}</span><div><span class="epic-eyebrow">100% covered</span><h3>Epic of Kozhikode</h3><p>These colleges and schools have brought every eligible student onto the electoral roll.</p></div></div>
-    <div class="epic-grid">${epics.map(c => html`<div class="epic-card">${avatar(c.id, c.logo_v, c.name, 52)}<b>${c.name}</b><small>${kindLabel(c)} · ${n(c.registered)} students registered</small><span class="badge gold">★ Epic of Kozhikode</span></div>`)}</div></div>`;
+    <div class="epic-grid">${epics.map(c => html`<div class="epic-card">${avatar(c.id, c.logo_v, c.name, 52)}<b>${c.name}</b><small>${kindLabel(c)} · ${n(c.registered)} students registered</small><span class="badge gold">Epic of Kozhikode</span></div>`)}</div></div>`;
 }
 
 function podiumHtml(top) {
