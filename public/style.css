@@ -627,3 +627,6 @@ body.noscroll{overflow:hidden}
 .igcard iframe{width:100%;height:100%;border:0;display:block}
 .igph{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;background:linear-gradient(160deg,#fdf1f7,#f3f1fd);color:var(--muted)}.igglyph .icon{width:34px;height:34px;color:#c13584}
 .igbtn{top:46%}.igbtn.prev{left:-6px}.igbtn.next{right:-6px;left:auto}@media(max-width:720px){.igbtn{display:none}}
+
+button.albpic{border:0;background:none;padding:0;cursor:pointer;font:inherit;width:calc(100% - 8px)}
+.albtile.adm small{text-transform:none;letter-spacing:0}

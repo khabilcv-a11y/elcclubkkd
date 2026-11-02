@@ -127,16 +127,20 @@ async function wallLoad(reset) {
 const wallFill = () => { const s = $('#wsent'); if (s && WALL && !WALL.done && !WALL.loading && s.getBoundingClientRect().top < innerHeight + 700) wallLoad(); };
 async function renderPublicGallery(a, b) {
   if (!feat('public', 'album')) { location.hash = '#/'; return; }
-  if (a === 'albums') return renderAlbumIndex();
+  if (!a || a === 'albums') return renderAlbumIndex();
   show($('#app'), publicShell(html`<div class="wrap section"><div class="loading"><div class="spin"></div>Loading the photos…</div></div>`, 'gallery'));
-  if (a && a !== 'photo') {
+  if (a === 'current') {
+    try { const G = await api('/api/public/gallery'); return renderAlbumPage({ album: { title: 'Current campaign', description: 'Photos from colleges, schools and the district office.', current: 1 }, photos: G.current }); }
+    catch (e) { return show($('#app'), publicShell(html`<div class="wrap section"><div class="alert err">${e.message}</div></div>`, 'gallery')); }
+  }
+  if (a && a !== 'photo' && a !== 'all') {
     try { return renderAlbumPage(await api('/api/public/gallery/album/' + encodeURIComponent(a))); }
     catch (e) { return show($('#app'), publicShell(html`<div class="wrap section"><div class="alert err">${e.message}</div><p style="margin-top:12px"><a class="btn secondary" href="#/gallery">Back to the gallery</a></p></div>`, 'gallery')); }
   }
   const keep = WALL;
   WALL = { sort: keep?.sort || 'featured', q: keep?.q || '', seed: 1 + Math.floor(Math.random() * 90000), items: [], total: 0, loading: false, done: false };
   const W = WALL;
-  show($('#app'), publicShell(html`<div class="wrap" style="padding-top:26px"><div class="wall-head"><div><div class="crumb">Electoral Literacy Clubs</div><h1>Gallery</h1><p>Photos from the district administration, colleges and schools. Scroll to explore, or search for a place, an event or a college.</p></div><a class="btn secondary" href="#/gallery/albums">${icon('folder')} Browse albums</a></div>
+  show($('#app'), publicShell(html`<div class="wrap" style="padding-top:26px"><div class="wall-head"><div><div class="crumb">Electoral Literacy Clubs</div><h1>Gallery</h1><p>Photos from the district administration, colleges and schools. Scroll to explore, or search for a place, an event or a college.</p></div><a class="btn secondary" href="#/gallery">${icon('folder')} Back to albums</a></div>
     <div class="wall-bar"><label class="f wall-search"><span class="sr">Search photos</span>${icon('search')}<input type="search" id="wq" placeholder="Search a college, event or album…" value="${esc(W.q)}"></label>
       <label class="f wall-sort"><span class="sr">Order</span><select id="wsort" aria-label="Order of photos">${Object.entries(SORT_LABEL).map(([k, l]) => html`<option value="${k}" ${W.sort === k ? 'selected' : ''}>${l}</option>`)}</select></label>
       <button class="btn secondary" id="wshuf" type="button">${icon('refresh')} Shuffle</button><span class="wall-count" id="wcount" aria-live="polite"></span></div>
@@ -158,18 +162,19 @@ async function renderPublicGallery(a, b) {
 async function renderAlbumIndex() {
   show($('#app'), publicShell(html`<div class="wrap section"><div class="loading"><div class="spin"></div>Loading the albums…</div></div>`, 'gallery'));
   let G; try { G = await api('/api/public/gallery'); } catch (e) { return show($('#app'), publicShell(html`<div class="wrap section"><div class="alert err">${e.message}</div></div>`, 'gallery')); }
-  show($('#app'), publicShell(html`<div class="wrap" style="padding-top:26px">${pageHead('Albums', 'Photos gathered by campaign and event. Prefer to scroll everything? Go back to the gallery.', html`<a class="btn secondary" href="#/gallery">${icon('arrow-left')} All photos</a>`, 'Electoral Literacy Clubs')}
+  show($('#app'), publicShell(html`<div class="wrap" style="padding-top:26px">${pageHead('Gallery', 'Photos gathered by campaign and event. Open an album to look through it, or see every photo at once.', html`<a class="btn secondary" href="#/gallery/all">${icon('image')} See all photos once</a>`, 'Electoral Literacy Clubs')}
     <div class="wall-bar"><label class="f wall-search"><span class="sr">Search albums</span>${icon('search')}<input type="search" id="alq" placeholder="Search albums…"></label><span class="wall-count" id="alc"></span></div><div id="galbums"></div></div>`, 'gallery'));
   const paint = () => {
     const q = $('#alq').value.toLowerCase().trim(), list = G.albums.filter(a => !q || [a.title, a.description].some(x => String(x || '').toLowerCase().includes(q)));
-    $('#alc').textContent = `${list.length} album${list.length === 1 ? '' : 's'}`;
-    show($('#galbums'), list.length ? html`<div class="albgrid2">${list.map(a => html`<a class="albtile" href="#/gallery/${a.id}" aria-label="Open album: ${a.title}, ${a.count} photos"><span class="albpic"><i></i><img src="${a.cover_ext ? a.cover_ext.replace('{s}', 'large') : `/api/public/album/${a.cover}/thumb`}" alt="" loading="lazy" decoding="async"><span class="albn">${a.count}</span></span><b>${a.title}</b><small>${a.last ? new Date(a.last + 'T00:00:00').toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : ''}</small></a>`)}</div>` : empty('No album matches', 'Try another word.', 'folder'));
+    $('#alc').textContent = `${list.length + (G.current?.length && !q ? 1 : 0)} album${list.length === 1 && !(G.current?.length && !q) ? '' : 's'}`;
+    const cur = G.current && G.current.length && !q ? html`<a class="albtile" href="#/gallery/current" aria-label="Open album: Current campaign"><span class="albpic"><i></i><img src="${gUrl(G.current[0], 'large', `/api/public/album/${G.current[0].id}/thumb`)}" alt="" loading="lazy" decoding="async"><span class="albn">${G.current.length}</span></span><b>Current campaign</b><small>Colleges, schools and the district office</small></a>` : '';
+    show($('#galbums'), list.length || cur ? html`<div class="albgrid2">${cur}${list.map(a => html`<a class="albtile" href="#/gallery/${a.id}" aria-label="Open album: ${a.title}, ${a.count} photos"><span class="albpic"><i></i><img src="${a.cover_ext ? a.cover_ext.replace('{s}', 'large') : `/api/public/album/${a.cover}/thumb`}" alt="" loading="lazy" decoding="async"><span class="albn">${a.count}</span></span><b>${a.title}</b><small>${a.last ? new Date(a.last + 'T00:00:00').toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : ''}</small></a>`)}</div>` : empty('No album matches', 'Try another word.', 'folder'));
   };
   $('#alq').addEventListener('input', paint); paint();
 }
 function renderAlbumPage(d) {
   const a = d.album; window.__pubgalList = d.photos; window.__pubgalOpts = {};
-  show($('#app'), publicShell(html`<div class="wrap" style="padding-top:26px">${pageHead(a.title, a.description || `${d.photos.length} photo${d.photos.length === 1 ? '' : 's'}`, html`<a class="btn secondary" href="#/gallery/albums">${icon('arrow-left')} All albums</a><a class="btn secondary" href="#/gallery">${icon('image')} All photos</a>`, a.current ? 'Happening now' : 'Album')}
+  show($('#app'), publicShell(html`<div class="wrap" style="padding-top:26px">${pageHead(a.title, a.description || `${d.photos.length} photo${d.photos.length === 1 ? '' : 's'}`, html`<a class="btn secondary" href="#/gallery">${icon('arrow-left')} All albums</a><a class="btn secondary" href="#/gallery/all">${icon('image')} All photos</a>`, a.current ? 'Happening now' : 'Album')}
     ${d.photos.length ? html`<p class="small muted" style="margin:-4px 0 14px">${d.photos.length} photo${d.photos.length === 1 ? '' : 's'}. Tap a photo to open it.</p><div class="wgrid">${d.photos.map(wallTile)}</div>` : empty('No photos in this album yet', '', 'image')}</div>`, 'gallery'));
 }
 actions.viewPhoto = el => { const list = window.__pubgalList || []; openLightbox(list, Math.max(0, list.findIndex(x => x.id === Number(el.dataset.id))), window.__pubgalOpts || {}); };
