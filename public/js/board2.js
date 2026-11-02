@@ -72,8 +72,9 @@ async function renderCampusBoard() {
 }
 
 // ---------- the gallery page: the running campaign (highlighted) and the albums of previous works ----------
-let GALQ = '', GALACT = '', GALSHOW = 24, GALDATA = null;
-const photoCard = g => html`<button class="pcard rv" data-act="viewPhoto" data-id="${g.id}" aria-label="Open photo: ${g.title}, ${g.college}"><img src="${gUrl(g, 'large', `/api/public/album/${g.id}/thumb`)}" alt="${g.title}, ${g.college}" loading="lazy" decoding="async"><span class="cap">${albumName(g, 24)}<span>${g.title}</span>${albumMeta(g) ? html`<small>${albumMeta(g)}</small>` : ''}</span></button>`;
+// Photos are uniform thumbnail tiles (title on the tile, college and date on hover); filters are drop-downs, so they stay tidy however many colleges take part.
+let GALQ = '', GALACT = '', GALCOL = '', GALSHOW = 40, GALDATA = null, ALBQ = '';
+const photoCard = g => html`<button class="ptile rv" data-act="viewPhoto" data-id="${g.id}" aria-label="Open photo: ${g.title}, ${g.college}"><img src="${gUrl(g, 'large', `/api/public/album/${g.id}/thumb`)}" alt="${g.title}, ${g.college}" loading="lazy" decoding="async"><span class="pcap"><b>${g.title}</b><small>${g.college}${g.event_date ? ' · ' + fdate(g.event_date) : ''}</small></span></button>`;
 async function renderPublicGallery(albumId) {
   if (!feat('public', 'album')) { location.hash = '#/'; return; }
   show($('#app'), publicShell(html`<div class="wrap section"><div class="loading"><div class="spin"></div>Loading the photos…</div></div>`, 'gallery'));
@@ -83,33 +84,45 @@ async function renderPublicGallery(albumId) {
   } catch (e) { return show($('#app'), publicShell(html`<div class="wrap section"><div class="alert err">${e.message}</div><p style="margin-top:12px"><a class="btn secondary" href="#/gallery">Back to the gallery</a></p></div>`, 'gallery')); }
   const G = GALDATA;
   show($('#app'), publicShell(html`<div class="wrap" style="padding-top:26px">${pageHead('Gallery', 'Moments from our campaigns: what is happening now, and the work we have done before.', html`<a class="btn secondary" href="#/">${icon('home')} Home</a>`, 'Electoral Literacy Clubs')}
-    <section class="gnow rv" aria-labelledby="gnowh"><div class="gnow-top"><div><span class="eyebrow"><span class="live"></span> Happening now</span><h2 id="gnowh">Campus to booth</h2><p>Photos from the help desks, flash mobs, class campaigns and events of colleges and schools across Kozhikode, as they happen.</p></div>
+    <section class="gnow rv" aria-labelledby="gnowh"><div class="gnow-top"><div><span class="eyebrow"><span class="live"></span> Happening now</span><h2 id="gnowh">Campus to booth</h2><p>Photos from help desks, flash mobs, class campaigns and events of colleges and schools across Kozhikode.</p></div>
       <div class="gnow-stats"><div><b>${n(G.stats.photos)}</b><span>photos</span></div><div><b>${n(G.stats.institutions)}</b><span>colleges and schools</span></div></div></div>
-      <div class="gnow-tools"><div class="chips" id="gactchips" role="group" aria-label="Filter by activity"></div><label class="f" style="margin:0;min-width:240px"><span class="sr">Search photos and albums</span><input type="search" id="gq" placeholder="Search photos, colleges, albums…" value="${esc(GALQ)}"></label></div>
+      <div class="gtools"><label class="f"><span class="sr">Search photos</span><input type="search" id="gq" placeholder="Search photos…" value="${esc(GALQ)}"></label><label class="f"><span class="sr">Activity</span><select id="gact" aria-label="Activity"></select></label><label class="f"><span class="sr">College or school</span><select id="gcol" aria-label="College or school"></select></label><span class="gcount" id="gcount" aria-live="polite"></span></div>
       <div id="gnowgrid"></div><p class="center" id="gmore" style="margin-top:14px"></p></section>
-    <section class="gprev" style="margin-top:44px" aria-labelledby="gprevh"><div class="section-head"><div><h2 id="gprevh">Previous works</h2><p>Albums of earlier campaigns and events. Open an album to see all its photos.</p></div></div><div id="galbums"></div></section></div>`, 'gallery'));
+    <section class="gprev" style="margin-top:44px" aria-labelledby="gprevh"><div class="section-head"><div><h2 id="gprevh">Previous works</h2><p>Albums of earlier campaigns and events. Open an album to see all its photos.</p></div><label class="f" style="margin:0;min-width:230px"><span class="sr">Search albums</span><input type="search" id="alq" placeholder="Search albums…" value="${esc(ALBQ)}"></label></div><div id="galbums"></div></section></div>`, 'gallery'));
   paintGallery();
-  $('#gq').addEventListener('input', e => { GALQ = e.target.value; GALSHOW = 24; paintGallery(); });
+  $('#gq').addEventListener('input', e => { GALQ = e.target.value; GALSHOW = 40; paintGrid(); });
+  $('#gact').addEventListener('change', e => { GALACT = e.target.value; GALSHOW = 40; paintGrid(); });
+  $('#gcol').addEventListener('change', e => { GALCOL = e.target.value; GALSHOW = 40; paintGrid(); });
+  $('#alq').addEventListener('input', e => { ALBQ = e.target.value; paintAlbums(); });
 }
 function paintGallery() {
-  const G = GALDATA, q = GALQ.toLowerCase().trim();
-  const acts = [...G.current.reduce((m, g) => { if (g.activity) m.set(g.activity, (m.get(g.activity) || 0) + 1); return m; }, new Map())].sort((a, b) => b[1] - a[1]).slice(0, 7);
-  if (GALACT && !acts.some(a => a[0] === GALACT)) GALACT = '';
-  show($('#gactchips'), acts.length > 1 ? html`<button class="chip ${GALACT ? '' : 'on'}" data-act="galAct" data-k="">All (${G.current.length})</button>${acts.map(([a, c]) => html`<button class="chip ${GALACT === a ? 'on' : ''}" data-act="galAct" data-k="${a}">${a} (${c})</button>`)}` : '');
-  const list = G.current.filter(g => (!GALACT || g.activity === GALACT) && (!q || [g.college, g.title, g.activity, g.album].some(x => String(x || '').toLowerCase().includes(q))));
-  window.__pubgalList = list;
-  show($('#gnowgrid'), list.length ? html`<div class="pgrid">${list.slice(0, GALSHOW).map(photoCard)}</div>` : empty(q || GALACT ? 'No photos match' : 'No photos yet', q || GALACT ? 'Try another search.' : 'Photos appear here as colleges and schools share them.', 'image'));
-  show($('#gmore'), list.length > GALSHOW ? html`<button class="btn secondary" data-act="galMore">Show more photos (${list.length - GALSHOW} more) ${icon('chevron-down')}</button>` : '');
-  const albums = G.albums.filter(a => !q || [a.title, a.description].some(x => String(x || '').toLowerCase().includes(q)));
-  show($('#galbums'), albums.length ? html`<div class="albgrid">${albums.map(a => html`<a class="albcard rv" href="#/gallery/${a.id}" aria-label="Open album: ${a.title}, ${a.count} photos"><span class="albstack"><i></i><i></i><img src="${a.cover_ext ? a.cover_ext.replace('{s}', 'large') : `/api/public/album/${a.cover}/thumb`}" alt="" loading="lazy" decoding="async"></span><span class="albinfo"><b>${a.title}</b><small>${a.count} photo${a.count === 1 ? '' : 's'}${a.last ? ' · ' + new Date(a.last + 'T00:00:00').getFullYear() : ''}</small>${a.description ? html`<em>${a.description}</em>` : ''}</span></a>`)}</div>`
-    : empty(G.albums.length ? 'No album matches' : 'Albums are coming soon', G.albums.length ? 'Try another search.' : 'Our earlier campaigns will be shown here as albums.', 'folder'));
+  const G = GALDATA, cnt = key => [...G.current.reduce((m, g) => { if (g[key]) m.set(g[key], (m.get(g[key]) || 0) + 1); return m; }, new Map())];
+  const acts = cnt('activity').filter(([a]) => a.length <= 32).sort((a, b) => b[1] - a[1]), cols = cnt('college').sort((a, b) => a[0].localeCompare(b[0]));
+  if (!acts.some(a => a[0] === GALACT)) GALACT = ''; if (!cols.some(a => a[0] === GALCOL)) GALCOL = '';
+  show($('#gact'), html`<option value="">All activities</option>${acts.map(([a, c]) => html`<option value="${a}" ${GALACT === a ? 'selected' : ''}>${a} (${c})</option>`)}`);
+  show($('#gcol'), html`<option value="">All colleges and schools</option>${cols.map(([a, c]) => html`<option value="${a}" ${GALCOL === a ? 'selected' : ''}>${a} (${c})</option>`)}`);
+  paintGrid(); paintAlbums();
 }
-actions.galAct = el => { GALACT = el.dataset.k; GALSHOW = 24; paintGallery(); };
-actions.galMore = () => { GALSHOW += 24; paintGallery(); };
+function paintGrid() {
+  const G = GALDATA, q = GALQ.toLowerCase().trim();
+  const list = G.current.filter(g => (!GALACT || g.activity === GALACT) && (!GALCOL || g.college === GALCOL) && (!q || [g.college, g.title, g.activity, g.album].some(x => String(x || '').toLowerCase().includes(q))));
+  window.__pubgalList = list;
+  $('#gcount').textContent = `${list.length} photo${list.length === 1 ? '' : 's'}`;
+  show($('#gnowgrid'), list.length ? html`<div class="pgrid2">${list.slice(0, GALSHOW).map(photoCard)}</div>` : empty(q || GALACT || GALCOL ? 'No photos match' : 'No photos yet', q || GALACT || GALCOL ? 'Try another search or filter.' : 'Photos appear here as colleges and schools share them.', 'image'));
+  show($('#gmore'), list.length > GALSHOW ? html`<button class="btn secondary" data-act="galMore">Show more photos (${list.length - GALSHOW} more) ${icon('chevron-down')}</button>` : '');
+}
+// albums are grouped under the programme they belong to ("Vote Utsavam 2026: Football Tournament" sits under "Vote Utsavam 2026")
+function paintAlbums() {
+  const G = GALDATA, q = ALBQ.toLowerCase().trim(), albums = G.albums.filter(a => !q || [a.title, a.description].some(x => String(x || '').toLowerCase().includes(q)));
+  if (!albums.length) return show($('#galbums'), empty(G.albums.length ? 'No album matches' : 'Albums are coming soon', G.albums.length ? 'Try another search.' : 'Our earlier campaigns will be shown here as albums.', 'folder'));
+  const groups = new Map(); for (const a of albums) { const i = a.title.indexOf(': '), g = i > 0 ? a.title.slice(0, i) : 'More albums'; (groups.get(g) || groups.set(g, []).get(g)).push({ ...a, short: i > 0 ? a.title.slice(i + 2) : a.title }); }
+  show($('#galbums'), html`${[...groups].map(([g, list]) => html`<div class="albgroup"><h3>${g} <span class="badge">${list.length}</span></h3><div class="albgrid2">${list.map(a => html`<a class="albtile rv" href="#/gallery/${a.id}" aria-label="Open album: ${a.title}, ${a.count} photos"><span class="albpic"><i></i><img src="${a.cover_ext ? a.cover_ext.replace('{s}', 'large') : `/api/public/album/${a.cover}/thumb`}" alt="" loading="lazy" decoding="async"><span class="albn">${a.count}</span></span><b>${a.short}</b><small>${a.last ? new Date(a.last + 'T00:00:00').toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : ''}</small></a>`)}</div></div>`)}`);
+}
+actions.galMore = () => { GALSHOW += 40; paintGrid(); };
 function renderAlbumPage(d) {
   const a = d.album; window.__pubgalList = d.photos;
   show($('#app'), publicShell(html`<div class="wrap" style="padding-top:26px">${pageHead(a.title, a.description || `${d.photos.length} photo${d.photos.length === 1 ? '' : 's'}`, html`<a class="btn secondary" href="#/gallery">${icon('arrow-left')} All albums</a>`, a.current ? 'Happening now' : 'Previous works')}
-    ${d.photos.length ? html`<div class="pgrid">${d.photos.map(photoCard)}</div>` : empty('No photos in this album yet', '', 'image')}</div>`, 'gallery'));
+    ${d.photos.length ? html`<p class="small muted" style="margin:-4px 0 14px">${d.photos.length} photo${d.photos.length === 1 ? '' : 's'}. Tap a photo to open it.</p><div class="pgrid2">${d.photos.map(photoCard)}</div>` : empty('No photos in this album yet', '', 'image')}</div>`, 'gallery'));
 }
 actions.viewPhoto = el => { const list = window.__pubgalList || []; openLightbox(list, Math.max(0, list.findIndex(x => x.id === Number(el.dataset.id)))); };
 

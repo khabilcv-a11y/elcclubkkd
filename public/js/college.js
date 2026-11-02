@@ -330,7 +330,7 @@ forms.issue = async f => { await api('/api/college/issues', 'POST', fd(f)); toas
 async function pgResources(el) {
   const list = await api('/api/resources'), cats = [...new Set(list.map(r => r.category))].sort();
   show(el, html`${pageHead('Resource centre', 'Manuals, forms and guides shared by the district office.', '', 'Programme')}
-    ${list.length ? cats.map(c => html`<h3 style="margin:18px 0 8px">${c}</h3><div class="grid g2">${list.filter(r => r.category === c).map(resCard)}</div>`) : empty('Nothing shared yet', 'Manuals and forms will appear here.', 'book')}`);
+    ${list.length ? cats.map(c => html`<h3 style="margin:18px 0 8px">${c}</h3><div class="resgrid">${list.filter(r => r.category === c).map(resCard)}</div>`) : empty('Nothing shared yet', 'Manuals and forms will appear here.', 'book')}`);
 }
 
 // ---------- Reports ----------

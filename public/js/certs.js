@@ -126,6 +126,7 @@ actions.certGen = async () => {
   const [img, logo] = await certImgLogo(t);
   // text that cannot fit its box on the certificate is flagged before anything is issued
   const preview = cands.map(p => { const st = { student: p.name, college: d.institution, activities: p.activities.join(', ').slice(0, 160), dates: certRange(p.first, p.last), days: String(p.days), campaign: d.campaign.title, serial: 'ELC-0000-0000', issued: certDay(d.today) }; return st; });
+  await ensureFonts(t);
   const bad = certCheck(t, preview);
   if (bad.length && !await confirmBox(`The text for ${bad.length} student${bad.length === 1 ? '' : 's'} will not sit neatly on the certificate (for example a very long name): ${bad.slice(0, 5).map(b => b.name).join(', ')}${bad.length > 5 ? '…' : ''}. Shorten those names or events first with the pencil button, or generate anyway.`, 'Generate anyway')) return;
   if (!await confirmBox(`Generate ${cands.length} certificate${cands.length === 1 ? '' : 's'} now? Each student's certificate can be generated only once. After that you can download them as often as you like.`, 'Generate')) return;

@@ -82,7 +82,7 @@ async function renderHome() {
 
   <section class="section"><div class="wrap grid g2">
     ${vil ? html`<div><div class="section-head"><div><h2>Live activity</h2></div></div><div class="card rv"><ul class="feed" id="feed"></ul></div></div>` : ''}
-    <div id="resources"><div class="section-head"><div><h2>Resource centre</h2></div></div><div class="stack-s" id="reslist"></div></div></div></section>`, 'home'));
+    <div id="resources"><div class="section-head"><div><h2>Resource centre</h2></div></div><div class="resgrid" id="reslist"></div><p class="center" id="resmore" style="margin-top:14px"></p></div></div></section>`, 'home'));
   paintHome(); paintCampus(); wireMap(); startAlbum(); startColleges(); $('#main').focus({ preventScroll: true });
 }
 
@@ -154,11 +154,15 @@ function paintHome() {
   show($('#taluks'), tl.length ? html`${tl.map(x => html`<div class="bar"><span>${x.taluk}</span><div class="t" title="${x.active} of ${x.villages} villages active"><i data-w="${Math.round(x.registered * 100 / mx)}"></i></div><b class="tnum">${n(x.registered)}</b></div>`)}` : empty('No data yet'));
   paintTrend('#trend');
   show($('#feed'), BOARD.feed.length ? html`${BOARD.feed.map(f => html`<li><span class="d">${icon('check-circle')}</span><div><b>${f.college}</b> worked in <b>${f.village}</b><div class="small muted">${f.present} volunteer${f.present > 1 ? 's' : ''} · ${f.addressed} reached · <b>${f.registered} enrolled</b> · ${fdate(f.date)}</div></div></li>`)}` : html`<li class="muted">Field activity will appear here.</li>`);
-  show($('#reslist'), RES.length ? html`${RES.slice(0, 6).map(resCard)}` : empty('No resources yet', 'Manuals and forms will be shared here.', 'book'));
+  show($('#reslist'), RES.length ? html`${RES.slice(0, RESALL ? 999 : 8).map(resCard)}` : empty('No resources yet', 'Manuals and forms will be shared here.', 'book'));
+  show($('#resmore'), RES.length > 8 && !RESALL ? html`<button class="btn secondary" data-act="resAll">Show all ${RES.length} resources ${icon('chevron-down')}</button>` : '');
 }
-const resPic = r => (r.kind === 'file' && r.has_thumb ? html`<a class="rthumb" href="#/resource/${r.id}" tabindex="-1" aria-hidden="true"><img src="/api/resources/${r.id}/thumb" alt="" loading="lazy" decoding="async"></a>` : html`<a href="#/resource/${r.id}" tabindex="-1" aria-hidden="true">${fileTile(r.filename, r.mime, r.kind === 'link')}</a>`);
-const resCard = r => html`<div class="res rv">${resPic(r)}<div class="grow"><h3><a href="#/resource/${r.id}">${r.title}</a></h3><p>${r.description || r.category}</p></div>
-  <div class="resact"><button class="iconbtn" data-act="copyRes" data-s="${resSlug(r)}" aria-label="Copy link to ${r.title}" title="Copy link">${icon('copy')}</button>${r.kind === 'link' ? html`<a class="btn secondary sm" href="${r.url}" target="_blank" rel="noopener">${icon('external')} Open</a>` : html`<a class="btn secondary sm" href="/api/resources/${r.id}/download">${icon('download')} Download</a>`}</div></div>`;
+// a resource is a thumbnail card: the picture first, then the title, with copy-link and open / download underneath
+let RESALL = false;
+const resPic = r => (r.kind === 'file' && r.has_thumb ? html`<img src="/api/resources/${r.id}/thumb" alt="" loading="lazy" decoding="async">` : html`<span class="rtile">${fileTile(r.filename, r.mime, r.kind === 'link')}</span>`);
+const resCard = r => html`<article class="rcard rv"><a class="rpic" href="#/resource/${r.id}" aria-label="Open ${r.title}">${resPic(r)}</a><div class="rbody"><h3><a href="#/resource/${r.id}">${r.title}</a></h3><p>${r.category || 'General'}</p></div>
+  <div class="ract"><button class="iconbtn" data-act="copyRes" data-s="${resSlug(r)}" aria-label="Copy link to ${r.title}" title="Copy link">${icon('copy')}</button>${r.kind === 'link' ? html`<a class="btn secondary sm" href="${r.url}" target="_blank" rel="noopener">${icon('external')} Open</a>` : html`<a class="btn secondary sm" href="/api/resources/${r.id}/download">${icon('download')} Download</a>`}</div></article>`;
+actions.resAll = () => { RESALL = true; show($('#reslist'), html`${RES.map(resCard)}`); show($('#resmore'), ''); };
 
 function paintTrend(sel, data) {
   const tr = data || BOARD.trend, mx = Math.max(1, ...tr.map(x => x.registered));

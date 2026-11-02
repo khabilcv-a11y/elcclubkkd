@@ -550,3 +550,32 @@ hr.soft{border:0;border-top:1px solid var(--line);margin:18px 0}
 .sico::before,.sico::after{content:"";border-left:4px solid transparent;border-right:4px solid transparent;opacity:.35}
 .sico::before{border-bottom:5px solid currentColor}.sico::after{border-top:5px solid currentColor}
 .sico.asc::before{opacity:1}.sico.desc::after{opacity:1}
+
+.tdtokens{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.tdtokens .chip{padding:3px 10px;font-size:.78rem}
+
+/* ---------- thumbnail-led resource cards and gallery tiles ---------- */
+.resgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(172px,1fr));gap:14px}
+.rcard{display:flex;flex-direction:column;background:#fff;border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden;box-shadow:var(--shadow-xs);transition:transform .2s,box-shadow .2s}.rcard:hover{transform:translateY(-3px);box-shadow:var(--shadow)}
+.rpic{display:block;aspect-ratio:4/5;background:#eef0f8;overflow:hidden}.rpic img{width:100%;height:100%;object-fit:cover;object-position:top;display:block}
+.rtile{display:grid;place-items:center;width:100%;height:100%;background:linear-gradient(160deg,#f3f5fd,#e4e8f8)}.rtile .ftile{transform:scale(1.5)}
+.rbody{padding:10px 12px 2px}.rbody h3{font-size:.9rem;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:2.6em}.rbody h3 a{color:var(--ink);text-decoration:none}.rbody h3 a:hover{color:var(--brand)}
+.rbody p{font-size:.76rem;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.05em}
+.ract{display:flex;gap:6px;align-items:center;padding:8px 12px 12px;margin-top:auto}.ract .btn{flex:1;justify-content:center}
+.pgrid2{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+.ptile{position:relative;display:block;width:100%;aspect-ratio:4/3;padding:0;border:0;border-radius:14px;overflow:hidden;background:#10143f;cursor:pointer;box-shadow:var(--shadow-xs);text-align:left;transition:transform .2s,box-shadow .2s}
+.ptile img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform .5s ease}.ptile:hover{transform:translateY(-2px);box-shadow:var(--shadow)}.ptile:hover img{transform:scale(1.05)}
+.pcap{position:absolute;left:0;right:0;bottom:0;padding:26px 10px 8px;background:linear-gradient(0deg,rgba(8,10,40,.88),transparent);color:#fff;display:flex;flex-direction:column;gap:1px}
+.pcap b{font-size:.8rem;font-weight:700;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pcap small{font-size:.7rem;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-height:0;opacity:0;transition:max-height .2s,opacity .2s}
+.ptile:hover .pcap small,.ptile:focus-visible .pcap small{max-height:1.4em;opacity:.85}@media(hover:none){.pcap small{max-height:1.4em;opacity:.85}}
+.gtools{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}.gtools .f{margin:0;flex:1;min-width:170px}.gtools .f:first-child{flex:2;min-width:220px}.gcount{color:#c3c9f0;font-size:.84rem;margin-left:auto}
+.gtools input,.gtools select{width:100%;min-height:42px}
+.albgroup{margin-bottom:28px}.albgroup h3{font-size:1.02rem;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.albgrid2{display:grid;grid-template-columns:repeat(auto-fill,minmax(176px,1fr));gap:18px 14px}
+.albtile{display:flex;flex-direction:column;gap:6px;text-decoration:none;color:inherit}
+.albpic{position:relative;display:block;aspect-ratio:4/3;margin:0 4px 6px}
+.albpic i{position:absolute;inset:0;border-radius:12px;background:#fff;border:1px solid var(--line-2);transform:rotate(-3.5deg) translate(-3px,3px);transition:transform .25s}
+.albpic img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:12px;box-shadow:var(--shadow);background:#10143f;transition:transform .25s}
+.albtile:hover .albpic img{transform:translateY(-3px)}.albtile:hover .albpic i{transform:rotate(-6deg) translate(-5px,4px)}
+.albn{position:absolute;right:8px;bottom:8px;background:rgba(10,12,44,.82);color:#fff;font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:99px}
+.albtile b{font-size:.88rem;line-height:1.3;color:var(--ink);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.albtile small{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+@media(max-width:560px){.pgrid2{grid-template-columns:repeat(2,1fr);gap:8px}.resgrid{grid-template-columns:repeat(2,1fr);gap:10px}.albgrid2{grid-template-columns:repeat(2,1fr)}}

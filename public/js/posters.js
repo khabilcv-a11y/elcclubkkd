@@ -14,6 +14,7 @@ async function pgPosters(el) {
 actions.posterOpen = async el => {
   const t = window.__poster_list.find(x => x.id === Number(el.dataset.id)); if (!t) return;
   await document.fonts?.load?.('800 40px Inter').catch(() => {});
+  await ensureFonts(t);
   const [img, logo] = await Promise.all([loadImg(`/api/templates/${t.id}/image`), COL.college.logo_v ? loadImg(logoUrl(COL.college.id, COL.college.logo_v)) : null]);
   const inputs = t.fields.filter(f => f.type === 'text' && f.src !== 'fixed');
   PST = { t, img, logo, values: Object.fromEntries(inputs.map(f => [f.id, f.src === 'college' ? COL.college.name : ''])) };
@@ -32,12 +33,12 @@ function paintPoster() {
   const { t } = PST, pw = cv.clientWidth || 520, k = pw / t.width;
   cv.width = Math.round(t.width * k); cv.height = Math.round(t.height * k); cv.style.aspectRatio = `${t.width} / ${t.height}`;
   const c = cv.getContext('2d'); c.scale(k, k);
-  drawTemplate(c, t, { img: PST.img, photo: null, values: PST.values, logo: PST.logo, exporting: false, showEmpty: true });
+  drawTemplate(c, t, { img: PST.img, photo: null, values: PST.values, merge: { college: COL.college.name }, logo: PST.logo, exporting: false, showEmpty: true });
 }
 async function posterBlob() {
   const { t } = PST, k = Math.min(1, 3400 / Math.max(t.width, t.height)), cv = document.createElement('canvas'); cv.width = Math.round(t.width * k); cv.height = Math.round(t.height * k);
   const c = cv.getContext('2d'); c.scale(k, k);
-  drawTemplate(c, t, { img: PST.img, photo: null, values: PST.values, logo: PST.logo, exporting: true });
+  drawTemplate(c, t, { img: PST.img, photo: null, values: PST.values, merge: { college: COL.college.name }, logo: PST.logo, exporting: true });
   return { blob: await new Promise(res => cv.toBlob(res, 'image/jpeg', 0.92)), w: cv.width, h: cv.height };
 }
 actions.posterJpg = async () => { const { blob } = await posterBlob(); saveBlob(blob, `${slug(PST.t.title)}-${slug(COL.college.short_name || COL.college.name)}.jpg`); toast('Downloaded'); };

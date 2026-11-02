@@ -94,5 +94,5 @@ async function opNotices(el) {
 }
 async function opResources(el) {
   const list = await api('/api/resources'), cats = [...new Set(list.map(r => r.category))].sort();
-  show(el, html`${pageHead('Resource centre', 'Guides and forms for village officers.', '', 'Programme')}${list.length ? cats.map(c => html`<h3 style="margin:18px 0 8px">${c}</h3><div class="grid g2">${list.filter(r => r.category === c).map(resCard)}</div>`) : empty('Nothing shared yet', '', 'book')}`);
+  show(el, html`${pageHead('Resource centre', 'Guides and forms for village officers.', '', 'Programme')}${list.length ? cats.map(c => html`<h3 style="margin:18px 0 8px">${c}</h3><div class="resgrid">${list.filter(r => r.category === c).map(resCard)}</div>`) : empty('Nothing shared yet', '', 'book')}`);
 }

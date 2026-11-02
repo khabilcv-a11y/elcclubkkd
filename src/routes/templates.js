@@ -10,6 +10,7 @@ const OPS = ['super_admin', 'admin'];
 const MAX_BYTES = 6 * 1024 * 1024;
 const slog = (ctx, action, detail) => log(ctx.db, 'staff', ctx.user.username, ctx.user.role, action, detail, ctx.ip);
 const num = (v, lo, hi) => Math.max(lo, Math.min(hi, Math.round(Number(v) || 0)));
+const FONT_KEYS = ['sans', 'times', 'garamond', 'cormorant', 'baskerville', 'playfair', 'script'];
 const hex = v => (/^#[0-9a-f]{6}$/i.test(String(v)) ? String(v) : '#1c2162');
 
 // keep only what the page needs, with every number inside the picture
@@ -19,9 +20,9 @@ function cleanFields(raw, w, h) {
   const out = list.slice(0, 20).map((f, i) => {
     const x = num(f.x, 0, w - 4), y = num(f.y, 0, h - 4);
     return { id: 'f' + (i + 1), label: str(f.label, 40) || 'Text ' + (i + 1), type: f.type === 'logo' ? 'logo' : 'text',
-      src: ['college', 'ask', 'fixed', 'student', 'activities', 'dates', 'days', 'campaign', 'serial', 'issued'].includes(f.src) ? f.src : 'ask', value: str(f.value, 200), x, y, w: num(f.w, 4, w - x), h: num(f.h, 4, h - y),
-      color: hex(f.color), weight: [400, 600, 800].includes(Number(f.weight)) ? Number(f.weight) : 800, align: ['left', 'center', 'right'].includes(f.align) ? f.align : 'center',
-      caps: !!f.caps, lines: num(f.lines || 1, 1, 4) };
+      src: ['college', 'ask', 'fixed', 'student', 'activities', 'dates', 'days', 'campaign', 'serial', 'issued'].includes(f.src) ? f.src : 'ask', value: str(String(f.value || '').replace(/\s+/g, ' '), 1200), x, y, w: num(f.w, 4, w - x), h: num(f.h, 4, h - y),
+      color: hex(f.color), weight: [400, 600, 700, 800].includes(Number(f.weight)) ? Number(f.weight) : 800, align: ['left', 'center', 'right', 'justify'].includes(f.align) ? f.align : 'center',
+      caps: !!f.caps, lines: num(f.lines || 1, 1, 12), font: FONT_KEYS.includes(f.font) ? f.font : 'sans', italic: !!f.italic, boldMerge: !!f.boldMerge, size: f.size ? num(f.size, 8, 600) : 0 };
   });
   if (!out.length) throw bad('Add at least one text box');
   return out;

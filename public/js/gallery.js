@@ -38,7 +38,7 @@ const frameSize = ed => (ed.tpl ? { w: ed.tpl.width, h: ed.tpl.height } : FRAME[
 // text for the boxes of a template the district office added: the first "typed" box takes the activity title, further ones get their own input
 const valuesFor = ed => { const v = {}; let first = true; for (const f of ed.tpl.fields) { if (f.src === 'college') v[f.id] = ed.inst; else if (f.src === 'ask') { v[f.id] = first ? ed.title : (ed.extra[f.id] || ''); first = false; } } return v; };
 function drawFrame(c, scale, ed, art) {
-  if (ed.tpl) { c.save(); c.scale(scale, scale); drawTemplate(c, ed.tpl, { img: art.timg, photo: ed.slot, values: valuesFor(ed), logo: art.logo, exporting: ed.exporting, showEmpty: !ed.exporting }); c.restore(); return; }
+  if (ed.tpl) { c.save(); c.scale(scale, scale); drawTemplate(c, ed.tpl, { img: art.timg, photo: ed.slot, values: valuesFor(ed), merge: { college: ed.inst }, logo: art.logo, exporting: ed.exporting, showEmpty: !ed.exporting }); c.restore(); return; }
   const land = ed.orient === 'landscape', W = FRAME[ed.orient].w, H = FRAME[ed.orient].h;
   c.save(); c.scale(scale, scale);
   c.fillStyle = '#e9ecf7'; c.fillRect(0, 0, W, H);
@@ -99,7 +99,7 @@ actions.newFrame = async () => {
     const b = e.target.closest('[data-fr]'); if (!b) return; const fr = frames.find(x => x.key === b.dataset.fr);
     $$('[data-fr]', m).forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', x === b); });
     ED.slot.ox = 0; ED.slot.oy = 0; ED.extra = {};
-    if (fr.tpl) { ED.tpl = fr.tpl; ED.orient = fr.tpl.width >= fr.tpl.height ? 'landscape' : 'portrait'; } else { ED.tpl = null; ED.orient = fr.key; }
+    if (fr.tpl) { ED.tpl = fr.tpl; ED.orient = fr.tpl.width >= fr.tpl.height ? 'landscape' : 'portrait'; ensureFonts(fr.tpl).then(paintEditor); } else { ED.tpl = null; ED.orient = fr.key; }
     paintExtra(); paintEditor();
   });
   $r('#edinst').addEventListener('input', e => { ED.inst = e.target.value; paintEditor(); });
@@ -134,6 +134,7 @@ function wireCanvas() {
 
 // ---------- export, download, save ----------
 async function frameBlob() {
+  if (ED.tpl) await ensureFonts(ED.tpl);
   const F = frameSize(ED), k = Math.min(1, 2400 / Math.max(F.w, F.h)), cv = document.createElement('canvas'); cv.width = Math.round(F.w * k); cv.height = Math.round(F.h * k);
   drawFrame(cv.getContext('2d'), k, { ...ED, exporting: true }, await artwork());
   return new Promise(res => cv.toBlob(res, 'image/jpeg', 0.85));

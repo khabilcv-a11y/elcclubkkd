@@ -14,7 +14,7 @@ actions.tplDel = async el => { if (!await confirmBox('Delete this template for g
 actions.tplAdd = () => openDesigner(null);
 actions.tplEdit = el => openDesigner(window.__tpls.find(x => x.id === Number(el.dataset.id)));
 
-const newField = (type, n, W, H) => ({ label: type === 'logo' ? 'College logo' : 'Text ' + n, type, src: type === 'logo' ? 'college' : (TD?.kind === 'certificate' ? 'student' : 'ask'), value: '', x: Math.round(W * 0.2), y: Math.round(H * Math.min(0.8, 0.15 + 0.1 * n)), w: Math.round(type === 'logo' ? W * 0.18 : W * 0.6), h: Math.round(type === 'logo' ? W * 0.18 : H * 0.09), color: '#1c2162', weight: 800, align: 'center', caps: false, lines: 1 });
+const newField = (type, n, W, H) => ({ label: type === 'logo' ? 'College logo' : 'Text ' + n, type, src: type === 'logo' ? 'college' : (TD?.kind === 'certificate' ? 'student' : 'ask'), value: '', x: Math.round(W * 0.2), y: Math.round(H * Math.min(0.8, 0.15 + 0.1 * n)), w: Math.round(type === 'logo' ? W * 0.18 : W * 0.6), h: Math.round(type === 'logo' ? W * 0.18 : H * 0.09), color: '#1c2162', weight: 800, align: 'center', caps: false, lines: 1, font: 'sans', italic: false, boldMerge: false, size: 0 });
 const tdMode = f => (f.type === 'logo' ? 'logo' : f.src);
 
 async function openDesigner(t) {
@@ -72,9 +72,9 @@ function tdWire(m) {
   // the box settings
   const upd = e => {
     const k = e.target.dataset.tf; if (!k || !TD.fields[TD.sel]) return; const f = TD.fields[TD.sel];
-    if (k === 'mode') { const v = e.target.value; f.type = v === 'logo' ? 'logo' : 'text'; f.src = v === 'logo' ? 'college' : v; tdPaint(); return; }
+    if (k === 'mode') { const v = e.target.value; f.type = v === 'logo' ? 'logo' : 'text'; f.src = v === 'logo' ? 'college' : v; if (v === 'fixed' && TD.kind === 'certificate' && !f.value) { f.value = 'of {college} has actively volunteered as part of the {campaign} from {dates}, in {activities}. Their contribution towards voter awareness is sincerely acknowledged and appreciated.'; f.lines = Math.max(f.lines, 4); f.weight = 400; f.boldMerge = true; f.align = 'justify'; } tdPaint(); return; }
     if (['x', 'y', 'w', 'h'].includes(k)) { f[k] = Math.round(Math.max(k === 'w' || k === 'h' ? 20 : 0, Number(e.target.value) || 0)); tdBoxes(); return; }
-    if (k === 'caps') f.caps = e.target.checked; else if (['weight', 'lines'].includes(k)) f[k] = Number(e.target.value); else f[k] = e.target.value;
+    if (['caps', 'italic', 'boldMerge'].includes(k)) f[k] = e.target.checked; else if (['weight', 'lines', 'size'].includes(k)) f[k] = Number(e.target.value) || 0; else f[k] = e.target.value;
     if (k === 'label') { tdBoxes(); tdList(); }
   };
   m.addEventListener('input', upd); m.addEventListener('change', e => { upd(e); if (e.target.dataset.tf === 'mode') tdField(); });
@@ -90,15 +90,21 @@ function tdField() {
   if (!f) return show(box, html`<p class="muted small">Add a text or logo box, then place it on the picture.</p>`);
   const mode = tdMode(f), sel = (k, opts, cur) => html`<select data-tf="${k}">${opts.map(([v, l]) => html`<option value="${v}" ${String(cur) === String(v) ? 'selected' : ''}>${l}</option>`)}</select>`;
   show(box, html`<div class="tdfield"><label class="f"><span>Name of this box</span><input type="text" data-tf="label" maxlength="40" value="${f.label}"></label>
-    <label class="f"><span>What goes here</span>${sel('mode', TD.kind === 'certificate' ? [['student', 'Student name'], ['college', 'College / school name'], ['activities', 'Activities taken part in'], ['dates', 'Dates of participation'], ['days', 'Number of days'], ['campaign', 'Campaign title'], ['serial', 'Certificate number'], ['issued', 'Date of issue'], ['fixed', 'Fixed text (same on every certificate)'], ['logo', 'The college\'s logo']] : [['ask', 'Text typed by the college'], ['college', 'College / school name (filled in automatically)'], ['fixed', 'Fixed text (same for everyone)'], ['logo', 'The college\'s logo']], mode)}</label>
-    ${mode === 'fixed' ? html`<label class="f"><span>Text</span><input type="text" data-tf="value" maxlength="200" value="${f.value}"></label>` : ''}
-    ${f.type === 'text' ? html`<div class="formgrid"><label class="f"><span>Colour</span><input type="color" data-tf="color" value="${f.color}"></label><label class="f"><span>Weight</span>${sel('weight', [[400, 'Normal'], [600, 'Semi-bold'], [800, 'Extra bold']], f.weight)}</label>
-      <label class="f"><span>Alignment</span>${sel('align', [['left', 'Left'], ['center', 'Centre'], ['right', 'Right']], f.align)}</label><label class="f"><span>Lines (at most)</span>${sel('lines', [[1, '1'], [2, '2'], [3, '3'], [4, '4']], f.lines)}</label></div>
-      <label class="chk"><input type="checkbox" data-tf="caps" ${f.caps ? 'checked' : ''}> CAPITAL LETTERS</label>` : ''}
+    <label class="f"><span>What goes here</span>${sel('mode', TD.kind === 'certificate' ? [['student', 'Student name'], ['college', 'College / school name'], ['activities', 'Activities taken part in'], ['dates', 'Dates of participation'], ['days', 'Number of days'], ['campaign', 'Campaign title'], ['serial', 'Certificate number'], ['issued', 'Date of issue'], ['fixed', 'Fixed text, or a sentence with placeholders'], ['logo', 'The college\'s logo']] : [['ask', 'Text typed by the college'], ['college', 'College / school name (filled in automatically)'], ['fixed', 'Fixed text (same for everyone)'], ['logo', 'The college\'s logo']], mode)}</label>
+    ${mode === 'fixed' ? html`<label class="f"><span>${TD.kind === 'certificate' ? 'Text (type the whole sentence and insert placeholders where the details belong)' : 'Text'}</span><textarea data-tf="value" id="tdvalue" rows="${TD.kind === 'certificate' ? 6 : 2}" maxlength="1200">${f.value}</textarea></label>
+      ${TD.kind === 'certificate' ? html`<div class="tdtokens"><span class="small muted">Insert a placeholder:</span>${MERGE_TOKENS.map(([k, l]) => html`<button type="button" class="chip" data-act="tdToken" data-k="${k}">${l}</button>`)}</div><label class="chk"><input type="checkbox" data-tf="boldMerge" ${f.boldMerge ? 'checked' : ''}> Show the merged details in bold</label>` : ''}` : ''}
+    ${f.type === 'text' ? html`<div class="formgrid"><label class="f"><span>Font</span>${sel('font', Object.entries(FONTS).map(([k, v]) => [k, v[0]]), f.font || 'sans')}</label><label class="f"><span>Colour</span><input type="color" data-tf="color" value="${f.color}"></label><label class="f"><span>Weight</span>${sel('weight', [[400, 'Normal'], [600, 'Semi-bold'], [700, 'Bold'], [800, 'Extra bold']], f.weight)}</label>
+      <label class="f"><span>Alignment</span>${sel('align', [['left', 'Left'], ['center', 'Centre'], ['right', 'Right'], ['justify', 'Justified']], f.align)}</label><label class="f"><span>Lines (at most)</span>${sel('lines', [1, 2, 3, 4, 5, 6, 8, 10, 12].map(n => [n, n]), f.lines)}</label><label class="f"><span>Largest font size (pixels, optional)</span><input type="number" data-tf="size" min="0" max="600" value="${f.size || ''}" placeholder="automatic"></label></div>
+      <div class="row gap-s"><label class="chk"><input type="checkbox" data-tf="italic" ${f.italic ? 'checked' : ''}> <i>Italic</i></label><label class="chk"><input type="checkbox" data-tf="caps" ${f.caps ? 'checked' : ''}> CAPITAL LETTERS</label></div>
+      <p class="hint">The text shrinks to fit the box, never larger than the size you set. Words wrap onto the next line.</p>` : ''}
     <details class="tdnums"><summary>Exact position and size (pixels)</summary><div class="formgrid">${['x', 'y', 'w', 'h'].map(k => html`<label class="f"><span>${{ x: 'Left', y: 'Top', w: 'Width', h: 'Height' }[k]}</span><input type="number" data-tf="${k}" value="${f[k]}" min="0"></label>`)}</div></details>
     <button type="button" class="btn ghost sm" data-act="tdRemove">${icon('trash')} Remove this box</button></div>`);
 }
 function tdPaint() { tdBoxes(); tdList(); tdField(); }
+actions.tdToken = el => {
+  const ta = $('#tdvalue'), tok = `{${el.dataset.k}}`, a = ta.selectionStart ?? ta.value.length, b = ta.selectionEnd ?? a;
+  ta.value = ta.value.slice(0, a) + tok + ta.value.slice(b); ta.focus(); ta.setSelectionRange(a + tok.length, a + tok.length); TD.fields[TD.sel].value = ta.value;
+};
 actions.tdSel = el => { TD.sel = Number(el.dataset.i); tdPaint(); };
 actions.tdAdd = el => { if (!TD.img) return toast('Choose the template image first', true); TD.fields.push(newField(el.dataset.t, TD.fields.length + 1, TD.w, TD.h)); TD.sel = TD.fields.length - 1; tdPaint(); };
 actions.tdRemove = () => { TD.fields.splice(TD.sel, 1); TD.sel = Math.max(0, TD.sel - 1); tdPaint(); };
@@ -107,8 +113,9 @@ actions.tdPreview = async () => {
   if (!TD.img) return toast('Choose the template image first', true);
   const t = tdObject(), m = modal(html`<h2>Preview with sample text</h2><canvas id="tdpv" style="width:100%;border-radius:12px;box-shadow:var(--shadow)"></canvas><div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn primary" data-act="closeModal">Close</button></div>`, { wide: true });
   const cv = $('#tdpv', m), k = Math.min(1, 1200 / t.width); cv.width = Math.round(t.width * k); cv.height = Math.round(t.height * k);
+  await ensureFonts(t);
   const c = cv.getContext('2d'); c.scale(k, k); const values = {}; t.fields.forEach(f => { values[f.id] = CERT_SAMPLE[f.src] ?? ('Sample ' + f.label); });
-  drawTemplate(c, t, { img: TD.img, photo: null, values, logo: null, exporting: false, showEmpty: true });
+  drawTemplate(c, t, { img: TD.img, photo: null, values, merge: CERT_SAMPLE, logo: null, exporting: false, showEmpty: true });
 };
 forms.tplSave = async f => {
   if (!TD.img) throw new Error('Choose the template image first');

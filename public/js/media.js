@@ -59,31 +59,69 @@ async function fileThumb(file) {
 const fileKind = (name, mime) => { const e = String(name || '').split('.').pop().toLowerCase(); return /pdf/.test(e) ? ['PDF', '#c0392b'] : /docx?/.test(e) ? ['DOC', '#2b579a'] : /xlsx?|csv/.test(e) ? [e.toUpperCase().slice(0, 4), '#1d7a46'] : /pptx?/.test(e) ? ['PPT', '#c25b1a'] : e === 'zip' ? ['ZIP', '#6d5c8f'] : /png|jpe?g|webp/.test(e) ? ['IMG', '#2b8a9e'] : e === 'txt' ? ['TXT', '#5d6588'] : ['FILE', '#5d6588']; };
 const fileTile = (name, mime, link) => { const [t, c] = link ? ['LINK', '#2b3078'] : fileKind(name, mime); return html`<span class="ftile" style="--fc:${c}" aria-hidden="true"><b>${t}</b></span>`; };
 
-// ---------- text that always stays inside its box ----------
-function wrapWords(c, text, maxW) {
-  const words = text.split(/\s+/).filter(Boolean), lines = []; let cur = '';
-  for (const w of words) { const t = cur ? cur + ' ' + w : w; if (cur && c.measureText(t).width > maxW) { lines.push(cur); cur = w; } else cur = t; }
-  if (cur) lines.push(cur);
-  return lines;
+// ---------- fonts a template can use ----------
+// Times New Roman is drawn with Tinos (the same letter shapes and widths), so it looks identical on every phone and computer.
+const FONTS = {
+  sans: ['Inter (clean sans-serif)', 'Inter, Arial, sans-serif'],
+  times: ['Times New Roman', 'Tinos, "Times New Roman", Times, serif'],
+  garamond: ['Garamond', '"EB Garamond", Garamond, "Times New Roman", serif'],
+  cormorant: ['Cormorant Garamond (fine serif)', '"Cormorant Garamond", Garamond, serif'],
+  baskerville: ['Libre Baskerville', '"Libre Baskerville", Georgia, serif'],
+  playfair: ['Playfair Display (elegant serif)', '"Playfair Display", Georgia, serif'],
+  script: ['Great Vibes (script)', '"Great Vibes", cursive'],
+};
+const fontStack = k => (FONTS[k] || FONTS.sans)[1];
+// load every font a template uses before anything is measured or drawn (canvas will not wait for them by itself)
+async function ensureFonts(t) {
+  const want = new Set();
+  for (const f of t.fields || []) if (f.type !== 'logo') { const st = fontStack(f.font), i = f.italic ? 'italic ' : ''; for (const w of [f.weight || 800, 700, 400]) want.add(`${i}${w} 32px ${st}`); }
+  await Promise.all([...want].map(s => document.fonts?.load?.(s).catch(() => {}) || 0));
 }
+
+// ---------- text that always stays inside its box ----------
+// text: a string, or runs [{ t: 'words', b: true }] where b marks the merged details (shown bold). Words wrap to the box, the size
+// shrinks until everything fits, and a paragraph can be justified. o: color, weight, font, italic, align (left|center|right|justify),
+// lines (at most), caps, size (largest size to use), dry (only measure).
 function fitText(c, text, box, o) {
-  let t = String(text || '').trim(); if (!t) return { fits: true, size: 0 };
-  if (o.caps) t = t.toUpperCase();
-  const pad = Math.min(box.w * 0.03, 14), maxW = box.w - pad * 2, maxLines = o.lines || 1, weight = o.weight || 800, family = 'Inter, Arial, sans-serif';
-  let size = Math.floor(box.h / (maxLines > 1 ? maxLines * 1.08 : 1.15)), lines = null;
+  const runs = typeof text === 'string' ? [{ t: text, b: false }] : text, caps = !!o.caps;
+  const words = []; let cw0 = null;
+  for (const r of runs) for (const part of String(r.t || '').split(/(\s+)/)) { if (!part) continue; if (/^\s+$/.test(part)) { cw0 = null; continue; } if (!cw0) { cw0 = { segs: [] }; words.push(cw0); } cw0.segs.push({ t: caps ? part.toUpperCase() : part, b: !!r.b }); }
+  if (!words.length) return { fits: true, size: 0 };
+  const pad = Math.min(box.w * 0.03, 14), maxW = box.w - pad * 2, maxLines = o.lines || 1, w0 = o.weight || 800, wb = Math.max(700, w0), family = fontStack(o.font), ital = o.italic ? 'italic ' : '';
+  const fnt = (size, b) => `${ital}${b ? wb : w0} ${size}px ${family}`, LH = maxLines > 2 ? 1.3 : 1.12;
+  let size = o.size || Math.floor(box.h / (maxLines > 1 ? maxLines * LH : 1.15)), lines = null, gap = 0;   // a size set by the designer is the starting point; the text only shrinks when it does not fit
   for (; size >= 8; size -= size > 160 ? 3 : 1) {
-    c.font = `${weight} ${size}px ${family}`;
-    const ls = wrapWords(c, t, maxW);
-    if (ls.length <= maxLines && ls.length * size * 1.12 <= box.h && ls.every(l => c.measureText(l).width <= maxW)) { lines = ls; break; }
+    c.font = fnt(size, false); gap = c.measureText(' ').width;
+    for (const x of words) x.m = x.segs.reduce((n, g) => { c.font = fnt(size, g.b); return n + c.measureText(g.t).width; }, 0);
+    const ls = []; let cur = [], cw = 0;
+    for (const x of words) { const add = cur.length ? gap + x.m : x.m; if (cur.length && cw + add > maxW) { ls.push(cur); cur = [x]; cw = x.m; } else { cur.push(x); cw += add; } }
+    if (cur.length) ls.push(cur);
+    if (ls.length <= maxLines && ls.length * size * LH <= box.h && words.every(x => x.m <= maxW)) { lines = ls; break; }
   }
   const fits = !!lines;
-  if (!lines) { size = 8; c.font = `${weight} 8px ${family}`; lines = wrapWords(c, t, maxW).slice(0, maxLines); }
+  if (!lines) { size = 8; c.font = fnt(8, false); gap = c.measureText(' ').width; for (const x of words) x.m = x.segs.reduce((n, g) => { c.font = fnt(8, g.b); return n + c.measureText(g.t).width; }, 0); lines = [words]; }
   if (o.dry) return { fits, size };
-  c.save(); c.fillStyle = o.color || '#1c2162'; c.textBaseline = 'middle'; c.textAlign = o.align || 'center';
-  const x = o.align === 'left' ? box.x + pad : o.align === 'right' ? box.x + box.w - pad : box.x + box.w / 2, lh = size * 1.12, y0 = box.y + (box.h - lines.length * lh) / 2 + lh / 2;
-  lines.forEach((l, i) => c.fillText(l, x, y0 + i * lh + size * 0.04));
+  c.save(); c.fillStyle = o.color || '#1c2162'; c.textBaseline = 'middle'; c.textAlign = 'left';
+  const lh = size * LH, y0 = box.y + (box.h - lines.length * lh) / 2 + lh / 2;
+  lines.forEach((ln, i) => {
+    const wsum = ln.reduce((s, x) => s + x.m, 0), natural = wsum + gap * (ln.length - 1), justify = o.align === 'justify' && i < lines.length - 1 && ln.length > 1, g = justify ? (maxW - wsum) / (ln.length - 1) : gap;
+    const total = wsum + g * (ln.length - 1);
+    let x = o.align === 'right' ? box.x + box.w - pad - total : o.align === 'left' || justify ? box.x + pad : box.x + (box.w - total) / 2;
+    for (const w of ln) { let px = x; for (const sg of w.segs) { c.font = fnt(size, sg.b); c.fillText(sg.t, px, y0 + i * lh + size * 0.04); px += c.measureText(sg.t).width; } x += w.m + g; }
+  });
   c.restore();
   return { fits, size };
+}
+// a sentence with placeholders such as {student}, {college}, {dates}: the merged details are marked so they can be shown in bold
+const MERGE_TOKENS = [['student', 'Student name'], ['college', 'College / school'], ['activities', 'Activities'], ['dates', 'Dates'], ['days', 'Days'], ['campaign', 'Campaign'], ['serial', 'Certificate number'], ['issued', 'Date of issue']];
+const hasTokens = s => /\{[a-z]+\}/.test(String(s || ''));
+function tokenRuns(text, merge, boldMerge, exporting) {
+  const out = [];
+  for (const part of String(text || '').split(/(\{[a-z]+\})/)) {
+    const m = part.match(/^\{([a-z]+)\}$/);
+    if (m) { const v = merge?.[m[1]]; out.push({ t: v !== undefined && v !== '' ? v : (exporting ? '' : part), b: !!boldMerge }); } else if (part) out.push({ t: part, b: false });
+  }
+  return out;
 }
 
 // ---------- the photo inside a whole frame ----------
@@ -111,9 +149,9 @@ function drawTemplate(c, t, st) {
       else if (!st.exporting && st.showEmpty) { c.save(); c.strokeStyle = '#99a'; c.setLineDash([10, 8]); c.lineWidth = 3; c.strokeRect(f.x, f.y, f.w, f.h); c.restore(); }
       continue;
     }
-    const text = f.src === 'fixed' ? f.value : (st.values?.[f.id] ?? '');
-    if (text) fitText(c, text, f, f);
-    else if (!st.exporting && st.showEmpty) fitText(c, f.label, f, { ...f, color: '#9aa1c4', weight: 600 });
+    const text = f.src === 'fixed' ? (hasTokens(f.value) ? tokenRuns(f.value, st.merge, f.boldMerge, st.exporting) : f.value) : (st.values?.[f.id] ?? '');
+    if (text && text.length) fitText(c, text, f, f);
+    else if (!st.exporting && st.showEmpty) fitText(c, f.label, f, { ...f, color: '#9aa1c4', weight: 600, font: 'sans', italic: false, align: 'center', lines: 1, size: 0 });
   }
 }
 // a small picture of a template with sample text, kept in the sheet for the template albums
@@ -121,7 +159,8 @@ async function templateThumb(t, img) {
   const k = 520 / t.width, cv = document.createElement('canvas'); cv.width = 520; cv.height = Math.max(1, Math.round(t.height * k));
   const c = cv.getContext('2d'); c.scale(k, k);
   const values = {}; t.fields.forEach(f => { values[f.id] = CERT_SAMPLE[f.src] ?? (f.src === 'college' ? 'Sample College' : f.label); });
-  drawTemplate(c, t, { img, photo: null, values, logo: null, exporting: true });
+  await ensureFonts(t);
+  drawTemplate(c, t, { img, photo: null, values, merge: CERT_SAMPLE, logo: null, exporting: true });
   return thumbB64(cv, [[520, 0.72], [440, 0.65], [360, 0.6], [300, 0.55]]);
 }
 // what each merge box shows in the designer's preview and thumbnail
@@ -169,19 +208,21 @@ const detailFields = (c, staff) => html`<h4 class="fsec">Institution</h4>
 // ---------- certificates: values for the merge boxes, an alignment check, PDF per student, and a zip of many ----------
 // every box takes its text from the frozen details of one student: student, college, activities, dates, days, campaign, serial, issued
 const certValues = (t, snap) => Object.fromEntries(t.fields.map(f => [f.id, f.src === 'fixed' ? f.value : (f.src === 'ask' ? '' : (snap[f.src] ?? ''))]));
+const fieldContent = (f, v, snap) => (f.src === 'fixed' && hasTokens(f.value) ? tokenRuns(f.value, snap, f.boldMerge, true) : v[f.id]);
 // which students' details do not fit their box (text would have to shrink below readable size or run out of room)
 function certCheck(t, snaps) {
   const c = document.createElement('canvas').getContext('2d'), bad = [];
   for (const s of snaps) {
     const v = certValues(t, s);
-    for (const f of t.fields) { if (f.type !== 'text' || !v[f.id]) continue; const r = fitText(c, v[f.id], f, { ...f, dry: true }); if (!r.fits || r.size < Math.max(14, f.h * 0.28)) { bad.push({ name: s.student, field: f.label, text: v[f.id] }); break; } }
+    for (const f of t.fields) { const txt = fieldContent(f, v, s); if (f.type !== 'text' || !txt || !txt.length) continue; const r = fitText(c, txt, f, { ...f, dry: true }); if (!r.fits || r.size < (f.size ? f.size * 0.8 : Math.max(12, f.h / (f.lines || 1) * (f.lines > 2 ? 0.4 : 0.28)))) { bad.push({ name: s.student, field: f.label }); break; } }
   }
   return bad;
 }
 async function certPdf(t, img, snap, logo = null) {
   const k = Math.min(1, 3400 / Math.max(t.width, t.height)), cv = document.createElement('canvas'); cv.width = Math.round(t.width * k); cv.height = Math.round(t.height * k);
+  await ensureFonts(t);
   const c = cv.getContext('2d'); c.scale(k, k);
-  drawTemplate(c, t, { img, photo: null, values: certValues(t, snap), logo, exporting: true });
+  drawTemplate(c, t, { img, photo: null, values: certValues(t, snap), merge: snap, logo, exporting: true });
   const jpg = await new Promise(res => cv.toBlob(res, 'image/jpeg', 0.92));
   return jpegToPdf(jpg, cv.width, cv.height);
 }
