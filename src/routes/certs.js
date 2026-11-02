@@ -5,6 +5,7 @@
 import { route, scopeOf } from '../lib/router.js';
 import { log } from '../lib/db.js';
 import { HttpError, bad, nowIso, todayStr, isDate, str, reqStr } from '../lib/util.js';
+import { syncDeskVolunteers } from './desk.js';
 
 const OPS = ['super_admin', 'admin'];
 const slog = (ctx, a, d) => log(ctx.db, 'staff', ctx.user.username, ctx.user.role, a, d, ctx.ip);
@@ -261,8 +262,13 @@ route('POST', '/api/staff/certs/fetch-sheet', OPS, async ctx => {
   if (text.length > 4e6) throw bad('The sheet is too large. Split it or remove unused columns.');
   return { ok: true, csv: text };
 });
+// The district office brings in a list of participating students (from a sheet or an Excel file). Each row names the institution exactly as it
+// is in the portal. The students can go into the certificate list of a campaign, into the institution's own volunteer records (so they appear
+// on its Daily report page and in the reports), or both.
+const KNOWN_ACTIVITIES = ['Help desk', 'Flash Mob', 'Class to Class Campaign', 'Game Zone'];
 route('POST', '/api/staff/certs/import', OPS, async ctx => {
-  const camp = await campaignOr404(ctx.db, ctx.body.campaign_id), rows = Array.isArray(ctx.body.rows) ? ctx.body.rows.slice(0, 8000) : [];
+  const camp = ctx.body.campaign_id ? await campaignOr404(ctx.db, ctx.body.campaign_id) : null, toVols = !!ctx.body.volunteers, rows = Array.isArray(ctx.body.rows) ? ctx.body.rows.slice(0, 8000) : [];
+  if (!camp && !toVols) throw bad('Choose where the students should be added: a certificate campaign, the colleges\' volunteer records, or both');
   if (!rows.length) throw bad('There are no rows to import');
   const cs = await ctx.db.all('SELECT id,name FROM colleges WHERE active=1'), exact = new Map(cs.map(c => [norm(c.name), c]));
   const find = name => { const k = norm(name); if (!k) return null; if (exact.has(k)) return exact.get(k); const hits = cs.filter(c => { const n = norm(c.name); return n.includes(k) || k.includes(n); }); return hits.length === 1 ? hits[0] : null; };
@@ -274,14 +280,26 @@ route('POST', '/api/staff/certs/import', OPS, async ctx => {
     const key = col.id + '|' + name.toLowerCase(), g = group.get(key) || { col, name, entries: [] };
     g.entries.push({ d: String(r.date || ''), a: String(r.activity || 'Participation') }); group.set(key, g);
   }
-  let people = 0, merged = 0, entries = 0; const touchedColleges = new Set(), now = nowIso();
+  let people = 0, merged = 0, entries = 0, recorded = 0, noDate = 0; const touchedColleges = new Set(), now = nowIso(), deskDays = new Set();
   for (const g of group.values()) {
-    await batchFor(ctx.db, camp.id, g.col.id);
-    const add = cleanEntries(g.entries), ex = await ctx.db.get('SELECT * FROM cert_people WHERE campaign_id=? AND college_id=? AND lower(name)=lower(?)', camp.id, g.col.id, g.name);
+    const add = cleanEntries(g.entries);
     touchedColleges.add(g.col.id); entries += add.length;
+    if (toVols) {
+      if (!add.length) noDate++;
+      for (const e of add) {
+        const known = KNOWN_ACTIVITIES.find(k => k.toLowerCase() === e.a.toLowerCase()), act = known || 'Other', other = known ? '' : (e.a === 'Participation' ? 'Participation' : e.a);
+        if (await ctx.db.get("SELECT 1 x FROM activity_log WHERE college_id=? AND date=? AND activity=? AND COALESCE(activity_other,'')=? AND lower(name)=lower(?)", g.col.id, e.d, act, other, g.name)) continue;
+        await ctx.db.insert('INSERT INTO activity_log(college_id,date,activity,activity_other,name,contact,created_at) VALUES (?,?,?,?,?,?,?)', g.col.id, e.d, act, other, g.name, '', now); recorded++;
+        if (act === 'Help desk') deskDays.add(g.col.id + '|' + e.d);
+      }
+    }
+    if (!camp) continue;
+    await batchFor(ctx.db, camp.id, g.col.id);
+    const ex = await ctx.db.get('SELECT * FROM cert_people WHERE campaign_id=? AND college_id=? AND lower(name)=lower(?)', camp.id, g.col.id, g.name);
     if (ex) { await ctx.db.run('UPDATE cert_people SET entries=?,updated_at=? WHERE id=?', JSON.stringify(cleanEntries([...parseEntries(ex.entries), ...add])), now, ex.id); merged++; }
     else { await ctx.db.insert('INSERT INTO cert_people(campaign_id,college_id,name,entries,eligible,source,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)', camp.id, g.col.id, g.name, JSON.stringify(add), 1, 'sheet', 'none', now, now); people++; }
   }
-  await slog(ctx, 'cert_import', `${camp.title}: ${people} new, ${merged} updated, ${touchedColleges.size} institutions`);
-  return { ok: true, people, merged, entries, institutions: touchedColleges.size, unmatched: [...unmatched].map(([name, rows]) => ({ name, rows })) };
+  for (const k of deskDays) { const [cid, d] = k.split('|'); await syncDeskVolunteers(ctx, Number(cid), d); }
+  await slog(ctx, 'participants_import', `${camp ? camp.title + ': ' : ''}${people} new, ${merged} updated, ${recorded} volunteer records, ${touchedColleges.size} institutions`);
+  return { ok: true, people, merged, entries, recorded, no_date: noDate, institutions: touchedColleges.size, unmatched: [...unmatched].map(([name, rows]) => ({ name, rows })) };
 });

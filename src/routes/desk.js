@@ -15,7 +15,7 @@ function checkDate(d) {
 }
 
 // the number of volunteers at the help desk on a day is the number of names added for it
-async function syncDeskVolunteers(ctx, id, date) {
+export async function syncDeskVolunteers(ctx, id, date) {
   const n = (await ctx.db.get("SELECT COUNT(*) n FROM activity_log WHERE college_id=? AND date=? AND activity='Help desk'", id, date)).n, now = nowIso();
   const r = await ctx.db.run('UPDATE desk_days SET volunteers=?,updated_at=? WHERE college_id=? AND date=?', n, now, id, date);
   if (!r.changes && n > 0) await ctx.db.run('INSERT INTO desk_days(college_id,date,registrations,volunteers,notes,created_at,updated_at) VALUES (?,?,0,?,?,?,?)', id, date, n, '', now, now);
