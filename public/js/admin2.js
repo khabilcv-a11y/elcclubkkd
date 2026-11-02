@@ -148,7 +148,7 @@ actions.dbSort = el => { DBSORT = el.dataset.k; apDashboard($('#pg')); };
 
 // ---------- link the photos of the district's Pixieset galleries into albums (one album per set; report screenshots and clippings are left out) ----------
 actions.pxImport = async () => {
-  let M; try { M = await (await fetch('/data/pixieset-import.json')).json(); } catch { return toast('The photo list could not be loaded', true); }
+  let M; try { M = await (await fetch('/pixieset-import.json')).json(); } catch { return toast('The photo list could not be loaded', true); }
   window.__px = M; const total = M.galleries.reduce((n, g) => n + g.sets.filter(x => !x.report).reduce((m, x) => m + x.photos.length, 0), 0);
   const mdl = modal(html`<h2>Import photos from Pixieset</h2><p class="muted small">Each set becomes an album in <b>Previous works</b>, with the photos shown straight from the Pixieset gallery (nothing is copied to the portal's storage, so it costs nothing). Sets that hold press clippings and social media statistics are left unticked. Running this again skips photos already imported.</p>
     <div class="tablewrap" style="max-height:48vh"><table data-nosort><thead><tr><th style="width:36px"><input type="checkbox" id="pxall" checked aria-label="Select all sets"></th><th>Set</th><th class="num">Photos</th></tr></thead><tbody>
