@@ -881,3 +881,6 @@ button.albpic{border:0;background:none;padding:0;cursor:pointer;font:inherit;wid
 
 .in-quiz .a11y-fab{bottom:84px}.in-quiz .a11y-panel{bottom:140px}
 @media(max-width:460px){.qx-brand img:first-child,.qx-sep{display:none}.qx-title{text-align:left}}
+
+.qz-tb{margin:0 16px 12px;padding:16px;border:2px solid var(--saffron);border-radius:var(--r);background:var(--saffron-50);display:grid;gap:12px}
+.qz-tbcode{display:flex;gap:16px;align-items:center;flex-wrap:wrap}.qz-qr.small{width:96px;height:96px}.qz-bigcode.small{font-size:1.8rem}

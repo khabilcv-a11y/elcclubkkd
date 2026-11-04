@@ -55,12 +55,15 @@ function scorePaper(str0, rows) {
 }
 function rankPeople(list, topN) {
   const done = list.filter(p => p.score !== null && p.score !== undefined);
-  done.sort((a, b) => b.score - a.score || (a.secs ?? 1e9) - (b.secs ?? 1e9) || a.name.localeCompare(b.name));
+  done.sort((a, b) => b.score - a.score || (a.secs ?? 1e9) - (b.secs ?? 1e9) || (b.tb_score || 0) - (a.tb_score || 0) || (a.tb_secs ?? 1e9) - (b.tb_secs ?? 1e9) || a.name.localeCompare(b.name));
+  const keyOf = p => `${p.score}|${p.secs ?? 'x'}|${p.tb_score || 0}|${p.tb_secs ?? 'x'}`;
   let rank = 0, prev = null;
-  done.forEach((p, i) => { const key = p.score + '|' + (p.secs ?? 'x'); if (key !== prev) { rank = i + 1; prev = key; } p.rank = rank; });
+  done.forEach((p, i) => { const key = keyOf(p); if (key !== prev) { rank = i + 1; prev = key; } p.rank = rank; });
   const cut = done[topN - 1], next = done[topN];
-  const tie = !!(cut && next && cut.score === next.score && (cut.secs ?? null) === (next.secs ?? null));
-  return { ranked: done, tie, waiting: list.filter(p => p.score === null || p.score === undefined) };
+  const tie = !!(cut && next && keyOf(cut) === keyOf(next));
+  // the students tied at the cut-off (the ones a tie-breaker is for)
+  const tied = tie ? done.filter(p => keyOf(p) === keyOf(cut)).map(p => p.id) : [];
+  return { ranked: done, tie, tied, waiting: list.filter(p => p.score === null || p.score === undefined) };
 }
 const dto = (p, extra = {}) => ({ id: p.id, name: p.name, klass: p.klass || '', college_id: p.college_id, score: p.score ?? null, total: p.total ?? null, secs: p.secs ?? null, source: p.source || '', selected: !!p.selected, invited: !!p.invited, started: !!p.started_at, finished: !!p.finished_at || p.score !== null && p.score !== undefined, ...extra });
 const byCode = async (db, code) => {
@@ -156,9 +159,40 @@ route('POST', '/api/public/quiz/:code/answer', null, async ctx => {
 // ======================================================================= college or school: the institution round
 const myQuiz = (db, ctx) => db.get("SELECT * FROM quizzes WHERE level='institution' AND college_id=?", ctx.college.id);
 const peopleOf = async (db, quizId) => db.all('SELECT * FROM quiz_people WHERE quiz_id=? ORDER BY id', quizId);
+// ---------- tie-breaker: a short extra round for the students tied at the cut-off ----------
+// Its questions are ones this quiz has not used. The points of every tie-breaker are added to each tied student, so they settle the order after the
+// score and the time; if they tie again, another tie-breaker can follow.
+async function tbInfo(db, parentId) {
+  const tbs = await db.all("SELECT * FROM quizzes WHERE level='tiebreak' AND parent_id=? ORDER BY id", parentId), m = new Map();
+  for (const t of tbs) for (const p of await peopleOf(db, t.id)) {
+    const e = m.get(p.from_id) || { score: 0, secs: 0, pending: false }; if (p.score !== null && p.score !== undefined) { e.score += p.score; e.secs += p.secs ?? 0; } else e.pending = true; m.set(p.from_id, e);
+  }
+  return { tbs, m };
+}
+const tbExtra = (m, id) => { const e = m.get(id); return e ? { tb_score: e.score, tb_secs: e.secs || null, tb_pending: e.pending } : {}; };
+async function tbView(db, tbs) {
+  const t = tbs[tbs.length - 1]; if (!t) return null;
+  const people = await peopleOf(db, t.id), { ranked, waiting } = rankPeople(people.map(p => dto(p)), 1);
+  return { quiz: quizDto(t), people: [...ranked, ...waiting], rounds: tbs.length };
+}
 async function institutionView(db, quiz, collegeId) {
-  const people = await peopleOf(db, quiz.id), { ranked, tie, waiting } = rankPeople(people.map(p => dto(p)), quiz.top_n);
-  return { quiz: quizDto(quiz), people: [...ranked, ...waiting], tie, selected: ranked.filter(p => p.selected).length };
+  const { tbs, m } = await tbInfo(db, quiz.id), people = await peopleOf(db, quiz.id), { ranked, tie, tied, waiting } = rankPeople(people.map(p => dto(p, tbExtra(m, p.id))), quiz.top_n);
+  return { quiz: quizDto(quiz), people: [...ranked, ...waiting], tie, tied, tiebreak: await tbView(db, tbs), selected: ranked.filter(p => p.selected).length };
+}
+async function makeTiebreak(ctx, parent, b) {
+  ctx.db.deferred = true;
+  const { tbs, m } = await tbInfo(ctx.db, parent.id), people = await peopleOf(ctx.db, parent.id), r = rankPeople(people.map(p => dto(p, tbExtra(m, p.id))), parent.top_n);
+  if (!r.tie) throw bad('There is no tie at the cut-off, so no tie-breaker is needed.');
+  if (tbs.some(t => t.status !== 'closed')) throw bad('A tie-breaker is already running. Finish or close it first.');
+  const n = Math.max(1, Math.min(10, Number(b.n) || 3)), mode = b.mode === 'live' ? 'live' : 'self';
+  const used = new Set([...parse(parent.q_ids, []), ...tbs.flatMap(t => parse(t.q_ids, []))]), all = await ctx.db.all('SELECT id FROM quiz_questions WHERE active=1');
+  let ids = shuffle(all.filter(x => !used.has(x.id)).map(x => x.id)).slice(0, n);
+  if (ids.length < n) ids = [...ids, ...shuffle(all.map(x => x.id).filter(x => !ids.includes(x))).slice(0, n - ids.length)];    // not enough unused questions: some earlier ones are asked again
+  if (!ids.length) throw bad('There are no questions left in the bank. Add some under Question bank.');
+  const id = await ctx.db.insert('INSERT INTO quizzes(code,level,college_id,ac,title,mode,status,q_ids,minutes,per_q,top_n,created_by,created_at,parent_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+    await newCode(ctx.db), 'tiebreak', parent.college_id, parent.ac || '', 'Tie-breaker · ' + parent.title, mode, 'open', JSON.stringify(ids), ids.length <= 4 ? 3 : 5, 20, 1, ctx.user ? ctx.user.username : ctx.college.name, nowIso(), parent.id);
+  for (const p of people.filter(x => r.tied.includes(x.id))) await ctx.db.run('INSERT INTO quiz_people(quiz_id,name,klass,college_id,invited,total,created_at,from_id) VALUES (?,?,?,?,1,?,?,?)', id, p.name, p.klass, p.college_id, ids.length, nowIso(), p.id);
+  return { ok: true, id, tied: r.tied.length, questions: ids.length };
 }
 route('GET', '/api/college/quiz', 'college', async ctx => {
   await ensureBank(ctx.db);
@@ -210,7 +244,7 @@ route('DELETE', '/api/college/quiz/people/:id', 'college', async ctx => {
   const q = await myQuiz(ctx.db, ctx), p = q && await ctx.db.get('SELECT id,name FROM quiz_people WHERE id=? AND quiz_id=?', Number(ctx.params.id), q.id);
   if (!p) throw new HttpError(404, 'Student not found');
   if (await ctx.db.get("SELECT 1 x FROM quizzes z WHERE z.level<>'institution' AND z.college_id IS NULL AND EXISTS (SELECT 1 FROM quiz_people r WHERE r.quiz_id=z.id AND r.invited=1 AND lower(r.name)=lower(?) AND r.college_id=?)", p.name, ctx.college.id)) throw bad('This student has already been invited to the next round. Please ask the district team.');
-  await ctx.db.run('DELETE FROM quiz_people WHERE id=?', p.id); return { ok: true };
+  await ctx.db.run('DELETE FROM quiz_people WHERE from_id=?', p.id); await ctx.db.run('DELETE FROM quiz_people WHERE id=?', p.id); return { ok: true };
 });
 route('POST', '/api/college/quiz/select', 'college', async ctx => {
   ctx.db.deferred = true;
@@ -223,6 +257,33 @@ route('POST', '/api/college/quiz/select', 'college', async ctx => {
   await ctx.db.run('UPDATE quiz_people SET selected=0 WHERE quiz_id=?', q.id);
   for (const i of ids) await ctx.db.run('UPDATE quiz_people SET selected=1 WHERE id=?', i);
   await clog(ctx, 'quiz_select', `${ids.length} students`); return { ok: true };
+});
+
+// ---- the coordinator's tie-breaker for the institution round ----
+const ownTb = async ctx => {
+  const q = await myQuiz(ctx.db, ctx); if (!q) throw new HttpError(404, 'Start the quiz first');
+  const t = await ctx.db.get("SELECT * FROM quizzes WHERE level='tiebreak' AND parent_id=? ORDER BY id DESC LIMIT 1", q.id); if (!t) throw new HttpError(404, 'There is no tie-breaker yet');
+  return t;
+};
+route('POST', '/api/college/quiz/tiebreak', 'college', async ctx => { const q = await myQuiz(ctx.db, ctx); if (!q) throw new HttpError(404, 'Start the quiz first'); const r = await makeTiebreak(ctx, q, ctx.body); await clog(ctx, 'quiz_tiebreak', r.tied + ' students'); return r; });
+route('POST', '/api/college/quiz/tiebreak/status', 'college', async ctx => {
+  const t = await ownTb(ctx), s = ctx.body.status === 'closed' ? 'closed' : 'open';
+  await ctx.db.run('UPDATE quizzes SET status=?,closed_at=? WHERE id=?', s, s === 'closed' ? nowIso() : null, t.id); return { ok: true };
+});
+route('GET', '/api/college/quiz/tiebreak/paper', 'college', async ctx => paperOf(ctx.db, await ownTb(ctx)));
+route('GET', '/api/college/quiz/tiebreak/live', 'college', async ctx => hostView(ctx, await ownTb(ctx)));
+route('POST', '/api/college/quiz/tiebreak/live', 'college', async ctx => hostAct(ctx, await ownTb(ctx)));
+route('POST', '/api/college/quiz/tiebreak/people/:pid', 'college', async ctx => {
+  ctx.db.deferred = true;
+  const t = await ownTb(ctx), p = await ctx.db.get('SELECT * FROM quiz_people WHERE id=? AND quiz_id=?', Number(ctx.params.pid), t.id); if (!p) throw new HttpError(404, 'Student not found');
+  const rows = await questionsOf(ctx.db, parse(t.q_ids, [])), b = ctx.body; let score, ans = {};
+  if (String(b.answers || '').trim()) ({ score, ans } = scorePaper(b.answers, rows));
+  else { score = Number(b.marks); if (!Number.isInteger(score) || score < 0 || score > rows.length) throw bad(`Type the answers, or the marks (0 to ${rows.length})`); }
+  await ctx.db.run('UPDATE quiz_people SET finished_at=?,score=?,total=?,answers=?,source=?,secs=NULL WHERE id=?', nowIso(), score, rows.length, JSON.stringify(ans), 'paper', p.id);
+  return { ok: true, score };
+});
+route('DELETE', '/api/college/quiz/tiebreak', 'college', async ctx => {
+  const t = await ownTb(ctx); await ctx.db.run('DELETE FROM quiz_people WHERE quiz_id=?', t.id); await ctx.db.run('DELETE FROM quizzes WHERE id=?', t.id); return { ok: true };
 });
 
 // ======================================================================= staff: bank, rounds, results, live host, report
@@ -261,7 +322,7 @@ route('GET', '/api/staff/quiz/overview', 'staff', async ctx => {
   for (const p of people) { const s = stat.get(p.quiz_id); if (!s) continue; s.joined++; if (p.invited) s.invited++; if (p.score !== null || p.finished_at) s.done++; if (p.selected) s.selected++; }
   const instQ = new Map(quizzes.filter(q => q.level === 'institution').map(q => [q.college_id, q]));
   const institutions = inst.map(c => { const q = instQ.get(c.id), s = q && stat.get(q.id); return { id: c.id, name: c.name, kind: c.kind, ac: c.ac, quiz: q ? { id: q.id, code: q.code, status: q.status } : null, participants: s ? s.done : 0, selected: s ? s.selected : 0 }; });
-  const rounds = quizzes.filter(q => q.level !== 'institution').map(q => ({ ...quizDto(q), ...stat.get(q.id) }));
+  const rounds = quizzes.filter(q => q.level === 'ac' || q.level === 'district').map(q => ({ ...quizDto(q), ...stat.get(q.id) }));
   return { bank: bank.n, institutions, rounds, on: await isOn(ctx.db) };
 });
 route('GET', '/api/staff/quiz/institution/:collegeId', 'staff', async ctx => {
@@ -303,8 +364,8 @@ route('POST', '/api/staff/quiz/rounds', OPS, async ctx => {
 const roundOf = async ctx => { const q = await ctx.db.get("SELECT * FROM quizzes WHERE id=? AND level<>'institution'", Number(ctx.params.id)); if (!q) throw new HttpError(404, 'Round not found'); return q; };
 async function roundView(db, q) {
   const [people, cols] = await Promise.all([peopleOf(db, q.id), db.all('SELECT id,name FROM colleges')]), cm = new Map(cols.map(c => [c.id, c.name]));
-  const { ranked, tie, waiting } = rankPeople(people.map(p => dto(p, { college: cm.get(p.college_id) || '' })), q.top_n);
-  return { quiz: quizDto(q, { live: liveOf(q) }), people: [...ranked, ...waiting], tie, selected: ranked.filter(p => p.selected).length };
+  const { tbs, m } = await tbInfo(db, q.id), { ranked, tie, tied, waiting } = rankPeople(people.map(p => dto(p, { college: cm.get(p.college_id) || '', ...tbExtra(m, p.id) })), q.top_n);
+  return { quiz: quizDto(q, { live: liveOf(q) }), people: [...ranked, ...waiting], tie, tied, tiebreak: await tbView(db, tbs), selected: ranked.filter(p => p.selected).length };
 }
 route('GET', '/api/staff/quiz/rounds/:id', 'staff', async ctx => roundView(ctx.db, await roundOf(ctx)));
 route('GET', '/api/staff/quiz/rounds/:id/paper', 'staff', async ctx => paperOf(ctx.db, await roundOf(ctx)));
@@ -338,6 +399,7 @@ route('POST', '/api/staff/quiz/rounds/:id/people/:pid', OPS, async ctx => {
   await ctx.db.run('UPDATE quiz_people SET finished_at=?,score=?,total=?,answers=?,source=?,secs=NULL WHERE id=?', nowIso(), score, rows.length, JSON.stringify(ans), 'paper', p.id);
   await slog(ctx, 'quiz_paper_entry', `${q.title}: ${p.name} ${score}`); return { ok: true, score };
 });
+route('POST', '/api/staff/quiz/rounds/:id/tiebreak', OPS, async ctx => { const q = await roundOf(ctx); if (q.level === 'tiebreak') throw bad('Choose the round, not its tie-breaker'); const r = await makeTiebreak(ctx, q, ctx.body); await slog(ctx, 'quiz_tiebreak', q.title + ': ' + r.tied + ' students'); return r; });
 route('POST', '/api/staff/quiz/rounds/:id/select', OPS, async ctx => {
   ctx.db.deferred = true;
   const q = await roundOf(ctx), ids = [...new Set((Array.isArray(ctx.body.ids) ? ctx.body.ids : []).map(Number))];

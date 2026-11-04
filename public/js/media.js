@@ -410,3 +410,31 @@ function quizHost({ code, url, onClose }) {
   };
   tick(true);
 }
+
+// ---------- tie-breaker round (shared by the coordinator's page and the staff console) ----------
+// T = { create, status, people, live, del, paper, refresh }: where to send each action for the page that shows it
+function quizTieBox(d, T) {
+  window.__tbT = T;
+  const tb = d.tiebreak, open = tb && tb.quiz.status !== 'closed', tiedNames = d.people.filter(p => (d.tied || []).includes(p.id)).map(p => p.name);
+  if (open) {
+    const q = tb.quiz, link = `${location.origin}/#/quiz/${q.code}`, done = tb.people.filter(p => p.score !== null).length;
+    return html`<div class="qz-tb"><div class="row between"><div><b>${icon('target')} Tie-breaker round${tb.rounds > 1 ? ' ' + tb.rounds : ''}</b><div class="small muted">${q.n} extra question${q.n === 1 ? '' : 's'} for ${tb.people.length} tied students · ${q.mode === 'live' ? 'live on the screen' : 'on phones'} · ${done} of ${tb.people.length} finished</div></div>
+        <div class="row gap-s"><button class="btn secondary sm" data-act="tbStatus" data-s="closed">Close the tie-breaker</button><button class="btn ghost sm danger" data-act="tbCancel">Cancel it</button></div></div>
+      <div class="qz-tbcode"><div class="qz-qr small">${raw(qrSvg(link))}</div><div><span class="small muted">Tie-breaker code</span><div class="qz-bigcode small">${q.code}</div><div class="small">Only the tied students are listed when they choose their college and name.</div></div>
+        <div class="row gap-s">${q.mode === 'live' ? html`<button class="btn accent sm" data-act="tbHost">${icon('target')} Open the host screen</button>` : ''}<button class="btn secondary sm" data-act="qpPrint" data-k="project" data-url="${T.paper}" data-inst="Tie-breaker">${icon('eye')} Show the questions</button><button class="btn secondary sm" data-act="tbCopy" data-link="${link}">${icon('copy')} Copy the link</button><button class="btn secondary sm" data-act="tbRefresh">${icon('refresh')} Refresh</button></div></div>
+      <div class="tablewrap"><table data-nosort><thead><tr><th>Student</th><th class="num">Tie-breaker score</th><th class="num">Time</th><th class="ia"></th></tr></thead><tbody>${tb.people.map(p => html`<tr><td><b>${p.name}</b> <span class="small muted">${p.klass || ''}</span></td><td class="num">${p.score === null ? html`<span class="muted small">waiting</span>` : html`<b>${p.score}</b> / ${p.total}`}</td><td class="num">${p.secs ? mmss(p.secs) : '–'}</td><td class="ia"><button class="btn sm secondary" data-act="tbEnter" data-id="${p.id}" data-name="${esc(p.name)}" data-n="${q.n}">Enter result</button></td></tr>`)}</tbody></table></div></div>`;
+  }
+  if (d.tie) return html`<div class="alert warn" style="margin:0 16px 10px;align-items:flex-start">${icon('alert')}<div><b>${tiedNames.length} students are tied at the cut-off:</b> ${tiedNames.join(', ')}.<div class="small" style="margin-top:4px">Run a short tie-breaker with a few extra questions just for them. The points decide the order after the score and the time.</div>
+    <form data-form="tbCreate" class="row gap-s" style="margin-top:10px;align-items:flex-end"><label class="f" style="margin:0"><span>Questions</span><select name="n"><option>2</option><option selected>3</option><option>4</option><option>5</option></select></label><label class="f" style="margin:0"><span>How</span><select name="mode"><option value="self">On phones</option><option value="live">Live on the screen</option></select></label><button class="btn primary" type="submit">${icon('target')} Start the tie-breaker</button></form><div data-err></div></div></div>`;
+  if (tb) return html`<div class="alert ok" style="margin:0 16px 10px">${icon('check-circle')}<div>The tie-breaker has been played and the ranking above is final.</div></div>`;
+  return '';
+}
+const tbDone = msg => { if (msg) toast(msg); window.__tbT?.refresh?.(); };
+forms.tbCreate = async f => { const v = fd(f), r = await api(window.__tbT.create, 'POST', { n: Number(v.n), mode: v.mode }); tbDone(`Tie-breaker started for ${r.tied} students`); };
+actions.tbStatus = async el => { await api(window.__tbT.status, 'POST', { status: el.dataset.s }); tbDone('Tie-breaker closed'); };
+actions.tbCancel = async () => { if (!await confirmBox('Cancel this tie-breaker and remove its results?', 'Cancel it', true)) return; await api(window.__tbT.del, 'DELETE'); tbDone('Tie-breaker cancelled'); };
+actions.tbCopy = el => copyText(el.dataset.link, 'Link copied');
+actions.tbRefresh = () => tbDone();
+actions.tbHost = () => quizHost({ code: window.__tbCode, url: window.__tbT.live, onClose: () => tbDone() });
+actions.tbEnter = el => modal(html`<h2>Tie-breaker result of ${el.dataset.name}</h2><p class="muted small">Type the answers in order as letters, or only the marks.</p><form data-form="tbEnterF" data-id="${el.dataset.id}" class="stack-s"><label class="f"><span>Answers (a b c d, - if blank) · ${el.dataset.n} questions</span><input name="answers" maxlength="20" autocomplete="off" spellcheck="false"></label><label class="f"><span>or only the marks (0 to ${el.dataset.n})</span><input name="marks" type="number" min="0" max="${el.dataset.n}"></label><div data-err></div><div class="row" style="justify-content:flex-end"><button type="button" class="btn secondary" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">Save</button></div></form>`);
+forms.tbEnterF = async f => { const v = fd(f), r = await api(`${window.__tbT.people}/${f.dataset.id}`, 'POST', { answers: v.answers, marks: v.marks }); f.closest('.overlay').close(); tbDone('Score ' + r.score); };

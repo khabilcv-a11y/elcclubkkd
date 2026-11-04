@@ -38,7 +38,7 @@ function quizHome(err = '') {
 forms.qzCode = f => { const c = String(fd(f).code || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); if (c.length < 4) throw new Error('Type the quiz code'); location.hash = '#/quiz/' + c; };
 function quizJoinPage(info) {
   const closed = info.status !== 'open', cols = [...new Set(info.invited.map(p => p.college))], live = info.mode === 'live';
-  qzPaint(html`<div class="qx-card"><span class="qx-kicker">${info.level === 'institution' ? 'Institution round' : info.level === 'ac' ? 'AC round' : 'District final'}</span><h1>${info.title}</h1>
+  qzPaint(html`<div class="qx-card"><span class="qx-kicker">${info.level === 'institution' ? 'Institution round' : info.level === 'ac' ? 'AC round' : info.level === 'tiebreak' ? 'Tie-breaker round' : 'District final'}</span><h1>${info.title}</h1>
     <ul class="qx-facts"><li>${icon('help')}<b>${info.n}</b> questions</li><li>${icon('clock')}${live ? 'Live: answer each question as it appears' : '<b>' + info.minutes + '</b> minutes'}</li></ul>
     ${closed ? html`<div class="alert warn">${icon('alert')}<div>${info.status === 'closed' ? 'This quiz has closed.' : 'This quiz has not opened yet. Please wait for your coordinator or the quiz team.'}</div></div>`
       : html`<form data-form="qzJoin" class="stack-s" novalidate>
@@ -172,7 +172,7 @@ async function pgQuiz(el) {
         <button class="btn primary" type="submit">${icon('plus')} Add</button></form><div data-err></div></div>
     <div class="card pad0" style="margin-top:16px"><div class="filterbar"><div class="row"><b>Results</b><span class="muted small">${done.length} student${done.length === 1 ? '' : 's'} finished${ppl.length > done.length ? `, ${ppl.length - done.length} still answering` : ''}</span></div>
       <div class="row gap-s"><button class="btn secondary sm" data-act="qzRefresh">${icon('refresh')} Refresh</button><button class="btn secondary sm" data-act="qzCsv">${icon('download')} Download</button><button class="btn primary sm" data-act="qzTop" ${done.length ? '' : 'disabled'}>Select the top ${q.top_n}</button></div></div>
-      ${d.tie ? html`<div class="alert warn" style="margin:0 16px 10px">${icon('alert')}<div>Students are tied at the cut-off. The letter allows a tie-breaker round: ask the tied students a few more questions, then tick the winners yourself.</div></div>` : ''}
+      ${qzTie(d)}
       ${ppl.length ? html`<div class="tablewrap"><table data-nosort><thead><tr><th>#</th><th>Student</th><th>Class</th><th class="num">Score</th><th class="num">Time</th><th>Answered</th><th class="ia">Next round</th><th class="ia"></th></tr></thead><tbody>${ppl.map(p => html`<tr><td>${p.rank ?? '–'}</td><td><b>${p.name}</b></td><td>${p.klass}</td><td class="num">${p.score === null ? html`<span class="muted small">answering…</span>` : html`<b>${p.score}</b> / ${p.total}`}</td><td class="num">${p.secs ? mmss(p.secs) : '–'}</td><td>${p.source === 'paper' ? badge('Paper', 'grey') : p.source ? badge('Phone', 'info') : ''}</td><td class="ia">${p.score === null ? '' : html`<label class="chk"><input type="checkbox" data-qzsel="${p.id}" ${p.selected ? 'checked' : ''}> Selected</label>`}</td><td class="ia"><button class="ib danger" data-act="qzDel" data-id="${p.id}" title="Remove" aria-label="Remove ${esc(p.name)}">${icon('trash')}</button></td></tr>`)}</tbody></table></div>`
         : html`<div style="padding:18px">${empty('No one has taken part yet', 'Share the code, or add paper results above.', 'users')}</div>`}
       <div class="small muted" style="padding:10px 16px">${d.selected ? `${d.selected} selected for the next round.` : ''} ${d.ac ? `Your students go to the <b>${d.ac}</b> Assembly Constituency round.` : 'Your Assembly Constituency is not set yet. Please tell the district team.'}</div></div>`);
@@ -190,6 +190,8 @@ forms.qzPaper = async f => {
 actions.qzMode = async el => { await api('/api/college/quiz/settings', 'POST', { mode: el.dataset.m, per_q: Number($('#qzperq')?.value) || QD.quiz.per_q }); toast(el.dataset.m === 'live' ? 'Live mode: the questions will be shown on your screen' : 'Students will answer on their phones at their own pace'); pgQuiz($('#pg')); };
 document.addEventListener('change', async e => { if (e.target.id === 'qzperq') { try { await api('/api/college/quiz/settings', 'POST', { mode: 'live', per_q: Number(e.target.value) }); toast('Saved'); } catch (er) { toast(er.message, true); } } });
 actions.qzHost = () => quizHost({ code: QD.quiz.code, url: '/api/college/quiz/live', onClose: () => pgQuiz($('#pg')) });
+// the tie-breaker for the students tied at the cut-off
+const qzTie = d => { window.__tbCode = d.tiebreak?.quiz.code; return quizTieBox(d, { create: '/api/college/quiz/tiebreak', status: '/api/college/quiz/tiebreak/status', people: '/api/college/quiz/tiebreak/people', live: '/api/college/quiz/tiebreak/live', del: '/api/college/quiz/tiebreak', paper: '/api/college/quiz/tiebreak/paper', refresh: () => pgQuiz($('#pg')) }); };
 actions.qzRefresh = () => pgQuiz($('#pg'));
 actions.qzStatus = async el => { await api('/api/college/quiz/status', 'POST', { status: el.dataset.s }); toast(el.dataset.s === 'open' ? 'Quiz opened' : 'Quiz closed'); pgQuiz($('#pg')); };
 actions.qzCopy = () => copyText(`${location.origin}/#/quiz/${QD.quiz.code}`, 'Link copied');
