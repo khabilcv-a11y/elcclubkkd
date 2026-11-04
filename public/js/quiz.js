@@ -1,5 +1,6 @@
 'use strict';
 // ---- Quiz competition: the student pages (join, answer on a phone, live quiz) and the coordinator's page inside the college or school workspace ----
+let QZ = null;      // the student's current quiz (join page, questions, answers, live state)
 const lsGet = k => { try { return localStorage.getItem(k); } catch { return null; } };
 const lsSet = (k, v) => { try { v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch { /* private window: the quiz still works, only resuming does not */ } };
 const mmss = s => `${Math.floor(Math.max(0, s) / 60)}:${String(Math.max(0, Math.floor(s)) % 60).padStart(2, '0')}`;
@@ -60,7 +61,7 @@ function quizEnter(info, r) {
 // ---------- answering on the phone (each student at their own pace, within the time) ----------
 function quizPlay(info, r) {
   let saved = {}; try { saved = JSON.parse(lsGet('elcq:' + info.code + ':a') || '{}'); } catch { /* start fresh */ }
-  QZ = { info, token: r.token, qs: r.questions, ans: saved, i: 0, deadline: Date.now() + (r.ends_at - r.now), done: false };
+  QZ = { info, token: r.token, qs: r.questions, ans: saved, i: 0, deadline: Date.now() + (r.ends_at - r.now) - 20000, done: false };   // the server allows 20 more seconds, so a slow connection does not lose answers
   const first = QZ.qs.findIndex(q => saved[q.id] === undefined); QZ.i = first < 0 ? 0 : first;
   quizPaint();
   clearInterval(QZ.timer); QZ.timer = setInterval(() => {
