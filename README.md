@@ -163,3 +163,14 @@ Staff console → **Selfie contest**: entries as picture cards with search and s
 
 ### Assembly Constituency of each institution
 `colleges.ac` holds the AC an institution belongs to (and `ac_all` every AC it works in); the quiz and essay rounds are built on it. The district office's list is in `src/lib/ac.js`. On the **Dashboard** admins and super admins see a notice while any active college or school has no AC: *Apply the district office's list* matches the listed names to the registered institutions (spelling differences are tolerated; names not found are shown) and *Set them one by one* opens a table to choose the AC of each. An institution that works in several ACs takes the first as its own, which can be changed there.
+
+### Quiz competition (ECI letter of 30 Oct 2026)
+Three rounds, each one quiz with a six-character join code (`#/quiz`, `#/quiz/CODE`, a code box on the home page):
+- **Institution round** (college or school workspace → *Quiz competition*): one click creates the quiz from the 50 reference questions of Annexure-I (`src/lib/quizbank.js`, drawn evenly from the four topics). Students join with the code or QR (no sign-in) and answer on their phones within the time; paper mode prints the question paper, answer sheet and key (*Print*), and the coordinator types each student's answers as letters (or just the marks). Phone and paper results are ranked together (score, then time); the coordinator selects the top 2.
+- **AC round** and **district final** (staff console → *Quiz competition* → *AC rounds and final*; admins and super admins): one AC round per constituency invites the students the institutions of that AC selected (the AC comes from the institution's Assembly Constituency, see above); the final invites the AC winners. Each round runs on phones (self-paced) or *live*: the host screen shows each question with a countdown, the phones follow, answers are revealed with counts, and the standings are kept. Staff can enter paper results, add a substitute student, change settings and select the top 10.
+- **Question bank** tab (add, edit, switch off questions) and **Compliance report** tab (the district's row of Annexure-II, the winners, a CSV and a print view).
+Live rounds poll every 1.5 to 2.5 seconds, so one 30-minute final with about 130 students uses roughly 50,000 requests of the 100,000 a day on the free plan.
+
+### Institution profile chip and Hall of fame
+The college and school top bar shows an icon and the percentage of the institution profile that is filled in (red under 50%, amber below 100%, green at 100%); hovering lists what is missing, and it opens the profile. *Institution profile* is the only item of its own group, *Your institution*, at the end of the menu.
+The **Hall of fame** (home page, below *Campus to booth*, and the display board) shows the leader of each award with its logo, full name, type and figure; awards with no leader show *Up for grabs*.

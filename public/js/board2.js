@@ -92,10 +92,8 @@ async function renderCampusBoard() {
     <div class="section-head" style="margin-top:34px"><div><h2>College and school ranking</h2><p>Ranked by coverage: the share of eligible students who are registered.</p></div>
       <label class="f" style="margin:0;min-width:240px"><span class="sr">Search</span><input type="search" id="cq2" placeholder="Search a college or school…" value="${esc(cquery)}"></label></div>
     <div id="cpodium"></div><div class="board" id="cboard" data-limit="0"></div>
-    <div class="section-head" style="margin-top:34px"><h2>Hall of fame</h2></div><div class="grid g3" id="cawards"></div></div>`, 'board'));
+    <div style="margin-top:34px">${hallOfFame(A)}</div></div>`, 'board'));
   paintCampus();
-  const items = [['target', 'Highest coverage', A.coverage, '%'], ['user-check', 'Most students registered', A.registered, 'registered'], ['users', 'Most volunteer-days at help desks', A.desk_vols, 'volunteer-days'], ['trophy', 'Most activity volunteers', A.activity, 'volunteer-days'], ['camera', 'Most photos shared', A.photos, 'photos']];
-  show($('#cawards'), html`${items.map(([ic, tt, w, u]) => html`<div class="res rv"><span class="ico">${icon(ic)}</span><div class="grow"><h3>${tt}</h3><p>${w ? html`<b>${w.name}</b> · ${n(w.value)} ${u}` : 'Up for grabs'}</p></div></div>`)}`);
   $('#cq2').addEventListener('input', e => { cquery = e.target.value; paintCampus(); });
   clearInterval(boardTimer); boardTimer = setInterval(async () => { if (location.hash !== '#/board') return clearInterval(boardTimer); try { BOARD = await api('/api/public/board'); paintCampus(); } catch {} }, 30000);
 }

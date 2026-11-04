@@ -2,14 +2,14 @@
 import { route } from '../lib/router.js';
 import { log } from '../lib/db.js';
 import { reqStr, str, emailOk, nowIso } from '../lib/util.js';
-import { EXTRA, INST_TYPES, extraBody } from '../lib/profile.js';
+import { EXTRA, INST_TYPES, extraBody, profileStatus } from '../lib/profile.js';
 
 const FIELDS = ['name', 'short_name', 'kind', 'address', 'phone', 'email', 'coordinator', 'lsgi', ...EXTRA];
 route('GET', '/api/college/profile', 'college', ctx => {
   const c = ctx.college, out = {};
   for (const k of FIELDS) out[k] = c[k] ?? '';
   out.kind = c.kind === 'school' ? 'school' : 'college'; out.profile_at = c.profile_at || null;
-  return { profile: out, types: INST_TYPES };
+  return { profile: out, types: INST_TYPES, status: profileStatus(c) };
 });
 route('PUT', '/api/college/profile', 'college', async ctx => {
   ctx.db.deferred = true;

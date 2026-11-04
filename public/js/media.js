@@ -258,3 +258,9 @@ async function linkPreview(url) {
   const bmp = await createImageBitmap(new Blob([Uint8Array.from(atob(r.image), ch => ch.charCodeAt(0))], { type: r.mime }));
   return { ...r, image: null, thumb: await thumbB64(bmp, [[360, 0.72], [300, 0.62], [240, 0.55]]) };
 }
+
+// a QR code for a link, as an inline picture (needs /vendor/qrcode.js)
+function qrSvg(text) {
+  try { const q = qrcode(0, 'M'); q.addData(String(text)); q.make(); return q.createSvgTag({ cellSize: 4, margin: 2, scalable: true }); }
+  catch { return ''; }
+}

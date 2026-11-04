@@ -4,7 +4,7 @@ async function detectMe() {
   try { const w = await api('/api/whoami'); ME.kind = (w.kind === 'college' || w.kind === 'officer') ? w.kind : null; ME.name = ME.kind ? w.name : ''; }
   catch { ME.kind = null; ME.name = ''; }
 }
-const TITLES = { '': 'SWEEP Kozhikode · Electoral Literacy Clubs', board: 'Display board', gallery: 'Photo gallery', selfie: 'Selfie contest', resource: 'Resource', login: 'Sign in', me: 'College workspace', officer: 'Village officer workspace', ack: 'Village certification' };
+const TITLES = { '': 'SWEEP Kozhikode · Electoral Literacy Clubs', board: 'Display board', gallery: 'Photo gallery', selfie: 'Selfie contest', quiz: 'ELC Quiz', resource: 'Resource', login: 'Sign in', me: 'College workspace', officer: 'Village officer workspace', ack: 'Village certification' };
 
 async function route() {
   const [seg, a, b] = location.hash.replace(/^#\/?/, '').split('/');
@@ -14,6 +14,7 @@ async function route() {
   if (seg === 'ack') return renderAck(a);
   if (seg === 'gallery') return renderPublicGallery(a, b);
   if (seg === 'selfie') return renderSelfie();
+  if (seg === 'quiz') return renderQuiz(a);
   if (seg === 'resource') return renderResource(a);
   if (seg === 'school-signup') return renderSchoolSignup();
   if (seg === 'college-signup') return renderCollegeSignup();

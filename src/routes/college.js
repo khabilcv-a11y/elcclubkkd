@@ -4,6 +4,7 @@ import { collegeStats } from '../lib/stats.js';
 import { driveUpload, driveGet, driveDelete, driveConfigured } from '../lib/drive.js';
 import { HttpError, bad, haversine, isDate, todayStr, nowIso, str, reqStr, int, phone, token, isDup } from '../lib/util.js';
 import { workingDates, planRoster } from '../lib/roster.js';
+import { profileStatus } from '../lib/profile.js';
 
 export const LOCKED = new Set(['submitted', 'acknowledged']);
 const clog = (ctx, action, detail) => log(ctx.db, 'college', ctx.college.name, null, action, detail, ctx.ip);
@@ -84,7 +85,7 @@ route('GET', '/api/college/overview', 'college', async ctx => {
   });
   return {
     college: { id: c.id, kind: c.kind === 'school' ? 'school' : 'college', logo_v: c.logo_at || null, name: c.name, short_name: c.short_name, address: c.address, phone: c.phone, email: c.email, coordinator: c.coordinator, lsgi: c.lsgi },
-    stats: stats.find(s => s.id === c.id), assignments, requests, days, pool, today: todayStr(),
+    profile: profileStatus(c), stats: stats.find(s => s.id === c.id), assignments, requests, days, pool, today: todayStr(),
     photos_enabled: driveConfigured(ctx.env),
   };
 });

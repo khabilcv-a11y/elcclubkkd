@@ -148,6 +148,6 @@ export async function campusStats(db) {
   return { institutions: list, totals, trend: trend.reverse(), today };
 }
 export function campusAwards(list) {
-  const top = (key, ok = () => true) => { const c = list.filter(ok).sort((a, b) => b[key] - a[key])[0]; return c && c[key] > 0 ? { id: c.id, name: c.short_name || c.name, value: c[key] } : null; };
+  const top = (key, ok = () => true) => { const c = list.filter(ok).sort((a, b) => b[key] - a[key])[0]; return c && c[key] > 0 ? { id: c.id, name: c.name || c.short_name, value: c[key], logo_v: c.logo_v || null, kind: c.kind === 'school' ? 'School' : 'College' } : null; };
   return { coverage: top('pct', c => c.eligible >= 20), registered: top('registered'), desk_regs: top('desk_regs'), desk_vols: top('desk_vols'), activity: top('activity'), photos: top('photos') };
 }
