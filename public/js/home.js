@@ -126,7 +126,7 @@ function fanMix(list) {
   list.filter(g => g.college_id).forEach(g => { if (!by.has(g.college_id)) by.set(g.college_id, []); by.get(g.college_id).push(g); });
   const cols = []; for (let r = 0; ; r++) { let any = false; for (const a of by.values()) if (a[r]) { cols.push(a[r]); any = true; } if (!any) break; }
   if (!offs.length || !cols.length) return list.slice(0, 14);
-  const out = [], nC = Math.min(cols.length, 7); let a = 0;
+  const out = [], nC = Math.min(cols.length, 8); let a = 0;
   for (let c = 0; c < nC; c++) out.push(offs[a++ % offs.length], cols[c], offs[a++ % offs.length]);
   return out;
 }
@@ -248,11 +248,12 @@ function paintBoard(podSel, lbSel, limit) {
 // ---------- map ----------
 let MAPMARK = new Map(), MAPFILTER = 'all';
 const STATUS_LABEL = { registered: 'Voters registered', present: 'Students present', allotted: 'Allotted', open: 'Not yet allotted' };
-function wireMap() {
+async function wireMap() {
   show($('#mapfilter'), html`${[['all', 'All'], ['registered', 'Registered'], ['present', 'Present'], ['allotted', 'Allotted'], ['open', 'Open']].map(([k, l]) => html`<button class="chip ${MAPFILTER === k ? 'on' : ''}" data-act="mapf" data-k="${k}" aria-pressed="${MAPFILTER === k}">${l}</button>`)}`);
   paintVillageList();
   $('#vq')?.addEventListener('input', paintVillageList);
   const el = $('#map'); if (!el) return;
+  if (typeof L === 'undefined') { try { await loadLeaflet(); } catch { /* shown below */ } }
   if (typeof L === 'undefined') { el.innerHTML = '<div class="loading">The map could not be loaded. The village list on the right still works.</div>'; return; }
   if (MAP) { MAP.remove(); MAP = null; }
   MAP = L.map(el, { scrollWheelZoom: false, zoomControl: true }).setView([11.45, 75.85], 9);

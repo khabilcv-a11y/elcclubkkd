@@ -72,7 +72,15 @@ const FONTS = {
 };
 const fontStack = k => (FONTS[k] || FONTS.sans)[1];
 // load every font a template uses before anything is measured or drawn (canvas will not wait for them by itself)
+// the extra fonts for certificates and posters (Tinos, Garamond, Playfair …) are fetched only when a template is drawn
+let displayFonts = false;
+function loadDisplayFonts() {
+  if (displayFonts) return; displayFonts = true;
+  const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'https://fonts.googleapis.com/css2?family=Tinos:ital,wght@0,400;0,700;1,400;1,700&family=EB+Garamond:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Playfair+Display:ital,wght@0,400;0,700;0,800;1,400;1,700&family=Great+Vibes&display=swap';
+  document.head.append(l);
+}
 async function ensureFonts(t) {
+  loadDisplayFonts();
   const want = new Set();
   for (const f of t.fields || []) if (f.type !== 'logo') { const st = fontStack(f.font), i = f.italic ? 'italic ' : ''; for (const w of [f.weight || 800, 700, 400]) want.add(`${i}${w} 32px ${st}`); }
   await Promise.all([...want].map(s => document.fonts?.load?.(s).catch(() => {}) || 0));
@@ -263,4 +271,79 @@ async function linkPreview(url) {
 function qrSvg(text) {
   try { const q = qrcode(0, 'M'); q.addData(String(text)); q.make(); return q.createSvgTag({ cellSize: 4, margin: 2, scalable: true }); }
   catch { return ''; }
+}
+
+// ---------- quiz papers: the question paper, answer sheets and key (shared by the coordinator page and the staff console) ----------
+// Made to save paper: the questions are set in two columns, the answer sheets are half a page each (two to a sheet, with a cut line), and the questions can be
+// shown on a screen or projector instead of being printed at all.
+const qpEsc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+function quizPrintHtml(kind, p, o = {}) {
+  const q = p.quiz, inst = o.institution || q.title, lvl = q.level === 'institution' ? 'Institution round' : q.level === 'ac' ? 'AC round · ' + (q.ac || '') : 'District final';
+  const head = `<header class="pp-head"><div class="pp-t"><b>ELC Quiz Competition 2026</b><span>${qpEsc(lvl)}</span></div><div class="pp-inst">${qpEsc(inst)}</div></header>`;
+  const meta = `<div class="pp-meta"><span><i>Questions</i>${q.n}</span><span><i>Time allowed</i>${q.minutes} minutes</span><span><i>Maximum marks</i>${q.n}</span><span><i>Quiz code</i>${qpEsc(q.code)}</span></div>`;
+  if (kind === 'paper') {
+    return `<section class="pp-paper">${head}${meta}<div class="pp-fields"><span>Name</span><i></i><span>Class</span><i></i><span>Date</span><i></i></div>
+      <ol class="pp-rules"><li>Choose the one best answer for each question and mark it on the answer sheet. Do not write on this paper.</li><li>Fill the circle completely. Each question carries one mark; there is no negative marking.</li></ol>
+      <div class="pp-cols">${p.questions.map(x => `<div class="pp-q"><span class="pp-n">${x.no}</span><div><p>${qpEsc(x.text)}</p><ul>${x.opts.map((t, i) => `<li><b>${'abcd'[i]}</b><span>${qpEsc(t)}</span></li>`).join('')}</ul></div></div>`).join('')}</div>
+      <footer class="pp-foot">Questions from the reference bank of the Election Commission of India · Quiz code ${qpEsc(q.code)}</footer></section>`;
+  }
+  if (kind === 'key') {
+    return `<section class="pp-paper">${head}${meta}<h3 class="pp-h">Answer key (for the coordinator only)</h3><div class="pp-keygrid">${p.key.map((k, i) => `<span><b>${i + 1}</b>${k.toUpperCase()}</span>`).join('')}</div>
+      <p class="pp-note">One mark for each correct answer. Add the marks and write them on the sheet, or type the letters marked by the student into the portal and it will mark them.</p></section>`;
+  }
+  // answer sheets: questions run down in columns of ten
+  const cols = Math.ceil(q.n / 10), sheet = `<div class="pp-sheet">${head}<div class="pp-fields"><span>Name</span><i></i><span>Class</span><i></i></div>
+    <p class="pp-note">Fill <b>one</b> circle for each question, completely, with a pen.</p>
+    <div class="pp-omr" style="--cols:${cols}">${Array.from({ length: cols }, (_, c) => `<div class="pp-col">${Array.from({ length: 10 }, (_, r) => { const no = c * 10 + r + 1; return no > q.n ? '' : `<div class="pp-row"><b>${no}</b>${'abcd'.split('').map(l => `<span class="pp-bub">${l}</span>`).join('')}</div>`; }).join('')}</div>`).join('')}</div>
+    <div class="pp-sfoot"><span>Quiz code ${qpEsc(q.code)}</span><span>Marks: ______ / ${q.n}</span></div></div>`;
+  const copies = Math.max(1, Math.min(400, Number(o.copies) || 1)), pages = [];
+  const cut = '<div class="pp-cut"><span>cut here</span></div>';
+  for (let i = 0; i < copies; i += 3) pages.push(`<div class="pp-page">${[0, 1, 2].filter(k => i + k < copies).map(() => sheet).join(cut)}</div>`);
+  return pages.join('');
+}
+function quizPrint(kind, p, o = {}) {
+  const label = { paper: 'Question paper', sheet: 'Answer sheets', key: 'Answer key' }[kind], inst = o.institution || p.quiz.title, oldTitle = document.title;
+  document.title = `ELC Quiz 2026 - ${inst} - ${label}`;                 // names the PDF and appears in the print preview
+  document.getElementById('printarea')?.remove(); document.getElementById('ppstyle')?.remove();
+  const st = document.createElement('style'); st.id = 'ppstyle';
+  st.textContent = `@page{size:A4;margin:11mm 12mm 14mm;@bottom-left{content:"ELC Quiz Competition 2026 · ${qpEsc(inst).replace(/"/g, '')} · ${label}";font:7.5pt Inter,sans-serif;color:#555}@bottom-right{content:"Page " counter(page) " of " counter(pages);font:7.5pt Inter,sans-serif;color:#555}}`;
+  document.head.append(st);
+  const d = document.createElement('div'); d.id = 'printarea'; d.innerHTML = quizPrintHtml(kind, p, o); document.body.append(d);
+  const done = () => { d.remove(); st.remove(); document.title = oldTitle; removeEventListener('afterprint', done); };
+  addEventListener('afterprint', done); setTimeout(() => print(), 120);
+}
+// buttons on both pages: data-url (the paper of the quiz), data-inst (name printed on it), data-k (paper, sheet, key or project)
+actions.qpPrint = async el => {
+  const k = el.dataset.k, p = await api(el.dataset.url), o = { institution: el.dataset.inst || '' };
+  window.__qp = { p, o };
+  if (k === 'project') return quizProjector(p);
+  if (k === 'sheet') {
+    return modal(html`<h2>Answer sheets</h2><p class="muted small">Three answer sheets are printed on each page (cut along the dashed lines), so 30 students need only 10 pages. Print one for every student.</p>
+      <form data-form="qpSheets" class="stack-s"><label class="f"><span>How many students?</span><input type="number" name="copies" min="1" max="400" value="30" required></label>${typeof mfoot === 'function' ? mfoot('Print') : html`<div data-err></div><div class="row" style="justify-content:flex-end"><button class="btn primary" type="submit">Print</button></div>`}</form>`);
+  }
+  quizPrint(k, p, o);
+};
+forms.qpSheets = f => { const n = Number(fd(f).copies); f.closest('.overlay').close(); quizPrint('sheet', window.__qp.p, { ...window.__qp.o, copies: n }); };
+// the questions on a screen or projector, one at a time: students mark their answer sheets, so nothing but the answer sheets is printed
+function quizProjector(p) {
+  document.getElementById('qahost')?.remove();
+  const box = document.createElement('div'); box.id = 'qahost'; box.className = 'qa-host'; document.body.append(box); document.body.style.overflow = 'hidden';
+  let i = 0; const n = p.questions.length;
+  const close = () => { box.remove(); document.body.style.overflow = ''; removeEventListener('keydown', key); };
+  const paint = () => {
+    const x = p.questions[i];
+    box.innerHTML = `<button class="qh-x" data-h="close" aria-label="Close">×</button><div class="qh-main"><div class="qh-top"><span>Question ${x.no} of ${n}</span><span></span><span>${qpEsc(p.quiz.title)}</span></div><h1 class="qh-q">${qpEsc(x.text)}</h1>
+      <div class="qh-opts">${x.opts.map((t, k) => `<div class="qh-opt c${k}"><span class="qz-l">${'ABCD'[k]}</span><span class="qh-t">${qpEsc(t)}</span></div>`).join('')}</div>
+      <div class="qh-foot"><button class="btn secondary lg" data-h="prev" ${i === 0 ? 'disabled' : ''}>Previous</button><button class="btn accent lg" data-h="${i === n - 1 ? 'close' : 'next'}">${i === n - 1 ? 'Finish' : 'Next question'}</button></div></div>`;
+  };
+  const step = d => { i = Math.max(0, Math.min(n - 1, i + d)); paint(); };
+  const key = e => { if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); step(1); } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') step(-1); else if (e.key === 'Escape') close(); };
+  box.addEventListener('click', e => { const b = e.target.closest('[data-h]'); if (!b) return; if (b.dataset.h === 'close') close(); else step(b.dataset.h === 'next' ? 1 : -1); });
+  addEventListener('keydown', key); paint();
+}
+
+// the village map library is large, so it is fetched only when the map is shown
+let leafletLoad = null;
+function loadLeaflet() {
+  return (leafletLoad ||= new Promise((res, rej) => { const c = document.createElement('link'); c.rel = 'stylesheet'; c.href = '/vendor/leaflet/leaflet.css'; document.head.append(c); loadScript('/vendor/leaflet/leaflet.js').then(res, rej); }));
 }

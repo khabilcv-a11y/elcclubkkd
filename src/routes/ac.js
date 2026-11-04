@@ -1,6 +1,8 @@
 // Which Assembly Constituency (AC) each college and school belongs to. The AC and district rounds of the quiz and essay competitions are built on it,
 // so the super admin's dashboard flags every active institution that has none. The district office's list is applied with one button; the rest are set by hand.
-import { route } from '../lib/router.js';
+import { route as baseRoute } from '../lib/router.js';
+// saves are acknowledged at once and reach the Google Sheet a moment later, so nobody waits for Google
+const route = (method, path, guard, handler) => baseRoute(method, path, guard, async ctx => { ctx.db.deferred = true; return handler(ctx); });
 import { log } from '../lib/db.js';
 import { HttpError, bad } from '../lib/util.js';
 import { ACS, AC_LIST, matchInstitution } from '../lib/ac.js';

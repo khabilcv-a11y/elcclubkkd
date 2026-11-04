@@ -1,7 +1,9 @@
 // Selfie contest (Campus to Booth): the ELC coordinator of a college or school sends in the selfies of its students from inside the portal, several pictures per entry.
 // The district office looks through the entries and picks the best three of the district for the Chief Electoral Officer, Kerala.
 // Pictures live in Google Drive (Selfie contest / <institution>); a small thumbnail is kept in the sheet so the list opens instantly.
-import { route } from '../lib/router.js';
+import { route as baseRoute } from '../lib/router.js';
+// saves are acknowledged at once and reach the Google Sheet a moment later, so nobody waits for Google
+const route = (method, path, guard, handler) => baseRoute(method, path, guard, async ctx => { ctx.db.deferred = true; return handler(ctx); });
 import { log } from '../lib/db.js';
 import { driveUpload, driveDelete } from '../lib/drive.js';
 import { featureMap } from '../lib/features.js';

@@ -9,3 +9,6 @@
     if (p.nomotion) h.classList.add('a-nomotion');
   } catch (e) { /* storage blocked: defaults apply */ }
 })();
+
+// the Inter font stylesheet is loaded without holding up the first screen: it starts as a print stylesheet and is switched on once it has arrived
+(function () { var l = document.getElementById('gfonts'); if (!l) return; function on() { l.media = 'all'; } l.addEventListener('load', on); if (l.sheet) on(); setTimeout(on, 4000); })();

@@ -149,8 +149,9 @@ async function pgQuiz(el) {
     <div class="card qz-codecard"><div class="qz-qr" id="qzqr">${raw(qrSvg(link))}</div><div class="qz-codetxt"><span class="small muted">Quiz code</span><div class="qz-bigcode">${q.code}</div><div class="small">Students open <b>${location.host}</b> and choose <b>Quiz</b>, or scan the QR code.</div>
       <div class="row gap-s" style="margin-top:8px"><button class="btn secondary sm" data-act="qzCopy">${icon('copy')} Copy the link</button><a class="btn secondary sm" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(`ELC Quiz: join with code ${q.code} or open ${link}`)}">${icon('share')} WhatsApp</a></div></div>
       <div class="qz-status"><div class="small muted">${q.n} questions · ${q.minutes} minutes</div><div>${open ? badge('Open for students', 'ok') : badge('Closed', 'grey')}</div><button class="btn sm ${open ? 'secondary' : 'primary'}" data-act="qzStatus" data-s="${open ? 'closed' : 'open'}">${open ? 'Close the quiz' : 'Open the quiz'}</button></div></div>
-    <div class="card" style="margin-top:16px"><div class="card-head"><h3>${icon('printer')} Without phones: use paper</h3></div><p class="small muted" style="margin-bottom:10px">Print the question paper and the answer sheet, let the students write, then type each student's answers below. The same questions are used, so paper and phone results are ranked together.</p>
-      <div class="row gap-s"><button class="btn secondary" data-act="qzPrint" data-k="paper">${icon('file')} Question paper</button><button class="btn secondary" data-act="qzPrint" data-k="sheet">${icon('clipboard')} Answer sheet</button><button class="btn secondary" data-act="qzPrint" data-k="key">${icon('check-circle')} Answer key (for you)</button></div>
+    <div class="card" style="margin-top:16px"><div class="card-head"><h3>${icon('printer')} Without phones: use paper</h3></div><p class="small muted" style="margin-bottom:10px">Give each student an answer sheet and show or print the questions, then type each student's answers below. The same questions are used, so paper and phone results are ranked together.</p>
+      <div class="row gap-s"><button class="btn secondary" data-act="qpPrint" data-k="project" data-url="/api/college/quiz/paper" data-inst="${esc(d.institution)}">${icon('target')} Show the questions on a screen</button><button class="btn secondary" data-act="qpPrint" data-k="sheet" data-url="/api/college/quiz/paper" data-inst="${esc(d.institution)}">${icon('clipboard')} Answer sheets</button><button class="btn secondary" data-act="qpPrint" data-k="paper" data-url="/api/college/quiz/paper" data-inst="${esc(d.institution)}">${icon('file')} Question paper</button><button class="btn secondary" data-act="qpPrint" data-k="key" data-url="/api/college/quiz/paper" data-inst="${esc(d.institution)}">${icon('check-circle')} Answer key (for you)</button></div>
+      <p class="small muted" style="margin-top:8px">${icon('info')} <b>Saving paper:</b> show the questions on a screen or projector (or read them out) and print only the <b>answer sheets</b>: three to a page, so 30 students need 10 pages. If you print the question paper, it is two columns on two pages for 20 questions; print one for every four or five students to share.</p>
       <form data-form="qzPaper" class="qz-paper" novalidate><label class="f"><span>Student name *</span><input name="name" maxlength="60" required></label><label class="f"><span>Class</span><input name="klass" maxlength="40"></label>
         <label class="f qz-ans"><span>Answers, in order (a b c d, - if blank)</span><input name="answers" id="qzans" maxlength="80" autocomplete="off" spellcheck="false" placeholder="abcdabcd…"><small id="qzansn" class="muted">0 of ${q.n}</small></label><label class="f" style="max-width:110px"><span>or only marks</span><input name="marks" type="number" min="0" max="${q.n}" inputmode="numeric"></label>
         <button class="btn primary" type="submit">${icon('plus')} Add</button></form><div data-err></div></div>
@@ -183,27 +184,3 @@ actions.qzTop = async () => {
 actions.qzCsv = () => download('quiz-results.csv', toCsv(['Rank', 'Student', 'Class', 'Score', 'Out of', 'Seconds', 'Answered on', 'Selected'], QD.people.map(p => [p.rank ?? '', p.name, p.klass, p.score ?? '', p.total ?? '', p.secs ?? '', p.source, p.selected ? 'Yes' : ''])));
 // a big code and QR for the classroom screen
 actions.qzScreen = () => { const q = QD.quiz, link = `${location.origin}/#/quiz/${q.code}`; modal(html`<div class="qz-screen"><h2>Join the ELC Quiz</h2><div class="qz-qr big">${raw(qrSvg(link))}</div><p>Open <b>${location.host}</b>, choose <b>Quiz</b> and type</p><div class="qz-bigcode huge">${q.code}</div><p class="muted">${QD.institution}</p></div>`, { wide: true }); };
-const qzEsc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
-// printing: the paper is placed in a print-only layer, so the page behind it is not printed
-async function qzPrintData(kind, url) {
-  const p = await api(url), q = p.quiz, bits = [];
-  const head = `<div class="pp-head"><b>ELC Quiz Competition 2026</b><span>${qzEsc(QD?.institution || q.title)}</span></div>`;
-  if (kind === 'paper') {
-    bits.push(`${head}<div class="pp-fields"><span>Name: ________________________________</span><span>Class: ______________</span><span>Date: ____________</span></div><p class="pp-note">${q.n} questions · ${q.minutes} minutes · Choose one answer for each question and mark it on the answer sheet.</p>`);
-    bits.push(p.questions.map(x => `<div class="pp-q"><b>${x.no}.</b> ${qzEsc(x.text)}<ol type="a">${x.opts.map(o => `<li>${qzEsc(o)}</li>`).join('')}</ol></div>`).join(''));
-  } else if (kind === 'sheet') {
-    bits.push(`${head}<div class="pp-fields"><span>Name: ________________________________</span><span>Class: ______________</span></div><p class="pp-note">Fill one circle for each question.</p><table class="pp-omr"><tbody>${p.questions.map(x => `<tr><th>${x.no}</th>${'abcd'.split('').map(l => `<td><span class="pp-bub">${l}</span></td>`).join('')}</tr>`).join('')}</tbody></table>`);
-  } else {
-    bits.push(`${head}<h3>Answer key (for the coordinator only)</h3><table class="pp-key"><tbody>${p.key.map((k, i) => `<tr><th>${i + 1}</th><td>${k}</td></tr>`).join('')}</tbody></table>`);
-  }
-  return bits.join('');
-}
-actions.qzPrint = async el => {
-  const htmlText = await qzPrintData(el.dataset.k, '/api/college/quiz/paper');
-  quizPrintLayer(htmlText);
-};
-function quizPrintLayer(htmlText) {
-  document.getElementById('printarea')?.remove();
-  const d = document.createElement('div'); d.id = 'printarea'; d.innerHTML = htmlText; document.body.append(d);
-  const done = () => { d.remove(); window.removeEventListener('afterprint', done); }; window.addEventListener('afterprint', done); setTimeout(() => window.print(), 80);
-}

@@ -1,7 +1,9 @@
 // Quiz competition (ECI letter of 30 Oct 2026): three rounds: institution (run by the ELC coordinator; top 2 go on), Assembly Constituency (run by the
 // district team; top 10 go on) and the district final (district team; top 10 winners). Every round is one quiz with a join code. Students answer on their
 // phones (self-paced, or live with the host controlling the questions) or on paper (printed paper, then the coordinator keys in the answers).
-import { route } from '../lib/router.js';
+import { route as baseRoute } from '../lib/router.js';
+// saves are acknowledged at once and reach the Google Sheet a moment later, so nobody waits for Google
+const route = (method, path, guard, handler) => baseRoute(method, path, guard, async ctx => { ctx.db.deferred = true; return handler(ctx); });
 import { log } from '../lib/db.js';
 import { HttpError, bad, nowIso, str, reqStr, token } from '../lib/util.js';
 import { featureMap } from '../lib/features.js';

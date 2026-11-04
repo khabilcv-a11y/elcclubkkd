@@ -174,3 +174,8 @@ Live rounds poll every 1.5 to 2.5 seconds, so one 30-minute final with about 130
 ### Institution profile chip and Hall of fame
 The college and school top bar shows an icon and the percentage of the institution profile that is filled in (red under 50%, amber below 100%, green at 100%); hovering lists what is missing, and it opens the profile. *Institution profile* is the only item of its own group, *Your institution*, at the end of the menu.
 The **Hall of fame** (home page, below *Campus to booth*, and the display board) shows the leader of each award with its logo, full name, type and figure; awards with no leader show *Up for grabs*.
+
+### Speed and paper saving
+- Saves of the quiz, selfie contest and constituency list are acknowledged at once and reach the Google Sheet in the background. The home page no longer waits for the map library or the certificate fonts (fetched only when needed), the main font loads without blocking, and scripts and styles are cached for a minute and refreshed in the background.
+- Quiz papers (`quizPrint` in `public/js/media.js`): the question paper is two columns (2 pages for 20 questions), answer sheets are three to a page with cut lines (30 students need 10 pages), and *Show the questions on a screen* projects the questions so only the answer sheets are printed. The page title, header and footer name the institution, quiz code and page numbers.
+- The home page photo cycle holds up to 24 photos: two office photos for every college or school photo.
