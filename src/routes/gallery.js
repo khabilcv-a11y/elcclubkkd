@@ -28,12 +28,12 @@ async function driveBytes(env, driveId, mime) {
   return inflight.get(driveId);
 }
 const extGo = (row, size) => ({ __raw: true, status: 302, headers: { Location: row.ext_url.replace('{s}', size), 'Cache-Control': 'public, max-age=86400' } });
-async function imageResponse(ctx, row, scope) {
+export async function imageResponse(ctx, row, scope) {
   if (row.ext_url) return extGo(row, 'xlarge');
   const rec = await driveBytes(ctx.env, row.drive_id, row.mime);
   return { __raw: true, bytes: rec.bytes, headers: { 'Content-Type': row.mime || rec.mime || 'image/jpeg', 'Cache-Control': scope === 'public' ? 'public, max-age=604800, immutable' : 'private, max-age=86400, immutable' } };
 }
-async function thumbResponse(ctx, row, scope) {
+export async function thumbResponse(ctx, row, scope) {
   if (row.ext_url) return extGo(row, 'large');
   if (!row.thumb) return imageResponse(ctx, row, scope);          // photos saved before thumbnails existed
   return { __raw: true, bytes: Uint8Array.from(atob(row.thumb), ch => ch.charCodeAt(0)), headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': scope === 'public' ? 'public, max-age=604800, immutable' : 'private, max-age=604800, immutable' } };

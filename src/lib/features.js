@@ -12,12 +12,12 @@ export const FEATURES = {
   },
   staff: {
     title: 'Admin, intern and super admin consoles',
-    items: [['colleges', 'Colleges', 1], ['schools', 'Schools', 1], ['enrol', 'Enrolment drive', 1], ['desk', 'Help desk daily reports', 1], ['gallery', 'Gallery and albums', 1], ['templates', 'Photo frame, poster and certificate templates', 1], ['certs', 'Certificates', 1], ['social', 'Social media posts', 1], ['issues', 'Help desk (issues)', 1], ['notices', 'Announcements', 1], ['resources', 'Resources', 1], ['reports', 'Reports and exports', 1],
+    items: [['colleges', 'Colleges', 1], ['schools', 'Schools', 1], ['enrol', 'Enrolment drive', 1], ['desk', 'Help desk daily reports', 1], ['gallery', 'Gallery and albums', 1], ['templates', 'Photo frame, poster and certificate templates', 1], ['certs', 'Certificates', 1], ['social', 'Social media posts', 1], ['selfie', 'Selfie contest', 1], ['issues', 'Help desk (issues)', 1], ['notices', 'Announcements', 1], ['resources', 'Resources', 1], ['reports', 'Reports and exports', 1],
       ['villages', 'Villages', 0], ['allot', 'Allotments', 0], ['officers', 'Village officers', 0], ['requests', 'Change requests', 0], ['cert', 'Certification', 0]],
   },
   public: {
     title: 'Public home page',
-    items: [['map', 'Village map', 0], ['officer_login', 'Village officer sign-in', 0], ['album', 'Photo album', 1], ['social', 'Instagram posts on the home page', 1], ['school_signup', 'School sign-up', 1], ['college_signup', 'College sign-up (colleges not on the list)', 1], ['leaderboard', 'Leaderboard and display board', 1]],
+    items: [['map', 'Village map', 0], ['officer_login', 'Village officer sign-in', 0], ['album', 'Photo album', 1], ['social', 'Instagram posts on the home page', 1], ['selfie', 'Selfie contest entries', 1], ['school_signup', 'School sign-up', 1], ['college_signup', 'College sign-up (colleges not on the list)', 1], ['leaderboard', 'Leaderboard and display board', 1]],
   },
 };
 const DEFAULTS = Object.fromEntries(Object.entries(FEATURES).flatMap(([aud, g]) => g.items.map(([id, , on]) => [`${aud}.${id}`, !!on])));
@@ -36,7 +36,7 @@ export const isFeature = (key) => key in DEFAULTS;
 const COLLEGE_PATHS = [[/^\/api\/college\/(schedule|roster)/, 'schedule'], [/^\/api\/college\/days/, 'log'], [/^\/api\/college\/(pool|submit-village)/, 'students'], [/^\/api\/college\/(villages|requests)/, 'villages'],
   [/^\/api\/college\/photos/, 'log'], [/^\/api\/college\/enrol/, 'enrol'], [/^\/api\/college\/desk/, 'desk'], [/^\/api\/college\/gallery/, 'gallery'], [/^\/api\/college\/posters/, 'posters'], [/^\/api\/college\/profile/, 'profile'], [/^\/api\/college\/certs/, 'certs'], [/^\/api\/college\/issues/, 'help']];
 const STAFF_PATHS = [[/^\/api\/staff\/villages/, 'villages'], [/^\/api\/staff\/assignments/, 'allot'], [/^\/api\/staff\/officers/, 'officers'], [/^\/api\/staff\/requests/, 'requests'], [/^\/api\/staff\/(acks|certificates)/, 'cert'],
-  [/^\/api\/staff\/enrol/, 'enrol'], [/^\/api\/staff\/gallery/, 'gallery'], [/^\/api\/staff\/templates/, 'templates'], [/^\/api\/staff\/certs/, 'certs'], [/^\/api\/staff\/social/, 'social']];
+  [/^\/api\/staff\/enrol/, 'enrol'], [/^\/api\/staff\/gallery/, 'gallery'], [/^\/api\/staff\/templates/, 'templates'], [/^\/api\/staff\/certs/, 'certs'], [/^\/api\/staff\/social/, 'social'], [/^\/api\/staff\/selfie/, 'selfie']];
 export function guardedFeature(path, audience) {
   const table = audience === 'staff' ? STAFF_PATHS : audience === 'officer' ? [[/./, 'officer_login']] : COLLEGE_PATHS;
   const hit = table.find(([re]) => re.test(path));

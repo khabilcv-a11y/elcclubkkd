@@ -63,6 +63,9 @@ export const TABLES = {
   cert_people: { pk: ['id'], unique: [['campaign_id', 'college_id', 'name']], cols: [['id', 'INTEGER'], ['campaign_id', 'INTEGER', { nn: 1 }], ['college_id', 'INTEGER', { nn: 1, ref: ['colleges', 'CASCADE'] }], ['name', 'TEXT', { nn: 1 }], ['entries', 'TEXT'], ['eligible', 'INTEGER', { nn: 1, def: 0 }], ['source', 'TEXT'], ['status', 'TEXT', { nn: 1, def: "'none'" }], ['cert_no', 'TEXT'], ['snapshot', 'TEXT'], ['issued_at', 'TEXT'], ['allow_regen', 'INTEGER', { nn: 1, def: 0 }], ['created_at', 'TEXT'], ['updated_at', 'TEXT']] },
   // Instagram posts shown on the home page (embedded from Instagram; only the post code is kept)
   social_posts: { pk: ['id'], unique: [['code']], cols: [['id', 'INTEGER'], ['platform', 'TEXT'], ['code', 'TEXT', { nn: 1 }], ['url', 'TEXT'], ['caption', 'TEXT'], ['sort_order', 'INTEGER', { nn: 1, def: 0 }], ['created_by', 'TEXT'], ['created_at', 'TEXT']] },
+  // Selfie contest: entries (no sign-in needed; the key lets the sender's browser add pictures) and their pictures
+  selfie_entries: { pk: ['id'], cols: [['id', 'INTEGER'], ['name', 'TEXT', { nn: 1 }], ['college_id', 'INTEGER'], ['institution', 'TEXT'], ['course', 'TEXT'], ['phone', 'TEXT'], ['email', 'TEXT'], ['caption', 'TEXT'], ['status', 'TEXT', { nn: 1, def: 'new' }], ['rank', 'INTEGER', { nn: 1, def: 0 }], ['note', 'TEXT'], ['key', 'TEXT'], ['created_at', 'TEXT'], ['ip', 'TEXT']] },
+  selfie_photos: { pk: ['id'], cols: [['id', 'INTEGER'], ['entry_id', 'INTEGER', { nn: 1 }], ['drive_id', 'TEXT'], ['mime', 'TEXT'], ['size', 'INTEGER'], ['orientation', 'TEXT'], ['thumb', 'TEXT'], ['created_at', 'TEXT']] },
   outbox: { pk: ['id'], cols: [['id', 'INTEGER'], ['ts', 'TEXT'], ['to_addr', 'TEXT'], ['subject', 'TEXT'], ['body', 'TEXT'], ['status', 'TEXT'], ['error', 'TEXT']] },
 };
 export const TABLE_NAMES = Object.keys(TABLES);
