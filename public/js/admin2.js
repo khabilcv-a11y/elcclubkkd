@@ -136,7 +136,7 @@ const sortInst = list => [...list].sort((a, b) => {
   return rank(a) - rank(b) || (a.pct ?? -1) - (b.pct ?? -1) || a.name.localeCompare(b.name);
 });
 const stBadge = s => (s === 'active' ? badge('Active', 'ok') : s === 'quiet' ? badge('Quiet', 'warn') : badge('Not started', 'grey'));
-async function apDashboard(el) {
+async function apDashboardBase(el) {
   const d = await api('/api/staff/campus' + (DBKIND ? '?kind=' + DBKIND : '')); window.__cd = d;
   const t = d.totals, list = sortInst(d.institutions), attn = d.institutions.filter(i => i.status !== 'active'), mx = Math.max(1, ...d.trend.map(x => x.registered));
   show(el, html`${pageHead(`Welcome, ${SU.user.name}`, isIntern() ? `You are viewing the ${SU.scope.colleges.length} college(s) and school(s) assigned to you.` : 'Campus to booth: coverage, input and performance of every college and school.', html`<button class="btn secondary" data-act="deskRep" data-t="performance">${icon('printer')} Performance report</button>`, ROLE[SU.user.role])}

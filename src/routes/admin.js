@@ -50,7 +50,7 @@ function collegeBody(b) {
 }
 route('GET', '/api/staff/colleges', STAFF, async ctx => {
   const s = await scopeOf(ctx);
-  const [stats, rows] = await Promise.all([collegeStats(ctx.db), ctx.db.all(`SELECT id,name,short_name,address,phone,email,coordinator,lat,lng,lsgi,${EXTRA.join(',')},profile_at,created_at,logo_at,passcode_sent_at,passcode_plain AS passcode,last_login_at,active,kind FROM colleges ORDER BY name`)]);
+  const [stats, rows] = await Promise.all([collegeStats(ctx.db), ctx.db.all(`SELECT id,name,short_name,address,phone,email,coordinator,lat,lng,lsgi,ac,ac_all,${EXTRA.join(',')},profile_at,created_at,logo_at,passcode_sent_at,passcode_plain AS passcode,last_login_at,active,kind FROM colleges ORDER BY name`)]);
   const kind = ctx.query.kind === 'school' ? 'school' : ctx.query.kind === 'college' ? 'college' : null;
   const m = new Map(stats.map(c => [c.id, c])), cm = new Map((await campusStats(ctx.db)).institutions.map(c => [c.id, c]));
   return rows.filter(c => (!s || s.colleges.has(c.id)) && (!kind || (c.kind === 'school' ? 'school' : 'college') === kind)).map(c => ({ ...c, kind: c.kind === 'school' ? 'school' : 'college', stats: m.get(c.id) || null, strength: cm.get(c.id)?.strength || 0, reg: cm.get(c.id)?.registered || 0 }));
