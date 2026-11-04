@@ -347,3 +347,33 @@ let leafletLoad = null;
 function loadLeaflet() {
   return (leafletLoad ||= new Promise((res, rej) => { const c = document.createElement('link'); c.rel = 'stylesheet'; c.href = '/vendor/leaflet/leaflet.css'; document.head.append(c); loadScript('/vendor/leaflet/leaflet.js').then(res, rej); }));
 }
+
+// ---------- the live host screen: shown on the projector; the phones follow ----------
+function quizHost({ code, url, onClose }) {
+  document.getElementById('qahost')?.remove();
+  const box = document.createElement('div'); box.id = 'qahost'; box.className = 'qa-host'; document.body.append(box); document.body.style.overflow = 'hidden';
+  let stop = false, last = '';
+  const close = () => { stop = true; box.remove(); document.body.style.overflow = ''; onClose?.(); };
+  box.addEventListener('click', e => { const b = e.target.closest('[data-h]'); if (!b) return; if (b.dataset.h === 'close') return close(); act(b.dataset.h); });
+  const act = async a => { try { await api(url, 'POST', { action: a }); last = ''; tick(true); } catch (e) { toast(e.message, true); } };
+  const paint = s => {
+    const l = s.live, q = s.question, n = s.quiz.n, C = ['A', 'B', 'C', 'D'];
+    let main;
+    if (l.phase === 'lobby') main = `<div class="qh-lobby"><h1>Join the ELC Quiz</h1><div class="qz-qr big">${qrSvg(`${location.origin}/#/quiz/${code}`)}</div><p>Open <b>${location.host}</b>, choose <b>Quiz</b> and type</p><div class="qz-bigcode huge">${code}</div><p class="qh-joined"><b>${s.joined}</b>${s.invited ? ' of ' + s.invited : ''} student${s.joined === 1 ? ' has' : 's have'} joined</p><button class="btn accent lg" data-h="next">Start the quiz</button></div>`;
+    else if ((l.phase === 'question' || l.phase === 'reveal') && q) {
+      const counts = l.counts || [0, 0, 0, 0], tot = Math.max(1, counts.reduce((a, b) => a + b, 0));
+      main = `<div class="qh-top"><span>Question ${l.idx + 1} of ${n}</span>${l.phase === 'question' ? `<span class="qh-clock ${s.left <= 5 ? 'low' : ''}" id="qhleft">${s.left}</span>` : '<span class="qh-clock">Answer</span>'}<span>${l.phase === 'question' ? `${s.answered} of ${s.joined} answered` : ''}</span></div><h1 class="qh-q">${qpEsc(q.text)}</h1>
+        <div class="qh-opts">${q.opts.map((o, i) => `<div class="qh-opt c${i} ${l.phase === 'reveal' ? (i === s.correct ? 'right' : 'dim') : ''}"><span class="qz-l">${C[i]}</span><span class="qh-t">${qpEsc(o)}</span>${l.phase === 'reveal' ? `<span class="qh-bar"><i style="width:${Math.round(counts[i] / tot * 100)}%"></i></span><em>${counts[i]}</em>` : ''}</div>`).join('')}</div>
+        <div class="qh-foot">${l.phase === 'question' ? '<button class="btn accent lg" data-h="reveal">Show the answer</button>' : `<ol class="qh-mini">${s.board.slice(0, 5).map(b => `<li><b>${b.rank}</b> ${qpEsc(b.name)} <i>${b.score}</i></li>`).join('')}</ol><button class="btn accent lg" data-h="${l.idx + 1 >= n ? 'end' : 'next'}">${l.idx + 1 >= n ? 'Finish the quiz' : 'Next question'}</button>`}</div>`;
+    } else if (l.phase === 'end') main = `<div class="qh-end"><h1>Final standings</h1><ol class="qz-board big">${(s.board || []).slice(0, 10).map(b => `<li><b>${b.rank}</b><span>${qpEsc(b.name)}<small>${qpEsc(b.college)}</small></span><i>${b.score}</i></li>`).join('')}</ol><p class="muted">The results are saved in the round. Select the top ${s.quiz.top_n} there.</p><button class="btn accent lg" data-h="close">Back to the round</button></div>`;
+    else main = '<div class="qh-lobby"><div class="spin"></div></div>';
+    box.innerHTML = `<button class="qh-x" data-h="close" aria-label="Close the host screen">${'×'}</button><div class="qh-main">${main}</div>`;
+  };
+  const tick = async force => {
+    if (stop) return; let s; try { s = await api(url); } catch { return setTimeout(tick, 2500); }
+    const key = [s.live.phase, s.live.idx, s.joined, s.answered, s.board?.map(b => b.score).join('')].join('|');
+    if (force || key !== last) { last = key; paint(s); } else { const t = box.querySelector('#qhleft'); if (t) { t.textContent = s.left; t.classList.toggle('low', s.left <= 5); } }
+    setTimeout(tick, 1200);
+  };
+  tick(true);
+}

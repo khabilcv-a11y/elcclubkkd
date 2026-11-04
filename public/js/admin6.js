@@ -133,34 +133,7 @@ actions.qaDelRound = async () => { if (!await confirmBox('Delete this round and 
 actions.qaCsv = () => download('quiz-round-results.csv', toCsv(['Rank', 'Student', 'Institution', 'Class', 'Score', 'Out of', 'Seconds', 'Answered on', 'Selected'], QA.round.people.map(p => [p.rank ?? '', p.name, p.college, p.klass, p.score ?? '', p.total ?? '', p.secs ?? '', p.source, p.selected ? 'Yes' : ''])));
 const qaEsc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
 // ---- the live host screen: shown on the projector; the phones follow ----
-actions.qaHost = async el => {
-  const id = Number(el.dataset.id), code = QA.round.quiz.code; document.getElementById('qahost')?.remove();
-  const box = document.createElement('div'); box.id = 'qahost'; box.className = 'qa-host'; document.body.append(box); document.body.style.overflow = 'hidden';
-  let stop = false, last = '';
-  const close = () => { stop = true; box.remove(); document.body.style.overflow = ''; qaOpenRound(id); };
-  box.addEventListener('click', e => { const b = e.target.closest('[data-h]'); if (!b) return; if (b.dataset.h === 'close') return close(); act(b.dataset.h); });
-  const act = async a => { try { await api(`/api/staff/quiz/rounds/${id}/live`, 'POST', { action: a }); last = ''; tick(true); } catch (e) { toast(e.message, true); } };
-  const paint = s => {
-    const l = s.live, q = s.question, n = s.quiz.n, C = ['A', 'B', 'C', 'D'];
-    let main;
-    if (l.phase === 'lobby') main = `<div class="qh-lobby"><h1>Join the ELC Quiz</h1><div class="qz-qr big">${qrSvg(`${location.origin}/#/quiz/${code}`)}</div><p>Open <b>${location.host}</b>, choose <b>Quiz</b> and type</p><div class="qz-bigcode huge">${code}</div><p class="qh-joined"><b>${s.joined}</b> of ${s.invited} students have joined</p><button class="btn accent lg" data-h="next">Start the quiz</button></div>`;
-    else if ((l.phase === 'question' || l.phase === 'reveal') && q) {
-      const counts = l.counts || [0, 0, 0, 0], tot = Math.max(1, counts.reduce((a, b) => a + b, 0));
-      main = `<div class="qh-top"><span>Question ${l.idx + 1} of ${n}</span>${l.phase === 'question' ? `<span class="qh-clock ${s.left <= 5 ? 'low' : ''}" id="qhleft">${s.left}</span>` : '<span class="qh-clock">Answer</span>'}<span>${l.phase === 'question' ? `${s.answered} of ${s.joined} answered` : ''}</span></div><h1 class="qh-q">${qaEsc(q.text)}</h1>
-        <div class="qh-opts">${q.opts.map((o, i) => `<div class="qh-opt c${i} ${l.phase === 'reveal' ? (i === s.correct ? 'right' : 'dim') : ''}"><span class="qz-l">${C[i]}</span><span class="qh-t">${qaEsc(o)}</span>${l.phase === 'reveal' ? `<span class="qh-bar"><i style="width:${Math.round(counts[i] / tot * 100)}%"></i></span><em>${counts[i]}</em>` : ''}</div>`).join('')}</div>
-        <div class="qh-foot">${l.phase === 'question' ? '<button class="btn accent lg" data-h="reveal">Show the answer</button>' : `<ol class="qh-mini">${s.board.slice(0, 5).map(b => `<li><b>${b.rank}</b> ${qaEsc(b.name)} <i>${b.score}</i></li>`).join('')}</ol><button class="btn accent lg" data-h="${l.idx + 1 >= n ? 'end' : 'next'}">${l.idx + 1 >= n ? 'Finish the quiz' : 'Next question'}</button>`}</div>`;
-    } else if (l.phase === 'end') main = `<div class="qh-end"><h1>Final standings</h1><ol class="qz-board big">${(s.board || []).slice(0, 10).map(b => `<li><b>${b.rank}</b><span>${qaEsc(b.name)}<small>${qaEsc(b.college)}</small></span><i>${b.score}</i></li>`).join('')}</ol><p class="muted">The results are saved in the round. Select the top ${s.quiz.top_n} there.</p><button class="btn accent lg" data-h="close">Back to the round</button></div>`;
-    else main = '<div class="qh-lobby"><div class="spin"></div></div>';
-    box.innerHTML = `<button class="qh-x" data-h="close" aria-label="Close the host screen">${'×'}</button><div class="qh-main">${main}</div>`;
-  };
-  const tick = async force => {
-    if (stop) return; let s; try { s = await api(`/api/staff/quiz/rounds/${id}/live`); } catch { return setTimeout(tick, 2500); }
-    const key = [s.live.phase, s.live.idx, s.joined, s.answered, s.board?.map(b => b.score).join('')].join('|');
-    if (force || key !== last) { last = key; paint(s); } else { const t = box.querySelector('#qhleft'); if (t) { t.textContent = s.left; t.classList.toggle('low', s.left <= 5); } }
-    setTimeout(tick, 1200);
-  };
-  tick(true);
-};
+actions.qaHost = el => quizHost({ code: QA.round.quiz.code, url: `/api/staff/quiz/rounds/${el.dataset.id}/live`, onClose: () => qaOpenRound(Number(el.dataset.id)) });
 
 // ---- the question bank ----
 let QB = { theme: '', list: null };

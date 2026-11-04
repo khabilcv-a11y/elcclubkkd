@@ -352,9 +352,9 @@ route('DELETE', '/api/staff/quiz/rounds/:id', OPS, async ctx => {
 
 // the host of a live round
 const topBoard = (people, k = 10) => rankPeople(people.filter(p => p.started_at || p.answers).map(p => ({ id: p.id, name: p.name, college_id: p.college_id, score: p.score || 0, secs: p.secs ?? 0 })), 1).ranked.slice(0, k);
-route('GET', '/api/staff/quiz/rounds/:id/live', 'staff', async ctx => {
-  const q = await roundOf(ctx), live = liveOf(q), ids = parse(q.q_ids, []), people = await peopleOf(ctx.db, q.id), cols = new Map((await ctx.db.all('SELECT id,name FROM colleges')).map(c => [c.id, c.name]));
-  const out = { quiz: quizDto(q), live, joined: people.filter(p => p.token).length, invited: people.length };
+async function hostView(ctx, q) {
+  const live = liveOf(q), ids = parse(q.q_ids, []), people = await peopleOf(ctx.db, q.id), cols = new Map((await ctx.db.all('SELECT id,name FROM colleges')).map(c => [c.id, c.name]));
+  const out = { quiz: quizDto(q), live, joined: people.filter(p => p.token).length, invited: q.level === 'institution' ? 0 : people.length };
   if (live.phase === 'question' || live.phase === 'reveal') {
     const r = (await questionsOf(ctx.db, [ids[live.idx]]))[0];
     if (r) { out.question = { id: r.id, theme: r.theme, text: r.text, opts: parse(r.opts, []) }; out.answered = people.filter(p => parse(p.answers, {})[r.id]).length; if (live.phase === 'reveal') out.correct = r.correct; }
@@ -362,13 +362,13 @@ route('GET', '/api/staff/quiz/rounds/:id/live', 'staff', async ctx => {
   }
   out.board = live.phase === 'end' ? live.board : topBoard(people).map(p => ({ name: p.name, college: cols.get(p.college_id) || '', score: p.score, rank: p.rank }));
   return out;
-});
-route('POST', '/api/staff/quiz/rounds/:id/live', OPS, async ctx => {
+}
+async function hostAct(ctx, q) {
   ctx.db.deferred = true;
-  const q = await roundOf(ctx); if (q.mode !== 'live') throw bad('This round is not set to live mode');
+  if (q.mode !== 'live') throw bad('This quiz is not set to live mode');
   const live = liveOf(q), ids = parse(q.q_ids, []), act = ctx.body.action, cols = new Map((await ctx.db.all('SELECT id,name FROM colleges')).map(c => [c.id, c.name]));
   let s = { ...live };
-  if (act === 'lobby') s = { phase: 'lobby', idx: -1 };
+  if (act === 'lobby') { s = { phase: 'lobby', idx: -1 }; await ctx.db.run('UPDATE quizzes SET status=?,closed_at=NULL WHERE id=?', 'open', q.id); }   // back to the start, open for students to join
   else if (act === 'next') { const idx = live.idx + 1; if (live.phase === 'question') throw bad('Show the answer first'); s = idx >= ids.length ? { ...live, phase: 'ending' } : { phase: 'question', idx, t0: Date.now(), ranks: live.ranks }; }
   else if (act === 'reveal') {
     if (live.phase !== 'question') throw bad('There is no open question');
@@ -386,6 +386,17 @@ route('POST', '/api/staff/quiz/rounds/:id/live', OPS, async ctx => {
   }
   await ctx.db.run('UPDATE quizzes SET live=? WHERE id=?', JSON.stringify(s), q.id);
   return { ok: true, live: s };
+}
+route('GET', '/api/staff/quiz/rounds/:id/live', 'staff', async ctx => hostView(ctx, await roundOf(ctx)));
+route('POST', '/api/staff/quiz/rounds/:id/live', OPS, async ctx => hostAct(ctx, await roundOf(ctx)));
+// a coordinator can also run the institution round live: the questions on the classroom screen, the answer buttons on the students' phones
+const ownQuiz = async ctx => { const q = await myQuiz(ctx.db, ctx); if (!q) throw new HttpError(404, 'Start the quiz first'); return q; };
+route('GET', '/api/college/quiz/live', 'college', async ctx => hostView(ctx, await ownQuiz(ctx)));
+route('POST', '/api/college/quiz/live', 'college', async ctx => hostAct(ctx, await ownQuiz(ctx)));
+route('POST', '/api/college/quiz/settings', 'college', async ctx => {
+  const q = await ownQuiz(ctx), b = ctx.body, mode = b.mode === 'live' ? 'live' : 'self', per_q = Math.max(8, Math.min(90, Number(b.per_q) || q.per_q));
+  await ctx.db.run('UPDATE quizzes SET mode=?,per_q=?,live=NULL WHERE id=?', mode, per_q, q.id);
+  await clog(ctx, 'quiz_mode', mode); return { ok: true };
 });
 
 // Annexure-II of the Commission's letter: the district's row for the compliance report

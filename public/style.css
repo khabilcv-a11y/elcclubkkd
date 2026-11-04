@@ -832,3 +832,9 @@ button.albpic{border:0;background:none;padding:0;cursor:pointer;font:inherit;wid
 @media(max-width:520px){.hof-grid{grid-template-columns:1fr}.hof-card:last-child{grid-column:span 1}.hof-card{padding-top:40px}}
 
 .pubnav .l{white-space:nowrap}
+
+.qz-modes{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.qz-mode{display:grid;gap:4px;text-align:left;padding:14px 16px;border:2px solid var(--line-2);border-radius:var(--r);background:#fff;cursor:pointer}
+.qz-mode b{color:var(--ink)}.qz-mode span{font-size:.86rem;color:var(--muted);line-height:1.4}
+.qz-mode:hover{border-color:var(--brand-600)}.qz-mode.on{border-color:var(--brand);background:var(--brand-50);box-shadow:0 0 0 3px var(--brand-100)}
+@media(max-width:700px){.qz-modes{grid-template-columns:1fr}}
