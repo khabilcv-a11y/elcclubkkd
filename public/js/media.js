@@ -324,17 +324,42 @@ actions.qpPrint = async el => {
   quizPrint(k, p, o);
 };
 forms.qpSheets = f => { const n = Number(fd(f).copies); f.closest('.overlay').close(); quizPrint('sheet', window.__qp.p, { ...window.__qp.o, copies: n }); };
-// the questions on a screen or projector, one at a time: students mark their answer sheets, so nothing but the answer sheets is printed
-function quizProjector(p) {
+// the village map library is large, so it is fetched only when the map is shown
+let leafletLoad = null;
+function loadLeaflet() {
+  return (leafletLoad ||= new Promise((res, rej) => { const c = document.createElement('link'); c.rel = 'stylesheet'; c.href = '/vendor/leaflet/leaflet.css'; document.head.append(c); loadScript('/vendor/leaflet/leaflet.js').then(res, rej); }));
+}
+
+// ---------- the display screen (projector): the live quiz, and the questions of a paper quiz ----------
+// One question at a time, large and centred, with the four answers in a 2 x 2 grid of tiles; a countdown ring while a question is open; the answer
+// is revealed with how many chose each option; the final standings are shown as a podium.
+const QD_L = ['A', 'B', 'C', 'D'];
+const qdCheck = () => icon('check-circle').s;
+function qdFrame({ title, mid = '', right = '', stage, ctl }) {
+  return `<header class="qd-top"><div class="qd-brand"><img src="${LOGO.district}" alt=""><img src="${LOGO.sweepDark}" alt=""><b>${qpEsc(title)}</b></div><div class="qd-mid">${mid}</div><div class="qd-right">${right}<button class="qd-x" data-h="close" aria-label="Close this screen">×</button></div></header>
+    <main class="qd-stage">${stage}</main><footer class="qd-ctl">${ctl}</footer>`;
+}
+const qdRing = (left, total) => { const r = 26, c = +(2 * Math.PI * r).toFixed(1), f = total ? Math.max(0, Math.min(1, left / total)) : 0; return `<svg class="qd-ring ${left <= 5 ? 'low' : ''}" id="qdringsvg" viewBox="0 0 64 64" aria-label="${left} seconds left"><circle cx="32" cy="32" r="${r}" class="bg"/><circle cx="32" cy="32" r="${r}" class="fg" id="qdring" stroke-dasharray="${c}" stroke-dashoffset="${(c * (1 - f)).toFixed(1)}"/><text x="32" y="40" text-anchor="middle" id="qdleft">${left}</text></svg>`; };
+function qdOptions(opts, o = {}) {
+  const counts = o.counts || [0, 0, 0, 0], tot = Math.max(1, counts.reduce((a, b) => a + b, 0));
+  return `<div class="qd-opts">${opts.map((t, i) => `<div class="qd-opt c${i} ${o.reveal ? (i === o.correct ? 'win' : 'dim') : ''}"><span class="qd-l">${QD_L[i]}</span><span class="qd-t">${qpEsc(t)}</span>${o.reveal ? `<span class="qd-n">${counts[i]}</span><span class="qd-bar"><i style="width:${Math.round(counts[i] / tot * 100)}%"></i></span>${i === o.correct ? `<span class="qd-tick">${qdCheck()}</span>` : ''}` : ''}</div>`).join('')}</div>`;
+}
+const qdQuestion = q => `<div class="qd-q">${q.theme ? `<span class="qd-topic">${qpEsc(q.theme)}</span>` : ''}<h1>${qpEsc(q.text)}</h1></div>`;
+function qdOpen() {
   document.getElementById('qahost')?.remove();
-  const box = document.createElement('div'); box.id = 'qahost'; box.className = 'qa-host'; document.body.append(box); document.body.style.overflow = 'hidden';
-  let i = 0; const n = p.questions.length;
+  const box = document.createElement('div'); box.id = 'qahost'; box.className = 'qd'; document.body.append(box); document.body.style.overflow = 'hidden';
+  return box;
+}
+
+// the questions of a paper quiz on a screen, one at a time (students mark their answer sheets, so nothing but the answer sheets is printed)
+function quizProjector(p) {
+  const box = qdOpen(), n = p.questions.length; let i = 0;
   const close = () => { box.remove(); document.body.style.overflow = ''; removeEventListener('keydown', key); };
   const paint = () => {
     const x = p.questions[i];
-    box.innerHTML = `<button class="qh-x" data-h="close" aria-label="Close">×</button><div class="qh-main"><div class="qh-top"><span>Question ${x.no} of ${n}</span><span></span><span>${qpEsc(p.quiz.title)}</span></div><h1 class="qh-q">${qpEsc(x.text)}</h1>
-      <div class="qh-opts">${x.opts.map((t, k) => `<div class="qh-opt c${k}"><span class="qz-l">${'ABCD'[k]}</span><span class="qh-t">${qpEsc(t)}</span></div>`).join('')}</div>
-      <div class="qh-foot"><button class="btn secondary lg" data-h="prev" ${i === 0 ? 'disabled' : ''}>Previous</button><button class="btn accent lg" data-h="${i === n - 1 ? 'close' : 'next'}">${i === n - 1 ? 'Finish' : 'Next question'}</button></div></div>`;
+    box.innerHTML = qdFrame({ title: p.quiz.title, mid: `<span class="qd-pill">Question <b>${x.no}</b> of ${n}</span>`,
+      stage: `${qdQuestion(x)}${qdOptions(x.opts)}`,
+      ctl: `<span class="qd-hintline">Use the arrow keys or the buttons to move between questions</span><div class="qd-btns"><button class="btn secondary lg" data-h="prev" ${i === 0 ? 'disabled' : ''}>Previous</button><button class="btn accent lg" data-h="${i === n - 1 ? 'close' : 'next'}">${i === n - 1 ? 'Finish' : 'Next question'}</button></div>` });
   };
   const step = d => { i = Math.max(0, Math.min(n - 1, i + d)); paint(); };
   const key = e => { if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); step(1); } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') step(-1); else if (e.key === 'Escape') close(); };
@@ -342,37 +367,45 @@ function quizProjector(p) {
   addEventListener('keydown', key); paint();
 }
 
-// the village map library is large, so it is fetched only when the map is shown
-let leafletLoad = null;
-function loadLeaflet() {
-  return (leafletLoad ||= new Promise((res, rej) => { const c = document.createElement('link'); c.rel = 'stylesheet'; c.href = '/vendor/leaflet/leaflet.css'; document.head.append(c); loadScript('/vendor/leaflet/leaflet.js').then(res, rej); }));
-}
-
-// ---------- the live host screen: shown on the projector; the phones follow ----------
+// the live quiz: the host moves the questions on, the phones follow
 function quizHost({ code, url, onClose }) {
-  document.getElementById('qahost')?.remove();
-  const box = document.createElement('div'); box.id = 'qahost'; box.className = 'qa-host'; document.body.append(box); document.body.style.overflow = 'hidden';
-  let stop = false, last = '';
-  const close = () => { stop = true; box.remove(); document.body.style.overflow = ''; onClose?.(); };
+  const box = qdOpen(); let stop = false, last = '', endAt = 0, per = 20;
+  const close = () => { stop = true; clearInterval(ringTimer); box.remove(); document.body.style.overflow = ''; onClose?.(); };
   box.addEventListener('click', e => { const b = e.target.closest('[data-h]'); if (!b) return; if (b.dataset.h === 'close') return close(); act(b.dataset.h); });
   const act = async a => { try { await api(url, 'POST', { action: a }); last = ''; tick(true); } catch (e) { toast(e.message, true); } };
+  const ringTimer = setInterval(() => {            // the countdown runs smoothly between polls
+    if (!endAt) return; const left = Math.max(0, (endAt - Date.now()) / 1000), r = document.getElementById('qdring'), t = document.getElementById('qdleft'); if (!r) return;
+    const c = Number(r.getAttribute('stroke-dasharray')); r.setAttribute('stroke-dashoffset', (c * (1 - Math.min(1, left / per))).toFixed(1)); t.textContent = Math.ceil(left);
+    document.getElementById('qdringsvg')?.classList.toggle('low', left <= 5);
+  }, 200);
   const paint = s => {
-    const l = s.live, q = s.question, n = s.quiz.n, C = ['A', 'B', 'C', 'D'];
-    let main;
-    if (l.phase === 'lobby') main = `<div class="qh-lobby"><h1>Join the ELC Quiz</h1><div class="qz-qr big">${qrSvg(`${location.origin}/#/quiz/${code}`)}</div><p>Open <b>${location.host}</b>, choose <b>Quiz</b> and type</p><div class="qz-bigcode huge">${code}</div><p class="qh-joined"><b>${s.joined}</b>${s.invited ? ' of ' + s.invited : ''} student${s.joined === 1 ? ' has' : 's have'} joined</p><button class="btn accent lg" data-h="next">Start the quiz</button></div>`;
-    else if ((l.phase === 'question' || l.phase === 'reveal') && q) {
-      const counts = l.counts || [0, 0, 0, 0], tot = Math.max(1, counts.reduce((a, b) => a + b, 0));
-      main = `<div class="qh-top"><span>Question ${l.idx + 1} of ${n}</span>${l.phase === 'question' ? `<span class="qh-clock ${s.left <= 5 ? 'low' : ''}" id="qhleft">${s.left}</span>` : '<span class="qh-clock">Answer</span>'}<span>${l.phase === 'question' ? `${s.answered} of ${s.joined} answered` : ''}</span></div><h1 class="qh-q">${qpEsc(q.text)}</h1>
-        <div class="qh-opts">${q.opts.map((o, i) => `<div class="qh-opt c${i} ${l.phase === 'reveal' ? (i === s.correct ? 'right' : 'dim') : ''}"><span class="qz-l">${C[i]}</span><span class="qh-t">${qpEsc(o)}</span>${l.phase === 'reveal' ? `<span class="qh-bar"><i style="width:${Math.round(counts[i] / tot * 100)}%"></i></span><em>${counts[i]}</em>` : ''}</div>`).join('')}</div>
-        <div class="qh-foot">${l.phase === 'question' ? '<button class="btn accent lg" data-h="reveal">Show the answer</button>' : `<ol class="qh-mini">${s.board.slice(0, 5).map(b => `<li><b>${b.rank}</b> ${qpEsc(b.name)} <i>${b.score}</i></li>`).join('')}</ol><button class="btn accent lg" data-h="${l.idx + 1 >= n ? 'end' : 'next'}">${l.idx + 1 >= n ? 'Finish the quiz' : 'Next question'}</button>`}</div>`;
-    } else if (l.phase === 'end') main = `<div class="qh-end"><h1>Final standings</h1><ol class="qz-board big">${(s.board || []).slice(0, 10).map(b => `<li><b>${b.rank}</b><span>${qpEsc(b.name)}<small>${qpEsc(b.college)}</small></span><i>${b.score}</i></li>`).join('')}</ol><p class="muted">The results are saved in the round. Select the top ${s.quiz.top_n} there.</p><button class="btn accent lg" data-h="close">Back to the round</button></div>`;
-    else main = '<div class="qh-lobby"><div class="spin"></div></div>';
-    box.innerHTML = `<button class="qh-x" data-h="close" aria-label="Close the host screen">${'×'}</button><div class="qh-main">${main}</div>`;
+    const l = s.live, q = s.question, n = s.quiz.n; per = s.quiz.per_q || 20; endAt = l.phase === 'question' ? Date.now() + s.left * 1000 : 0;
+    let frame;
+    if (l.phase === 'lobby') {
+      frame = qdFrame({ title: s.quiz.title, mid: '<span class="qd-pill">Waiting for students</span>',
+        stage: `<div class="qd-lobby"><section class="qd-join"><h1>Join the quiz</h1><div class="qd-qr">${qrSvg(`${location.origin}/#/quiz/${code}`)}</div><p>Scan the code, or open <b>${qpEsc(location.host)}</b> and choose <b>Quiz</b></p><div class="qd-code">${qpEsc(code)}</div></section>
+          <section class="qd-people"><div class="qd-count"><b>${s.joined}</b><span>${s.invited ? 'of ' + s.invited + ' students' : (s.joined === 1 ? 'student' : 'students')} joined</span></div><div class="qd-chips">${(s.names || []).map(x => `<span>${qpEsc(x)}</span>`).join('') || '<em>Names appear here as students join</em>'}</div></section></div>`,
+        ctl: `<span class="qd-hintline">${n} questions · ${s.quiz.per_q} seconds each</span><div class="qd-btns"><button class="btn accent lg" data-h="next">Start the quiz</button></div>` });
+    } else if ((l.phase === 'question' || l.phase === 'reveal') && q) {
+      const reveal = l.phase === 'reveal', joined = Math.max(1, s.joined);
+      frame = qdFrame({ title: s.quiz.title, mid: `<span class="qd-pill">Question <b>${l.idx + 1}</b> of ${n}</span>`, right: reveal ? '<span class="qd-pill ok">Answer</span>' : qdRing(s.left, per),
+        stage: `${qdQuestion(q)}${qdOptions(q.opts, { reveal, correct: s.correct, counts: l.counts })}`,
+        ctl: reveal
+          ? `<ol class="qd-mini">${s.board.slice(0, 5).map(b => `<li><b>${b.rank}</b><span>${qpEsc(b.name)}</span><i>${b.score}</i></li>`).join('')}</ol><div class="qd-btns"><button class="btn accent lg" data-h="${l.idx + 1 >= n ? 'end' : 'next'}">${l.idx + 1 >= n ? 'Finish and show the winners' : 'Next question'}</button></div>`
+          : `<div class="qd-answered"><span><b>${s.answered}</b> of ${s.joined} answered</span><div class="qd-meter"><i style="width:${Math.round(s.answered / joined * 100)}%"></i></div></div><div class="qd-btns"><button class="btn accent lg" data-h="reveal">Show the answer</button></div>` });
+    } else if (l.phase === 'end') {
+      const b = s.board || [], pod = [b[1], b[0], b[2]];
+      frame = qdFrame({ title: s.quiz.title, mid: '<span class="qd-pill">Final standings</span>',
+        stage: `<div class="qd-end"><h1>Congratulations!</h1><div class="qd-podium">${pod.map((x, k) => x ? `<div class="qd-pod p${[2, 1, 3][k]}"><span class="qd-medal">${[2, 1, 3][k]}</span><b>${qpEsc(x.name)}</b><small>${qpEsc(x.college || '')}</small><div class="qd-step"><i>${x.score}</i><span>points</span></div></div>` : '<div class="qd-pod"></div>').join('')}</div>
+          ${b.length > 3 ? `<ol class="qd-rest">${b.slice(3, 10).map(x => `<li><b>${x.rank}</b><span>${qpEsc(x.name)}<small>${qpEsc(x.college || '')}</small></span><i>${x.score}</i></li>`).join('')}</ol>` : ''}</div>`,
+        ctl: `<span class="qd-hintline">The results are saved in the quiz. Select the students who go on from the results table.</span><div class="qd-btns"><button class="btn accent lg" data-h="close">Back to the quiz</button></div>` });
+    } else frame = qdFrame({ title: s.quiz.title, stage: '<div class="qd-lobby"><div class="spin"></div></div>', ctl: '' });
+    box.innerHTML = frame;
   };
   const tick = async force => {
     if (stop) return; let s; try { s = await api(url); } catch { return setTimeout(tick, 2500); }
     const key = [s.live.phase, s.live.idx, s.joined, s.answered, s.board?.map(b => b.score).join('')].join('|');
-    if (force || key !== last) { last = key; paint(s); } else { const t = box.querySelector('#qhleft'); if (t) { t.textContent = s.left; t.classList.toggle('low', s.left <= 5); } }
+    if (force || key !== last) { last = key; paint(s); } else if (s.live.phase === 'question') endAt = Date.now() + s.left * 1000;
     setTimeout(tick, 1200);
   };
   tick(true);

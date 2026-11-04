@@ -10,6 +10,7 @@ async function route() {
   const [seg, a, b] = location.hash.replace(/^#\/?/, '').split('/');
   clearInterval(boardTimer); if (typeof albumTimer !== 'undefined') clearInterval(albumTimer); if (typeof cgTimer !== 'undefined') clearInterval(cgTimer);
   window.scrollTo(0, 0);
+  document.body.classList.remove('in-quiz');
   document.title = (TITLES[seg || ''] || TITLES['']) + (seg ? ' · SWEEP Kozhikode' : '');
   if (seg === 'ack') return renderAck(a);
   if (seg === 'gallery') return renderPublicGallery(a, b);

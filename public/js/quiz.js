@@ -7,40 +7,47 @@ const mmss = s => `${Math.floor(Math.max(0, s) / 60)}:${String(Math.max(0, Math.
 const qzLeaving = () => !location.hash.startsWith('#/quiz');
 const QZ_LEVELS = [['Institution round', 'Run by your ELC coordinator', '2 – 7 Nov', 'Top 2 students of each college or school'], ['Assembly Constituency round', 'Run by the district team', '10 – 13 Nov', 'Top 10 students of each constituency'], ['District final', 'Run by the district team, live', '16 – 18 Nov', 'The final top 10 winners of Kozhikode']];
 
+// Every quiz screen uses this focused layout: a slim header with the quiz name and the timer, and no website menu or footer, so everything on the
+// screen is about taking part. `foot` is a bar fixed to the bottom (reachable with a thumb), `progress` a thin bar under the header.
+function quizShell(inner, o = {}) {
+  return html`<div class="qx ${o.cls || ''}"><header class="qx-bar"><a class="qx-brand" href="#/" aria-label="Leave the quiz and go to the website"><img src="${LOGO.district}" alt=""><span class="qx-sep"></span><img src="${LOGO.sweepDark}" alt="SWEEP Kozhikode"></a>
+    <div class="qx-title">${o.title || 'ELC Quiz Competition'}</div><div class="qx-right">${o.right || html`<a class="qx-exit" href="#/">${icon('home')}<span>Website</span></a>`}</div></header>${o.progress || ''}
+    <main class="qx-main" id="main" tabindex="-1">${inner}</main>${o.foot || ''}</div>`;
+}
+const qzPaint = (inner, o) => { document.body.classList.add('in-quiz'); show($('#app'), quizShell(inner, o)); };
+
 // ---------- the join page ----------
 async function renderQuiz(code) {
   if (!feat('public', 'quiz')) { location.hash = '#/'; return; }
   clearTimeout(QZ?.poll); clearInterval(QZ?.timer); QZ = null;
-  if (!code) return show($('#app'), publicShell(quizHome(), 'quiz'));
+  if (!code) return qzPaint(quizHome(), { title: 'ELC Quiz Competition' });
   code = String(code).toUpperCase().replace(/[^A-Z0-9]/g, '');
-  show($('#app'), publicShell(html`<div class="wrap section"><div class="loading"><div class="spin"></div>Opening the quiz…</div></div>`, 'quiz'));
-  let info; try { info = await api('/api/public/quiz/' + code); } catch (e) { return show($('#app'), publicShell(quizHome(e.message), 'quiz')); }
+  qzPaint(html`<div class="qx-card center"><div class="spin" style="margin:6px auto 12px"></div><p class="muted">Opening the quiz…</p></div>`);
+  let info; try { info = await api('/api/public/quiz/' + code); } catch (e) { return qzPaint(quizHome(e.message), { title: 'ELC Quiz Competition' }); }
   const tk = lsGet('elcq:' + code);
   if (tk) { try { return quizEnter(info, await api(`/api/public/quiz/${code}/start`, 'POST', { token: tk })); } catch { lsSet('elcq:' + code, null); } }
   quizJoinPage(info);
 }
 function quizHome(err = '') {
-  return html`<section class="hero qz-hero"><div class="wrap"><div><span class="eyebrow"><span class="live"></span> Electoral Literacy Clubs · 2 – 20 November 2026</span><h1>The ELC <em>Quiz</em> Competition</h1>
-      <p class="lead">Questions on the electoral roll, EVMs and VVPAT, the polling process and counting. Take part from your phone with the code your ELC coordinator or the quiz team gives you.</p></div>
-    <form class="hero-card qz-code" data-form="qzCode" novalidate><b>Enter the quiz code</b><input class="qz-code-in" name="code" maxlength="6" autocomplete="off" autocapitalize="characters" inputmode="text" placeholder="e.g. K7PX4M" aria-label="Quiz code" required>
-      ${err ? html`<div class="alert err" role="alert">${err}</div>` : ''}<button class="btn accent lg" type="submit">${icon('arrow-right')} Join the quiz</button><small class="muted">The code is six letters and numbers.</small></form></div></section>
-  <section class="section"><div class="wrap"><div class="section-head"><div><h2>Three rounds</h2><p>Students who do well go on to the next round.</p></div></div>
-    <ol class="qz-levels">${QZ_LEVELS.map(([t, by, d, up], i) => html`<li class="rv"><span class="n">${i + 1}</span><h3>${t}</h3><p class="small muted">${by}</p><div class="qz-when">${icon('calendar')} ${d}</div><p>${up}</p></li>`)}</ol></div></section>`;
+  return html`<div class="qx-card qx-hero"><span class="qx-kicker">Electoral Literacy Clubs · 2 – 20 November 2026</span><h1>ELC Quiz Competition</h1>
+    <p class="qx-lead">Questions on the electoral roll, EVMs and VVPAT, the polling process and counting. Enter the code your coordinator or the quiz team gave you.</p>
+    <form data-form="qzCode" class="qx-codeform" novalidate><label class="sr" for="qzcodein">Quiz code</label><input id="qzcodein" class="qx-codein" name="code" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ENTER CODE" required>
+      ${err ? html`<div class="alert err" role="alert">${err}</div>` : ''}<button class="btn accent lg" type="submit">Join the quiz ${icon('arrow-right')}</button></form></div>
+    <div class="qx-rounds"><h2>Three rounds</h2><ol>${QZ_LEVELS.map(([t, by, d, up], i) => html`<li><span class="n">${i + 1}</span><div><b>${t}</b><span>${by} · ${d}</span><span>${up}</span></div></li>`)}</ol></div>`;
 }
 forms.qzCode = f => { const c = String(fd(f).code || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); if (c.length < 4) throw new Error('Type the quiz code'); location.hash = '#/quiz/' + c; };
 function quizJoinPage(info) {
-  const closed = info.status !== 'open', cols = [...new Set(info.invited.map(p => p.college))];
-  show($('#app'), publicShell(html`<div class="wrap qz-wrap"><div class="card qz-join"><span class="qz-badge">${info.level === 'institution' ? 'Institution round' : info.level === 'ac' ? 'AC round' : 'District final'}</span>
-    <h1>${info.title}</h1><p class="muted">${info.n} questions · ${info.mode === 'live' ? 'live quiz, answer when the question appears' : info.minutes + ' minutes'}</p>
+  const closed = info.status !== 'open', cols = [...new Set(info.invited.map(p => p.college))], live = info.mode === 'live';
+  qzPaint(html`<div class="qx-card"><span class="qx-kicker">${info.level === 'institution' ? 'Institution round' : info.level === 'ac' ? 'AC round' : 'District final'}</span><h1>${info.title}</h1>
+    <ul class="qx-facts"><li>${icon('help')}<b>${info.n}</b> questions</li><li>${icon('clock')}${live ? 'Live: answer each question as it appears' : '<b>' + info.minutes + '</b> minutes'}</li></ul>
     ${closed ? html`<div class="alert warn">${icon('alert')}<div>${info.status === 'closed' ? 'This quiz has closed.' : 'This quiz has not opened yet. Please wait for your coordinator or the quiz team.'}</div></div>`
       : html`<form data-form="qzJoin" class="stack-s" novalidate>
         ${info.restricted ? html`<label class="f"><span>Your college or school</span><select id="qzcol" required><option value="">Choose…</option>${cols.map(c => html`<option>${c}</option>`)}</select></label>
           <label class="f"><span>Your name</span><select name="person_id" id="qzper" required disabled><option value="">Choose your college first</option></select></label>`
         : html`<label class="f"><span>Your name *</span><input type="text" name="name" maxlength="60" autocomplete="name" required placeholder="Full name"></label>
           <label class="f"><span>Class or course</span><input type="text" name="klass" maxlength="40" placeholder="e.g. 2nd year BA, Plus Two B"></label>`}
-        <div data-err></div><button class="btn accent lg" type="submit">${icon('arrow-right')} ${info.mode === 'live' ? 'Join the quiz' : 'Start the quiz'}</button>
-        <p class="small muted">${info.mode === 'live' ? 'Keep this page open. Questions appear when the host starts.' : `Once you start, the ${info.minutes} minutes begin. Answer all ${info.n} questions and press Finish.`}</p></form>`}</div>
-    <p class="center small muted" style="margin-top:12px"><a href="#/quiz">Use a different code</a></p></div>`, 'quiz'));
+        <div data-err></div><button class="btn accent lg block" type="submit">${live ? 'Join the quiz' : 'Start the quiz'} ${icon('arrow-right')}</button>
+        <p class="small muted center">${live ? 'Keep this page open. Questions appear when the host starts.' : `The ${info.minutes} minutes begin as soon as you start. Answer all ${info.n} questions and press Finish.`}</p></form>`}</div>`, { title: info.title });
   QZ = { info };
   const col = $('#qzcol'); col?.addEventListener('change', () => {
     const per = $('#qzper'), list = info.invited.filter(p => p.college === col.value);
@@ -63,26 +70,26 @@ function quizPlay(info, r) {
   let saved = {}; try { saved = JSON.parse(lsGet('elcq:' + info.code + ':a') || '{}'); } catch { /* start fresh */ }
   QZ = { info, token: r.token, qs: r.questions, ans: saved, i: 0, deadline: Date.now() + (r.ends_at - r.now) - 20000, done: false };   // the server allows 20 more seconds, so a slow connection does not lose answers
   const first = QZ.qs.findIndex(q => saved[q.id] === undefined); QZ.i = first < 0 ? 0 : first;
-  quizPaint();
+  quizPaintQ();
   clearInterval(QZ.timer); QZ.timer = setInterval(() => {
     if (qzLeaving() || !QZ) return clearInterval(QZ?.timer);
-    const left = (QZ.deadline - Date.now()) / 1000, t = $('#qzt'); if (t) { t.textContent = mmss(left); t.classList.toggle('low', left < 60); }
+    const left = (QZ.deadline - Date.now()) / 1000, t = $('#qzt'); if (t) { t.textContent = mmss(left); t.parentElement.classList.toggle('low', left < 60); }
     if (left <= 0 && !QZ.done) { clearInterval(QZ.timer); toast('Time is up. Sending your answers.'); quizSubmit(true); }
   }, 500);
 }
-function quizPaint() {
-  const { qs, i, ans, info } = QZ, q = qs[i], answered = qs.filter(x => ans[x.id] !== undefined).length;
-  show($('#app'), publicShell(html`<div class="wrap qz-wrap"><div class="qz-top"><div><b>${info.title}</b><div class="small muted">${info.college || ''}</div></div><div class="qz-time" title="Time left">${icon('clock')} <span id="qzt">${mmss((QZ.deadline - Date.now()) / 1000)}</span></div></div>
-    <div class="qz-prog" role="progressbar" aria-valuemin="0" aria-valuemax="${qs.length}" aria-valuenow="${answered}"><i style="width:${Math.round(answered / qs.length * 100)}%"></i></div>
-    <div class="card qz-q"><div class="qz-qn">Question ${i + 1} of ${qs.length}${q.theme ? html` <span class="badge grey">${q.theme}</span>` : ''}</div><h2>${q.text}</h2>
-      <div class="qz-opts" role="radiogroup" aria-label="Answers">${q.opts.map((o, k) => html`<button class="qz-opt c${k} ${ans[q.id] === o.i ? 'on' : ''}" role="radio" aria-checked="${ans[q.id] === o.i}" data-act="qzPick" data-q="${q.id}" data-i="${o.i}"><span class="qz-l">${'ABCD'[k]}</span><span>${o.t}</span></button>`)}</div></div>
-    <div class="qz-nav"><button class="btn secondary" data-act="qzGo" data-d="-1" ${i === 0 ? 'disabled' : ''}>${icon('arrow-left')} Previous</button>
-      <div class="qz-dots" aria-hidden="true">${qs.map((x, k) => html`<button class="${k === i ? 'cur' : ''} ${ans[x.id] !== undefined ? 'ok' : ''}" data-act="qzJump" data-k="${k}" tabindex="-1"></button>`)}</div>
-      ${i < qs.length - 1 ? html`<button class="btn primary" data-act="qzGo" data-d="1">Next ${icon('arrow-right')}</button>` : html`<button class="btn accent" data-act="qzFinish">${icon('check-circle')} Finish</button>`}</div></div>`, 'quiz'));
+function quizPaintQ() {
+  const { qs, i, ans, info } = QZ, q = qs[i], answered = qs.filter(x => ans[x.id] !== undefined).length, left = (QZ.deadline - Date.now()) / 1000;
+  qzPaint(html`<div class="qx-qtop"><span class="qx-qn">Question <b>${i + 1}</b> of ${qs.length}</span>${q.theme ? html`<span class="qx-topic">${q.theme}</span>` : ''}</div>
+    <h1 class="qx-q">${q.text}</h1>
+    <div class="qx-opts" role="radiogroup" aria-label="Answers">${q.opts.map((o, k) => html`<button class="qx-opt ${ans[q.id] === o.i ? 'on' : ''}" role="radio" aria-checked="${ans[q.id] === o.i}" data-act="qzPick" data-q="${q.id}" data-i="${o.i}"><span class="qx-l">${'ABCD'[k]}</span><span class="qx-t">${o.t}</span><span class="qx-chk">${icon('check-circle')}</span></button>`)}</div>`,
+    { title: info.title, cls: 'play',
+      right: html`<span class="qx-timer ${left < 60 ? 'low' : ''}" title="Time left">${icon('clock')}<b id="qzt">${mmss(left)}</b></span>`,
+      progress: html`<div class="qx-prog" role="progressbar" aria-valuemin="0" aria-valuemax="${qs.length}" aria-valuenow="${answered}"><i style="width:${Math.round(answered / qs.length * 100)}%"></i></div>`,
+      foot: html`<footer class="qx-foot"><button class="btn secondary" data-act="qzGo" data-d="-1" ${i === 0 ? 'disabled' : ''}>${icon('arrow-left')}<span>Previous</span></button><span class="qx-count"><b>${answered}</b> of ${qs.length} answered</span>
+        ${i < qs.length - 1 ? html`<button class="btn primary" data-act="qzGo" data-d="1"><span>Next</span>${icon('arrow-right')}</button>` : html`<button class="btn accent" data-act="qzFinish">${icon('check-circle')}<span>Finish</span></button>`}</footer>` });
 }
-actions.qzPick = el => { QZ.ans[el.dataset.q] = Number(el.dataset.i); lsSet('elcq:' + QZ.info.code + ':a', JSON.stringify(QZ.ans)); quizPaint(); $('.qz-opt.on')?.focus(); };
-actions.qzGo = el => { QZ.i = Math.max(0, Math.min(QZ.qs.length - 1, QZ.i + Number(el.dataset.d))); quizPaint(); window.scrollTo(0, 0); };
-actions.qzJump = el => { QZ.i = Number(el.dataset.k); quizPaint(); };
+actions.qzPick = el => { QZ.ans[el.dataset.q] = Number(el.dataset.i); lsSet('elcq:' + QZ.info.code + ':a', JSON.stringify(QZ.ans)); quizPaintQ(); $('.qx-opt.on')?.focus(); };
+actions.qzGo = el => { QZ.i = Math.max(0, Math.min(QZ.qs.length - 1, QZ.i + Number(el.dataset.d))); quizPaintQ(); window.scrollTo(0, 0); };
 actions.qzFinish = async () => {
   const left = QZ.qs.filter(x => QZ.ans[x.id] === undefined).length;
   if (left && !await confirmBox(`${left} question${left === 1 ? ' is' : 's are'} not answered. Finish anyway?`, 'Finish', false)) return;
@@ -97,41 +104,44 @@ async function quizSubmit(auto) {
 }
 function quizResult(info, score, total) {
   const pct = total ? Math.round(score / total * 100) : 0;
-  show($('#app'), publicShell(html`<div class="wrap qz-wrap"><div class="card qz-done"><div class="qz-ring" style="--p:${pct}"><b>${score}</b><span>of ${total}</span></div><h1>${pct >= 80 ? 'Excellent!' : pct >= 50 ? 'Well done!' : 'Thank you for taking part!'}</h1>
-    <p class="muted">You answered <b>${score}</b> of ${total} questions correctly. Your coordinator or the quiz team will announce who goes on to the next round.</p>
-    <a class="btn secondary" href="#/">${icon('home')} Back to the home page</a></div></div>`, 'quiz'));
+  qzPaint(html`<div class="qx-card center qx-result"><div class="qx-ring" style="--p:${pct}"><b>${score}</b><span>out of ${total}</span></div><h1>${pct >= 80 ? 'Excellent work!' : pct >= 50 ? 'Well done!' : 'Thank you for taking part!'}</h1>
+    <p class="qx-lead">You answered <b>${score}</b> of ${total} questions correctly (${pct}%). Your coordinator or the quiz team will announce who goes on to the next round.</p><a class="btn secondary" href="#/">${icon('home')} Back to the website</a></div>`, { title: info.title });
 }
 
-// ---------- the live quiz on a phone ----------
+// ---------- the live quiz on a phone: the question is on the big screen, the phone gives the answer buttons ----------
 function quizLive(info, r) {
-  QZ = { info, token: r.token, name: r.name, key: '', poll: null };
+  QZ = { info, token: r.token, name: r.name, key: '', poll: null, timer: null };
   const tick = async () => {
     if (qzLeaving() || !QZ || QZ.info !== info) return;
     let s; try { s = await api(`/api/public/quiz/${info.code}/live?token=${encodeURIComponent(QZ.token)}`); } catch { QZ.poll = setTimeout(tick, 3000); return; }
     const key = [s.phase, s.idx, s.you?.answered, s.status].join('|');
-    if (key !== QZ.key) { QZ.key = key; QZ.state = s; qzLivePaint(s); } else { QZ.state = s; const t = $('#qzlt'); if (t) t.textContent = s.left; }
-    QZ.poll = setTimeout(tick, s.phase === 'question' ? 1500 : 2500);
+    QZ.state = s; QZ.endAt = Date.now() + (s.left || 0) * 1000;
+    if (key !== QZ.key) { QZ.key = key; qzLivePaint(s); }
+    QZ.poll = setTimeout(tick, s.phase === 'question' ? 1200 : 2200);
   };
+  clearInterval(QZ.timer); QZ.timer = setInterval(() => { const t = $('#qzlt'); if (t && QZ?.endAt) { const l = Math.max(0, Math.ceil((QZ.endAt - Date.now()) / 1000)); t.textContent = l; t.parentElement.classList.toggle('low', l <= 5); } }, 250);
   tick();
 }
 function qzLivePaint(s) {
-  const info = QZ.info, you = s.you || { score: 0 };
+  const info = QZ.info, you = s.you || { score: 0 }, has = you.answered !== null && you.answered !== undefined, who = html`<span class="qx-who">${icon('user-check')}<b>${QZ.name}</b></span>`;
   let body;
-  if (s.phase === 'lobby') body = html`<div class="card qz-live"><span class="sf-tick">${icon('check-circle')}</span><h2>You are in, ${QZ.name.split(' ')[0]}!</h2><p class="muted">Keep this page open. The first question appears when the host starts.</p></div>`;
-  else if (s.phase === 'question' && s.question) body = html`<div class="qz-livehead"><span>Question ${s.idx + 1} of ${s.n}</span><span class="qz-time">${icon('clock')} <span id="qzlt">${s.left}</span>s</span></div><div class="card qz-q"><h2>${s.question.text}</h2>
-      ${you.answered !== null && you.answered !== undefined ? html`<div class="alert info" style="margin:12px 0">${icon('check-circle')}<div>Answer locked. Wait for the answer to be shown.</div></div>` : ''}
-      <div class="qz-opts">${s.question.opts.map(o => html`<button class="qz-opt c${o.i} ${you.answered === o.i ? 'on' : ''}" data-act="qzLiveAns" data-i="${o.i}" ${you.answered !== null && you.answered !== undefined ? 'disabled' : ''}><span class="qz-l">${'ABCD'[o.i]}</span><span>${o.t}</span></button>`)}</div></div>`;
-  else if (s.phase === 'reveal' && s.question) { const ok = you.answered === s.correct; body = html`<div class="qz-livehead"><span>Question ${s.idx + 1} of ${s.n}</span><span>Score ${you.score}</span></div><div class="card qz-q"><h2>${s.question.text}</h2>
-      <div class="alert ${you.answered === null || you.answered === undefined ? 'warn' : ok ? 'ok' : 'err'}" style="margin:12px 0">${icon(ok ? 'check-circle' : 'alert')}<div><b>${you.answered === null || you.answered === undefined ? 'No answer given' : ok ? 'Correct!' : 'Not this time'}</b>${you.rank ? ` · you are number ${you.rank}` : ''}</div></div>
-      <div class="qz-opts">${s.question.opts.map(o => html`<div class="qz-opt c${o.i} ${o.i === s.correct ? 'right' : 'dim'} ${you.answered === o.i ? 'on' : ''}"><span class="qz-l">${'ABCD'[o.i]}</span><span>${o.t}</span><em>${s.counts?.[o.i] ?? 0}</em></div>`)}</div></div>`; }
-  else if (s.phase === 'end') body = html`<div class="card qz-done"><h1>The quiz is over</h1><p class="muted">You scored <b>${you.score}</b> of ${s.n}${you.rank ? html` and finished <b>number ${you.rank}</b>` : ''}.</p>
-      <ol class="qz-board">${(s.board || []).slice(0, 10).map(b => html`<li><b>${b.rank}</b><span>${b.name}<small>${b.college}</small></span><i>${b.score}</i></li>`)}</ol></div>`;
-  else body = html`<div class="card qz-live"><div class="spin"></div><p class="muted">Waiting for the next question…</p></div>`;
-  show($('#app'), publicShell(html`<div class="wrap qz-wrap"><div class="qz-top"><div><b>${info.title}</b></div><div class="small muted">${QZ.name}</div></div>${body}</div>`, 'quiz'));
+  if (s.phase === 'lobby') body = html`<div class="qx-card center qx-wait"><span class="qx-pulse">${icon('check-circle')}</span><h1>You are in, ${QZ.name.split(' ')[0]}!</h1><p class="qx-lead">Look at the main screen. The first question appears when the host starts.</p></div>`;
+  else if (s.phase === 'question' && s.question) body = html`<div class="qx-qtop"><span class="qx-qn">Question <b>${s.idx + 1}</b> of ${s.n}</span><span class="qx-timer ${s.left <= 5 ? 'low' : ''}">${icon('clock')}<b id="qzlt">${s.left}</b><small>s</small></span></div>
+      <p class="qx-hint">${has ? 'Answer locked. Wait for the answer to be shown on the main screen.' : 'Read the question on the main screen, then choose your answer.'}</p>
+      <div class="qx-opts big">${s.question.opts.map(o => html`<button class="qx-opt c${o.i} ${you.answered === o.i ? 'on' : ''} ${has && you.answered !== o.i ? 'dim' : ''}" data-act="qzLiveAns" data-i="${o.i}" ${has ? 'disabled' : ''}><span class="qx-l">${'ABCD'[o.i]}</span><span class="qx-t">${o.t}</span></button>`)}</div>
+      <details class="qx-showq"><summary>Show the question on my phone</summary><p>${s.question.text}</p></details>`;
+  else if (s.phase === 'reveal' && s.question) { const ok = you.answered === s.correct; body = html`<div class="qx-qtop"><span class="qx-qn">Question <b>${s.idx + 1}</b> of ${s.n}</span><span class="qx-score">Score <b>${you.score}</b></span></div>
+      <div class="qx-verdict ${!has ? 'none' : ok ? 'ok' : 'no'}">${icon(ok ? 'check-circle' : 'alert')}<div><b>${!has ? 'No answer given' : ok ? 'Correct!' : 'Not this time'}</b>${you.rank ? html`<span>You are number ${you.rank}</span>` : ''}</div></div>
+      <h2 class="qx-q small">${s.question.text}</h2>
+      <div class="qx-opts">${s.question.opts.map(o => html`<div class="qx-opt static ${o.i === s.correct ? 'win' : 'dim'} ${you.answered === o.i ? 'mine' : ''}"><span class="qx-l">${'ABCD'[o.i]}</span><span class="qx-t">${o.t}</span><em>${s.counts?.[o.i] ?? 0}</em></div>`)}</div>`; }
+  else if (s.phase === 'end') body = html`<div class="qx-card center"><h1>The quiz is over</h1><p class="qx-lead">You scored <b>${you.score}</b> of ${s.n}${you.rank ? html` and finished <b>number ${you.rank}</b>` : ''}.</p>
+      <ol class="qx-board">${(s.board || []).slice(0, 10).map(b => html`<li><b>${b.rank}</b><span>${b.name}<small>${b.college}</small></span><i>${b.score}</i></li>`)}</ol></div>`;
+  else body = html`<div class="qx-card center qx-wait"><div class="spin" style="margin:0 auto 10px"></div><p class="muted">Waiting for the next question…</p></div>`;
+  qzPaint(body, { title: info.title, right: who, cls: 'live' });
 }
 actions.qzLiveAns = async el => {
   const s = QZ.state, i = Number(el.dataset.i);
-  try { await api(`/api/public/quiz/${QZ.info.code}/answer`, 'POST', { token: QZ.token, idx: s.idx, choice: i }); QZ.state.you = { ...(s.you || {}), answered: i }; QZ.key = ''; qzLivePaint({ ...s, you: { ...(s.you || {}), answered: i } }); QZ.key = [s.phase, s.idx, i, s.status].join('|'); }
+  try { await api(`/api/public/quiz/${QZ.info.code}/answer`, 'POST', { token: QZ.token, idx: s.idx, choice: i }); QZ.state.you = { ...(s.you || {}), answered: i }; QZ.key = [s.phase, s.idx, i, s.status].join('|'); qzLivePaint({ ...s, you: { ...(s.you || {}), answered: i } }); }
   catch (e) { toast(e.message, true); }
 };
 

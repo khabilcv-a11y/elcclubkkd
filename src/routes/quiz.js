@@ -354,7 +354,7 @@ route('DELETE', '/api/staff/quiz/rounds/:id', OPS, async ctx => {
 const topBoard = (people, k = 10) => rankPeople(people.filter(p => p.started_at || p.answers).map(p => ({ id: p.id, name: p.name, college_id: p.college_id, score: p.score || 0, secs: p.secs ?? 0 })), 1).ranked.slice(0, k);
 async function hostView(ctx, q) {
   const live = liveOf(q), ids = parse(q.q_ids, []), people = await peopleOf(ctx.db, q.id), cols = new Map((await ctx.db.all('SELECT id,name FROM colleges')).map(c => [c.id, c.name]));
-  const out = { quiz: quizDto(q), live, joined: people.filter(p => p.token).length, invited: q.level === 'institution' ? 0 : people.length };
+  const out = { quiz: quizDto(q), live, joined: people.filter(p => p.token).length, invited: q.level === 'institution' ? 0 : people.length, names: people.filter(p => p.token).map(p => p.name).slice(-80) };
   if (live.phase === 'question' || live.phase === 'reveal') {
     const r = (await questionsOf(ctx.db, [ids[live.idx]]))[0];
     if (r) { out.question = { id: r.id, theme: r.theme, text: r.text, opts: parse(r.opts, []) }; out.answered = people.filter(p => parse(p.answers, {})[r.id]).length; if (live.phase === 'reveal') out.correct = r.correct; }
