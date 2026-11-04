@@ -177,13 +177,24 @@ actions.albNext = () => fanStep(1);
 actions.albPrev = () => fanStep(-1);
 
 // ---------- Hall of fame: the institution leading each award, shown on the home page and the display board ----------
-const HOF = [['target', 'Highest coverage', 'coverage', v => v + '%', 'of eligible students registered'], ['user-check', 'Most students registered', 'registered', v => n(v), 'students registered'], ['users', 'Most help desk volunteer-days', 'desk_vols', v => n(v), 'volunteer-days at help desks'], ['trophy', 'Most activity volunteers', 'activity', v => n(v), 'volunteer-days in activities'], ['camera', 'Most photos shared', 'photos', v => n(v), 'photos shared']];
+const HOF = [
+  ['target', 'Coverage champion', 'coverage', v => v + '%', 'of eligible students registered', 'Highest share of its students on the electoral roll'],
+  ['user-check', 'Registration leader', 'registered', v => n(v), 'students registered', 'Most students registered to vote'],
+  ['users', 'Help desk hero', 'desk_vols', v => n(v), 'volunteer-days at the desk', 'Most volunteer-days at the help desk'],
+  ['trophy', 'Activity star', 'activity', v => n(v), 'volunteer-days in activities', 'Most volunteers in campaign activities'],
+  ['camera', 'Photo storyteller', 'photos', v => n(v), 'photos shared', 'Most photos shared in the gallery']];
 const hofAny = A => !!A && HOF.some(h => A[h[2]]);
+// "DARUL HUDA ENGLISH MEDIUM HSS," -> "Darul Huda English Medium HSS"; "Arts& Science" -> "Arts & Science"
+function tidyName(s) {
+  let t = String(s || '').replace(/\s*&\s*/g, ' & ').replace(/\s+/g, ' ').replace(/[\s,.;:-]+$/, '').trim();
+  if (t && t === t.toUpperCase()) t = t.split(' ').map(w => (w.length <= 3 ? w : w[0] + w.slice(1).toLowerCase())).join(' ');
+  return t;
+}
 function hallOfFame(A) {
   return html`<div class="hof"><div class="hof-head"><span class="hof-crown">${icon('award')}</span><div><h2>Hall of fame</h2><p>The colleges and schools leading the campaign right now.</p></div></div>
-    <div class="hof-grid">${HOF.map(([ic, title, key, fmt, unit], i) => { const w = A?.[key]; return w
-      ? html`<article class="hof-card m${i} rv"><span class="hof-medal">${icon(ic)}</span><div class="hof-title">${title}</div><div class="hof-av">${avatar(w.id, w.logo_v, w.name, 68)}</div><h3 class="hof-name">${w.name}</h3><div class="hof-kind">${w.kind || ''}</div><div class="hof-val"><b>${fmt(w.value)}</b><span>${unit}</span></div></article>`
-      : html`<article class="hof-card empty rv"><span class="hof-medal">${icon(ic)}</span><div class="hof-title">${title}</div><div class="hof-open">Up for grabs</div><div class="hof-kind">Be the first to take this spot</div></article>`; })}</div></div>`;
+    <div class="hof-grid">${HOF.map(([ic, title, key, fmt, unit, about], i) => { const w = A?.[key]; return w
+      ? html`<article class="hof-card m${i} rv"><span class="hof-medal">${icon(ic)}</span><h3 class="hof-title">${title}</h3><p class="hof-sub">${about}</p><div class="hof-av">${avatar(w.id, w.logo_v, tidyName(w.name), 68)}</div><div class="hof-name">${tidyName(w.name)}</div><div class="hof-kind">${w.kind || ''}</div><div class="hof-val"><b>${fmt(w.value)}</b><span>${unit}</span></div></article>`
+      : html`<article class="hof-card empty rv"><span class="hof-medal">${icon(ic)}</span><h3 class="hof-title">${title}</h3><p class="hof-sub">${about}</p><div class="hof-open">Up for grabs</div><div class="hof-kind">Be the first to take this spot</div></article>`; })}</div></div>`;
 }
 function campusSection(C) {
   const T = C.totals, inRace = rankedCampus(C.institutions).length;
