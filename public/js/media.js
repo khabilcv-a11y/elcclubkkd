@@ -340,11 +340,15 @@ function qdFrame({ title, mid = '', right = '', stage, ctl }) {
     <main class="qd-stage">${stage}</main><footer class="qd-ctl">${ctl}</footer>`;
 }
 const qdRing = (left, total) => { const r = 26, c = +(2 * Math.PI * r).toFixed(1), f = total ? Math.max(0, Math.min(1, left / total)) : 0; return `<svg class="qd-ring ${left <= 5 ? 'low' : ''}" id="qdringsvg" viewBox="0 0 64 64" aria-label="${left} seconds left"><circle cx="32" cy="32" r="${r}" class="bg"/><circle cx="32" cy="32" r="${r}" class="fg" id="qdring" stroke-dasharray="${c}" stroke-dashoffset="${(c * (1 - f)).toFixed(1)}"/><text x="32" y="40" text-anchor="middle" id="qdleft">${left}</text></svg>`; };
+// the answers: white cards with a coloured letter; on the reveal the right one turns green with a tick, the others fade, and each card shows its votes
 function qdOptions(opts, o = {}) {
-  const counts = o.counts || [0, 0, 0, 0], tot = Math.max(1, counts.reduce((a, b) => a + b, 0));
-  return `<div class="qd-opts">${opts.map((t, i) => `<div class="qd-opt c${i} ${o.reveal ? (i === o.correct ? 'win' : 'dim') : ''}"><span class="qd-l">${QD_L[i]}</span><span class="qd-t">${qpEsc(t)}</span>${o.reveal ? `<span class="qd-n">${counts[i]}</span><span class="qd-bar"><i style="width:${Math.round(counts[i] / tot * 100)}%"></i></span>${i === o.correct ? `<span class="qd-tick">${qdCheck()}</span>` : ''}` : ''}</div>`).join('')}</div>`;
+  const counts = o.counts || [0, 0, 0, 0], tot = Math.max(1, counts.reduce((x, y) => x + y, 0));
+  return `<div class="qd-opts">${opts.map((t, i) => { const c = counts[i], pct = Math.round(c / tot * 100); return `<div class="qd-opt c${i} ${o.reveal ? (i === o.correct ? 'win' : 'dim') : ''}"><span class="qd-l">${QD_L[i]}</span><span class="qd-t">${qpEsc(t)}</span>${o.reveal ? `<span class="qd-res"><b>${c}</b><small>${pct}%</small></span>${i === o.correct ? `<span class="qd-tick">${qdCheck()}</span>` : ''}<span class="qd-bar"><i style="width:${pct}%"></i></span>` : ''}</div>`; }).join('')}</div>`;
 }
-const qdQuestion = q => `<div class="qd-q">${q.theme ? `<span class="qd-topic">${qpEsc(q.theme)}</span>` : ''}<h1>${qpEsc(q.text)}</h1></div>`;
+// the question in a white card with its number, so it reads well from the back of a room
+const qdQuestion = (q, no) => `<div class="qd-q"><div class="qd-qno"><small>Question</small><b>${String(no).padStart(2, '0')}</b></div><div class="qd-qbody">${q.theme ? `<span class="qd-topic">${qpEsc(q.theme)}</span>` : ''}<h1>${qpEsc(q.text)}</h1></div></div>`;
+// progress as a row of small bars: done, current, to come
+const qdSegs = (i, n) => `<div class="qd-seg"><div class="qd-segs">${n <= 40 ? Array.from({ length: n }, (_, k) => `<i class="${k < i ? 'done' : k === i ? 'cur' : ''}"></i>`).join('') : ''}</div><span>Question <b>${i + 1}</b> of ${n}</span></div>`;
 function qdOpen() {
   document.getElementById('qahost')?.remove();
   const box = document.createElement('div'); box.id = 'qahost'; box.className = 'qd'; document.body.append(box); document.body.style.overflow = 'hidden';
@@ -357,8 +361,8 @@ function quizProjector(p) {
   const close = () => { box.remove(); document.body.style.overflow = ''; removeEventListener('keydown', key); };
   const paint = () => {
     const x = p.questions[i];
-    box.innerHTML = qdFrame({ title: p.quiz.title, mid: `<span class="qd-pill">Question <b>${x.no}</b> of ${n}</span>`,
-      stage: `${qdQuestion(x)}${qdOptions(x.opts)}`,
+    box.innerHTML = qdFrame({ title: p.quiz.title, mid: qdSegs(i, n),
+      stage: `${qdQuestion(x, x.no)}${qdOptions(x.opts)}`,
       ctl: `<span class="qd-hintline">Use the arrow keys or the buttons to move between questions</span><div class="qd-btns"><button class="btn secondary lg" data-h="prev" ${i === 0 ? 'disabled' : ''}>Previous</button><button class="btn accent lg" data-h="${i === n - 1 ? 'close' : 'next'}">${i === n - 1 ? 'Finish' : 'Next question'}</button></div>` });
   };
   const step = d => { i = Math.max(0, Math.min(n - 1, i + d)); paint(); };
@@ -388,8 +392,8 @@ function quizHost({ code, url, onClose }) {
         ctl: `<span class="qd-hintline">${n} questions · ${s.quiz.per_q} seconds each</span><div class="qd-btns"><button class="btn accent lg" data-h="next">Start the quiz</button></div>` });
     } else if ((l.phase === 'question' || l.phase === 'reveal') && q) {
       const reveal = l.phase === 'reveal', joined = Math.max(1, s.joined);
-      frame = qdFrame({ title: s.quiz.title, mid: `<span class="qd-pill">Question <b>${l.idx + 1}</b> of ${n}</span>`, right: reveal ? '<span class="qd-pill ok">Answer</span>' : qdRing(s.left, per),
-        stage: `${qdQuestion(q)}${qdOptions(q.opts, { reveal, correct: s.correct, counts: l.counts })}`,
+      frame = qdFrame({ title: s.quiz.title, mid: qdSegs(l.idx, n), right: reveal ? `<span class="qd-state">${qdCheck()} Answer</span>` : qdRing(s.left, per),
+        stage: `${qdQuestion(q, l.idx + 1)}${qdOptions(q.opts, { reveal, correct: s.correct, counts: l.counts })}`,
         ctl: reveal
           ? `<ol class="qd-mini">${s.board.slice(0, 5).map(b => `<li><b>${b.rank}</b><span>${qpEsc(b.name)}</span><i>${b.score}</i></li>`).join('')}</ol><div class="qd-btns"><button class="btn accent lg" data-h="${l.idx + 1 >= n ? 'end' : 'next'}">${l.idx + 1 >= n ? 'Finish and show the winners' : 'Next question'}</button></div>`
           : `<div class="qd-answered"><span><b>${s.answered}</b> of ${s.joined} answered</span><div class="qd-meter"><i style="width:${Math.round(s.answered / joined * 100)}%"></i></div></div><div class="qd-btns"><button class="btn accent lg" data-h="reveal">Show the answer</button></div>` });
