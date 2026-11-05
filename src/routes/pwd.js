@@ -111,6 +111,56 @@ route('POST', '/api/college/pwd/call', 'college', async ctx => {
   await clog(ctx, 'pwd_call', `${pids.length} call record${pids.length === 1 ? '' : 's'}: ${OUTCOMES[b.outcome]}`); return r;
 });
 
+
+// ======================================================================= villages (a village is a set of wards, because the register only knows local body and ward)
+const vname = v => String(v || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+async function areaIndex(ctx) { const ov = await reg(ctx).overview(); return ov.areas; }
+// a local body as written in a sheet or by hand -> the register's local body (exact, or the only one with that name whatever its kind)
+function findArea(areas, raw) { const i = lsgdInfo(raw), exact = areas.find(a => a.lsgd_key === i.key); if (exact) return exact; const same = areas.filter(a => a.base_key === i.base_key); return same.length === 1 ? same[0] : null; }
+async function addLinks(ctx, village, area, wards) {
+  let n = 0; const list = wards.length ? wards : [''];
+  for (const w of list) { if (await ctx.db.get('SELECT id FROM pwd_village WHERE village=? AND lsgd_key=? AND ward=?', village, area.lsgd_key, w)) continue; await ctx.db.insert('INSERT INTO pwd_village(village,lsgd_key,lsgd,ward,created_by,created_at) VALUES (?,?,?,?,?,?)', village, area.lsgd_key, area.lsgd, w, ctx.user.username, nowIso()); n++; }
+  return n;
+}
+route('GET', '/api/staff/pwd/villages', 'staff', async ctx => {
+  const [links, allots, areas, names] = await Promise.all([ctx.db.all('SELECT id,village,lsgd_key,lsgd,ward FROM pwd_village ORDER BY village,lsgd,CAST(ward AS INTEGER),ward'), ctx.db.all('SELECT a.lsgd_key,a.ward,c.name college FROM pwd_alloc a JOIN colleges c ON c.id=a.college_id'), areaIndex(ctx), ctx.db.all('SELECT name FROM villages ORDER BY name')]);
+  const counts = links.length ? await reg(ctx).areaCounts(links.map(l => ({ lsgd_key: l.lsgd_key, ward: l.ward }))) : [], by = new Map();
+  links.forEach((l, i) => { if (!by.has(l.village)) by.set(l.village, { village: l.village, links: [], n: 0, allotted: new Set() }); const g = by.get(l.village), n = counts[i].n; g.links.push({ ...l, n }); g.n += n; for (const a of allots) if (a.lsgd_key === l.lsgd_key && (!a.ward || !l.ward || a.ward === l.ward)) g.allotted.add(a.college); });
+  return { villages: [...by.values()].map(g => ({ ...g, allotted: [...g.allotted] })), areas: areas.map(a => ({ lsgd_key: a.lsgd_key, lsgd: a.lsgd })), names: names.map(v => v.name) };
+});
+route('POST', '/api/staff/pwd/villages', OPS, async ctx => {
+  const village = vname(ctx.body.village); if (!village) throw bad('Give the village a name');
+  const areas = await areaIndex(ctx), area = areas.find(a => a.lsgd_key === String(ctx.body.lsgd_key || '')); if (!area) throw bad('Choose the local body');
+  const have = (await reg(ctx).wards(area.lsgd_key)).map(w => String(w.ward)), wards = [...new Set((Array.isArray(ctx.body.wards) ? ctx.body.wards : []).map(String))].filter(w => have.includes(w));
+  const n = await addLinks(ctx, village, area, wards); await slog(ctx, 'pwd_village', `${village}: ${area.lsgd} ${wards.length ? 'wards ' + wards.join(',') : '(all wards)'}`); return { ok: true, n };
+});
+// a sheet of Village, Local body, Ward (several wards can be written together: 3, 4, 5)
+route('POST', '/api/staff/pwd/villages/import', OPS, async ctx => {
+  const areas = await areaIndex(ctx), rows = (Array.isArray(ctx.body.rows) ? ctx.body.rows : []).slice(0, 1500); let added = 0; const unmatched = new Set();
+  for (const r of rows) {
+    const village = vname(r.village); if (!village || !r.lsgd) continue; const area = findArea(areas, r.lsgd); if (!area) { unmatched.add(String(r.lsgd).trim()); continue; }
+    const wards = [...new Set(String(r.ward || '').split(/[,;&\/]|\band\b/i).map(w => w.trim().replace(/^(ward\s*)/i, '').replace(/^0+(?=\d)/, '')).filter(Boolean))];
+    added += await addLinks(ctx, village, area, wards);
+  }
+  if (ctx.body.first) await slog(ctx, 'pwd_village_import', 'started an import'); return { ok: true, added, unmatched: [...unmatched] };
+});
+route('DELETE', '/api/staff/pwd/villages/link/:id', OPS, async ctx => { await ctx.db.run('DELETE FROM pwd_village WHERE id=?', Number(ctx.params.id)); return { ok: true }; });
+route('POST', '/api/staff/pwd/villages/remove', OPS, async ctx => { const v = vname(ctx.body.village); await ctx.db.run('DELETE FROM pwd_village WHERE village=?', v); await slog(ctx, 'pwd_village_del', v); return { ok: true }; });
+// give an institution every ward a village covers
+route('POST', '/api/staff/pwd/alloc-village', OPS, async ctx => {
+  const c = await ctx.db.get('SELECT id,name FROM colleges WHERE id=?', Number(ctx.body.college_id)); if (!c) throw bad('Choose the institution');
+  const village = vname(ctx.body.village), links = await ctx.db.all('SELECT lsgd_key,lsgd,ward FROM pwd_village WHERE village=?', village); if (!links.length) throw bad('This village is not linked to any ward yet');
+  const groups = new Map(); for (const l of links) { if (!groups.has(l.lsgd_key)) groups.set(l.lsgd_key, { lsgd: l.lsgd, whole: false, wards: [] }); const g = groups.get(l.lsgd_key); if (l.ward) g.wards.push(l.ward); else g.whole = true; }
+  let n = 0;
+  for (const [key, g] of groups) {
+    const mine = await ctx.db.all('SELECT id,ward FROM pwd_alloc WHERE college_id=? AND lsgd_key=?', c.id, key), add = (w) => ctx.db.insert('INSERT INTO pwd_alloc(college_id,lsgd_key,lsgd,ward,created_by,created_at) VALUES (?,?,?,?,?,?)', c.id, key, g.lsgd, w, ctx.user.username, nowIso());
+    if (mine.some(m => !m.ward)) continue;
+    if (g.whole) { for (const m of mine) await ctx.db.run('DELETE FROM pwd_alloc WHERE id=?', m.id); await add(''); n++; }
+    else for (const w of g.wards) if (!mine.some(m => m.ward === w)) { await add(w); n++; }
+  }
+  await slog(ctx, 'pwd_alloc_village', `${c.name}: ${village} (${n} areas)`); return { ok: true, n };
+});
+
 // start again with a fresh file: only the super admin, and only with the word typed (the call history is kept)
 route('POST', '/api/staff/pwd/clear', ['super_admin'], async ctx => {
   if (String(ctx.body.confirm || '') !== 'DELETE') throw bad('Type DELETE to confirm');

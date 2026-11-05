@@ -16,25 +16,26 @@ async function pgCerts(el) {
 }
 async function loadCert() {
   let d = await api('/api/college/certs/' + CRT.id);
-  if (!d.batch.synced && d.batch.status !== 'submitted') { await api(`/api/college/certs/${CRT.id}/sync`, 'POST'); d = await api('/api/college/certs/' + CRT.id); }
+  if (!d.batch.synced && !['submitted', 'approved'].includes(d.batch.status)) { await api(`/api/college/certs/${CRT.id}/sync`, 'POST'); d = await api('/api/college/certs/' + CRT.id); }
   CRT.d = d; CRT.pick = new Set(); paintCert();
 }
 const certPeople = () => {
-  const q = CRT.q.toLowerCase().trim(), [k, dir] = CRT.sort, sub = CRT.d.batch.status === 'submitted';
+  const q = CRT.q.toLowerCase().trim(), [k, dir] = CRT.sort, sub = ['submitted', 'approved'].includes(CRT.d.batch.status);
   let rows = CRT.d.people.filter(p => (!q || p.name.toLowerCase().includes(q) || p.activities.join(' ').toLowerCase().includes(q)) && (!sub || p.eligible) && (CRT.filter === 'on' ? p.eligible : CRT.filter === 'off' ? !p.eligible : true));
   rows = [...rows].sort((a, b) => (k === 'days' ? a.days - b.days : k === 'last' ? String(a.last).localeCompare(b.last) : a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })) * dir || a.name.localeCompare(b.name));
   return rows;
 };
 const certActChips = p => html`<span class="pillrow tight">${p.activities.slice(0, 4).map(a => html`<span class="pill sm">${a}</span>`)}${p.activities.length > 4 ? html`<span class="muted small">+${p.activities.length - 4}</span>` : ''}</span>`;
 function paintCert() {
-  const el = $('#pg'), d = CRT.d, c = d.campaign, sub = d.batch.status === 'submitted', t = d.template, all = d.people, sel = all.filter(p => p.eligible);
+  const el = $('#pg'), d = CRT.d, c = d.campaign, sub = ['submitted', 'approved'].includes(d.batch.status), appr = d.batch.status === 'approved', t = d.template, all = d.people, sel = all.filter(p => p.eligible);
   const cands = sel.filter(p => p.status === 'none' || p.allow_regen), done = sel.filter(p => p.status !== 'none').length;
   const rows = certPeople(), sortMark = k => (CRT.sort[0] === k ? (CRT.sort[1] === 1 ? ' ▲' : ' ▼') : '');
   const step = (n, label, on, ok) => html`<div class="cstep ${ok ? 'done' : on ? 'on' : ''}"><span>${ok ? icon('check') : n}</span>${label}</div>`;
-  show(el, html`${pageHead('Certificates', 'Verify the students who took part, submit the final list, then generate their certificates.', CRT.list.length > 1 ? html`<label class="f" style="margin:0"><span class="sr">Campaign</span><select id="certcamp">${CRT.list.map(x => html`<option value="${x.id}" ${x.id === CRT.id ? 'selected' : ''}>${x.title}</option>`)}</select></label>` : '', 'Campus to booth')}
-    <div class="card" style="margin-bottom:16px"><div class="row between"><div><h3 style="margin:0">${c.title}</h3><div class="small muted">${c.description || ''}${c.start_date || c.end_date ? html` ${c.description ? '· ' : ''}${certDay(c.start_date) || 'Start'} to ${certDay(c.end_date) || 'now'}` : ''}</div></div><div class="csteps">${step(1, 'Verify', !sub, sub)}${step(2, 'Submit', !sub, sub)}${step(3, 'Generate', sub, sub && done > 0 && !cands.length)}</div></div></div>
-    ${sub ? html`<div class="alert info" style="margin-bottom:16px">${icon('check-circle')}<div><b>Final list submitted</b>${d.batch.submitted_at ? ' on ' + fdt(d.batch.submitted_at) : ''}. ${sel.length} student${sel.length === 1 ? '' : 's'} selected. ${t ? '' : 'The certificate design is not live yet; the Generate button appears when the district office switches it on.'}</div></div>` : ''}
-    ${sub ? html`<div class="card" style="margin-bottom:16px"><div class="row between"><div><b>${done} of ${sel.length} certificates generated</b><div class="small muted">${cands.length ? `${cands.length} ready to generate${cands.some(p => p.allow_regen) ? ' (some re-generation allowed by the district office)' : ''}.` : done ? 'Each certificate is generated only once. You can download them as many times as you like. If one needs to be made again, ask the district office to allow it.' : ''}</div></div>
+  show(el, html`${pageHead('Certificates', 'Verify the students who took part, send the list to the district office for approval, then generate their certificates.', CRT.list.length > 1 ? html`<label class="f" style="margin:0"><span class="sr">Campaign</span><select id="certcamp">${CRT.list.map(x => html`<option value="${x.id}" ${x.id === CRT.id ? 'selected' : ''}>${x.title}</option>`)}</select></label>` : '', 'Campus to booth')}
+    <div class="card" style="margin-bottom:16px"><div class="row between"><div><h3 style="margin:0">${c.title}</h3><div class="small muted">${c.description || ''}${c.start_date || c.end_date ? html` ${c.description ? '· ' : ''}${certDay(c.start_date) || 'Start'} to ${certDay(c.end_date) || 'now'}` : ''}</div></div><div class="csteps">${step(1, 'Verify', !sub, sub)}${step(2, 'Approval', sub && !appr, appr)}${step(3, 'Generate', appr, appr && done > 0 && !cands.length)}</div></div></div>
+    ${!sub && d.batch.review_note ? html`<div class="alert warn" style="margin-bottom:16px">${icon('alert')}<div><b>The district office sent your list back</b><br>${d.batch.review_note}</div></div>` : ''}
+    ${sub ? html`<div class="alert ${appr ? 'ok' : 'info'}" style="margin-bottom:16px">${icon('check-circle')}<div><b>${appr ? 'Approved' + (d.batch.approved_by ? ' by ' + d.batch.approved_by : '') + (d.batch.approved_at ? ' on ' + fdt(d.batch.approved_at) : '') : 'Waiting for the district admin to approve'}</b>${appr ? '' : d.batch.submitted_at ? ' (sent on ' + fdt(d.batch.submitted_at) + ')' : ''}. ${sel.length} student${sel.length === 1 ? '' : 's'} selected. ${t ? '' : 'The certificate design is not live yet; the Generate button appears when the district office switches it on.'}</div></div>` : ''}
+    ${appr ? html`<div class="card" style="margin-bottom:16px"><div class="row between"><div><b>${done} of ${sel.length} certificates generated</b><div class="small muted">${cands.length ? `${cands.length} ready to generate${cands.some(p => p.allow_regen) ? ' (some re-generation allowed by the district office)' : ''}.` : done ? 'Each certificate is generated only once. You can download them as many times as you like. If one needs to be made again, ask the district office to allow it.' : ''}</div></div>
       <div class="row gap-s"><button class="btn primary" data-act="certGen" ${t && cands.length ? '' : 'disabled'}>${icon('certificate')} Generate ${cands.length ? `(${cands.length})` : ''}</button><button class="btn secondary" data-act="certZip" data-m="picked" ${done ? '' : 'disabled'}>${icon('download')} Download selected (ZIP)</button><button class="btn secondary" data-act="certZip" data-m="all" ${done ? '' : 'disabled'}>${icon('download')} Download all (ZIP)</button></div></div></div>` : ''}
     <div class="card pad0"><div class="filterbar"><label class="f" style="min-width:220px"><span class="sr">Search</span><input type="search" id="certq" placeholder="Search a student or activity…" value="${esc(CRT.q)}"></label>
       ${sub ? '' : html`<div class="chips" role="group" aria-label="Show">${[['', 'All'], ['on', 'Selected'], ['off', 'Not selected']].map(([k, l]) => html`<button class="chip ${CRT.filter === k ? 'on' : ''}" data-act="certFilter" data-k="${k}">${l}</button>`)}</div>
@@ -46,7 +47,7 @@ function paintCert() {
           ${sub ? html`<td>${certStatus(p)}${p.allow_regen ? html` <span class="badge info">can be made again</span>` : ''}${p.cert_no ? html`<div class="xs muted">${p.cert_no}</div>` : ''}</td><td class="ia">${p.status !== 'none' ? html`<button class="btn sm secondary" data-act="certOne" data-id="${p.id}">${icon('download')} PDF</button>` : ''}</td>`
             : html`<td class="ia"><div class="row gap-s nowrap"><button class="ib" data-act="certEdit" data-id="${p.id}" title="Edit dates and events" aria-label="Edit ${esc(p.name)}">${icon('edit')}</button><button class="ib danger" data-act="certDel" data-id="${p.id}" title="Remove from the list" aria-label="Remove ${esc(p.name)}">${icon('trash')}</button></div></td>`}</tr>`)}</tbody></table></div>`
         : html`<div style="padding:20px">${empty(all.length ? 'No one matches' : 'No students yet', all.length ? 'Try another search.' : 'Students appear here from the volunteers in your daily reports. Add them by hand, or ask the district office to import a sheet.', 'users')}</div>`}
-      ${sub ? '' : html`<div class="row between certfoot"><span><b>${sel.length}</b> of ${all.length} selected for certificates</span><button class="btn primary" data-act="certSubmit" ${sel.length ? '' : 'disabled'}>${icon('check')} Submit the final list</button></div>`}</div>`);
+      ${sub ? '' : html`<div class="row between certfoot"><span><b>${sel.length}</b> of ${all.length} selected for certificates</span><button class="btn primary" data-act="certSubmit" ${sel.length ? '' : 'disabled'}>${icon('check')} Send for approval</button></div>`}</div>`);
   $('#certcamp')?.addEventListener('change', e => { CRT.id = Number(e.target.value); loadCert(); });
   const q = $('#certq'); q?.addEventListener('input', () => { CRT.q = q.value; const pos = q.selectionStart; paintCert(); const n = $('#certq'); n.focus(); n.setSelectionRange(pos, pos); });
 }
@@ -108,8 +109,8 @@ actions.certCsv = () => {
 // ---------- submit, generate, download ----------
 actions.certSubmit = async () => {
   const n = CRT.d.people.filter(p => p.eligible).length;
-  if (!await confirmBox(`Submit the final list of ${n} student${n === 1 ? '' : 's'}? After this the list is locked and certificates can be generated. Only the district office can reopen it.`, 'Submit the final list')) return;
-  await api(`/api/college/certs/${CRT.id}/submit`, 'POST'); toast('Final list submitted'); await loadCert();
+  if (!await confirmBox(`Send the final list of ${n} student${n === 1 ? '' : 's'}? The district admin will review it. The list is locked meanwhile, and you can generate the certificates as soon as it is approved.`, 'Send for approval')) return;
+  await api(`/api/college/certs/${CRT.id}/submit`, 'POST'); toast('Sent to the district office for approval'); await loadCert();
 };
 const certImgLogo = async t => [await loadImg(`/api/templates/${t.id}/image`), COL.college.logo_v ? await loadImg(logoUrl(COL.college.id, COL.college.logo_v)) : null];
 async function certBlob(t, img, logo, p) {

@@ -58,6 +58,8 @@ async function batchFor(db, campId, collegeId, create = true) {
 const actLabel = r => (r.activity === 'Other' && r.activity_other ? `Other: ${r.activity_other}` : r.activity);
 
 // ---------- the college side ----------
+// draft -> (college asks) submitted -> (district admin) approved -> the college generates. A rejected request goes back to draft with the admin's note.
+const LOCKED = ['submitted', 'approved'];
 route('GET', '/api/college/certs', 'college', async ctx => {
   const camps = await ctx.db.all('SELECT * FROM cert_campaigns WHERE live=1 ORDER BY id DESC');
   const counts = await ctx.db.all("SELECT campaign_id,COUNT(*) people,SUM(CASE WHEN eligible=1 THEN 1 ELSE 0 END) eligible,SUM(CASE WHEN status IN ('issued','ok') THEN 1 ELSE 0 END) issued FROM cert_people WHERE college_id=? GROUP BY campaign_id", ctx.college.id);
@@ -75,7 +77,7 @@ route('GET', '/api/college/certs/:cid', 'college', async ctx => {
     ctx.db.all("SELECT DISTINCT activity,activity_other FROM activity_log WHERE college_id=?", ctx.college.id)]);
   const events = [...new Set(['Help desk', 'Flash Mob', 'Class to Class Campaign', 'Game Zone', ...known.map(actLabel), ...people.flatMap(p => parseEntries(p.entries).map(e => e.a))])].filter(Boolean).sort();
   return { campaign: { id: camp.id, title: camp.title, description: camp.description, start_date: camp.start_date, end_date: camp.end_date, min_days: camp.min_days || 1 },
-    batch: { status: batch?.status || 'draft', synced: !!batch?.synced_at, submitted_at: batch?.submitted_at || null, generated_at: batch?.generated_at || null },
+    batch: { status: batch?.status || 'draft', synced: !!batch?.synced_at, submitted_at: batch?.submitted_at || null, generated_at: batch?.generated_at || null, approved_at: batch?.approved_at || null, approved_by: batch?.approved_by || '', review_note: batch?.review_note || '' },
     people: people.map(p => shape(p, true)), events, template: t && t.active ? t : null, today: todayStr(), institution: ctx.college.name };
 });
 route('POST', '/api/college/certs/:cid/sync', 'college', async ctx => {
@@ -83,7 +85,7 @@ route('POST', '/api/college/certs/:cid/sync', 'college', async ctx => {
   const camp = await campaignOr404(ctx.db, ctx.params.cid), c = ctx.college;
   if (!camp.live) throw new HttpError(403, 'Certificates for this campaign are not open yet');
   const batch = await batchFor(ctx.db, camp.id, c.id);
-  if (batch.status === 'submitted') throw bad('The final list has been submitted. Ask the district office to reopen it if a change is needed.');
+  if (LOCKED.includes(batch.status)) throw bad('The final list has been sent to the district office. Ask them to reopen it if a change is needed.');
   const rows = await ctx.db.all('SELECT date,activity,activity_other,name,created_at FROM activity_log WHERE college_id=? AND created_at>? ORDER BY date', c.id, batch.synced_at || '');
   const inRange = d => (!camp.start_date || d >= camp.start_date) && (!camp.end_date || d <= camp.end_date);
   const existing = await ctx.db.all('SELECT * FROM cert_people WHERE campaign_id=? AND college_id=?', camp.id, c.id), by = new Map(existing.map(p => [p.name.toLowerCase(), p]));
@@ -106,7 +108,7 @@ route('POST', '/api/college/certs/:cid/sync', 'college', async ctx => {
 async function ownPerson(ctx, id, needDraft = true) {
   const p = await ctx.db.get('SELECT * FROM cert_people WHERE id=? AND college_id=?', Number(id), ctx.college.id);
   if (!p) throw new HttpError(404, 'Student not found');
-  if (needDraft) { const b = await ctx.db.get('SELECT status FROM cert_batches WHERE campaign_id=? AND college_id=?', p.campaign_id, ctx.college.id); if (b?.status === 'submitted') throw bad('The final list has been submitted, so it can no longer be edited.'); }
+  if (needDraft) { const b = await ctx.db.get('SELECT status FROM cert_batches WHERE campaign_id=? AND college_id=?', p.campaign_id, ctx.college.id); if (LOCKED.includes(b?.status)) throw bad('The final list has been submitted, so it can no longer be edited.'); }
   return p;
 }
 route('PUT', '/api/college/certs/people/:id', 'college', async ctx => {
@@ -129,7 +131,7 @@ route('POST', '/api/college/certs/:cid/people', 'college', async ctx => {
   ctx.db.deferred = true;
   const camp = await campaignOr404(ctx.db, ctx.params.cid), c = ctx.college, b = ctx.body;
   const batch = await batchFor(ctx.db, camp.id, c.id);
-  if (batch.status === 'submitted') throw bad('The final list has been submitted, so it can no longer be edited.');
+  if (LOCKED.includes(batch.status)) throw bad('The final list has been sent for approval, so it can no longer be edited.');
   const name = reqStr(b.name, 'Student name', 80).replace(/\s+/g, ' ');
   if (await ctx.db.get('SELECT 1 x FROM cert_people WHERE campaign_id=? AND college_id=? AND lower(name)=lower(?)', camp.id, c.id, name)) throw bad('A student with this name is already in the list');
   const entries = cleanEntries(b.entries), now = nowIso();
@@ -140,7 +142,7 @@ route('POST', '/api/college/certs/:cid/select', 'college', async ctx => {
   ctx.db.deferred = true;
   const camp = await campaignOr404(ctx.db, ctx.params.cid), b = ctx.body, mode = b.mode;
   const batch = await batchFor(ctx.db, camp.id, ctx.college.id);
-  if (batch.status === 'submitted') throw bad('The final list has been submitted, so it can no longer be edited.');
+  if (LOCKED.includes(batch.status)) throw bad('The final list has been sent for approval, so it can no longer be edited.');
   const people = await ctx.db.all('SELECT id,entries,eligible FROM cert_people WHERE campaign_id=? AND college_id=?', camp.id, ctx.college.id), min = Math.max(1, Math.min(60, Number(b.n) || 1));
   for (const p of people) {
     const want = mode === 'all' ? 1 : mode === 'none' ? 0 : mode === 'min' ? (statsOf(parseEntries(p.entries)).days >= min ? 1 : 0) : p.eligible;
@@ -152,8 +154,9 @@ route('POST', '/api/college/certs/:cid/submit', 'college', async ctx => {
   ctx.db.deferred = true;
   const camp = await campaignOr404(ctx.db, ctx.params.cid), batch = await batchFor(ctx.db, camp.id, ctx.college.id);
   const n = (await ctx.db.get('SELECT COUNT(*) n FROM cert_people WHERE campaign_id=? AND college_id=? AND eligible=1', camp.id, ctx.college.id)).n;
-  if (!n) throw bad('Select at least one student before submitting');
-  await ctx.db.run("UPDATE cert_batches SET status='submitted',submitted_at=?,submitted_by=? WHERE id=?", nowIso(), ctx.college.coordinator || ctx.college.name, batch.id);
+  if (!n) throw bad('Select at least one student before sending the list');
+  if (LOCKED.includes(batch.status)) throw bad('The list has already been sent to the district office.');
+  await ctx.db.run("UPDATE cert_batches SET status='submitted',submitted_at=?,submitted_by=?,review_note='',approved_at=NULL,approved_by='' WHERE id=?", nowIso(), ctx.college.coordinator || ctx.college.name, batch.id);
   await clog(ctx, 'cert_submit', `${camp.title}: ${n} students`);
   return { ok: true, count: n };
 });
@@ -162,9 +165,10 @@ route('POST', '/api/college/certs/:cid/generate', 'college', async ctx => {
   ctx.db.deferred = true;
   const camp = await campaignOr404(ctx.db, ctx.params.cid), c = ctx.college;
   if (!camp.live) throw new HttpError(403, 'Certificates for this campaign are not open yet');
-  const t = await templateOf(ctx.db, camp); if (!t || !t.active) throw new HttpError(403, 'The certificate design is not ready yet. The district office will switch it on.');
   const batch = await batchFor(ctx.db, camp.id, c.id);
-  if (batch.status !== 'submitted') throw bad('Submit the final list first');
+  if (batch.status === 'submitted') throw bad('The district admin has not approved your list yet. You can generate the certificates as soon as it is approved.');
+  if (batch.status !== 'approved') throw bad('Send the final list to the district office for approval first');
+  const t = await templateOf(ctx.db, camp); if (!t || !t.active) throw new HttpError(403, 'The certificate design is not ready yet. The district office will switch it on.');
   const people = await ctx.db.all("SELECT * FROM cert_people WHERE campaign_id=? AND college_id=? AND eligible=1 AND (status='none' OR allow_regen=1) ORDER BY name", camp.id, c.id);
   if (!people.length) throw bad('Every selected student already has a certificate. If one needs to be made again, ask the district office to allow it.');
   let next = (await ctx.db.get("SELECT COUNT(*) n FROM cert_people WHERE campaign_id=? AND cert_no<>'' AND cert_no IS NOT NULL", camp.id)).n, now = nowIso();
@@ -223,10 +227,10 @@ route('GET', '/api/staff/certs/status', 'staff', async ctx => {
   const s = await scopeOf(ctx), camp = await campaignOr404(ctx.db, ctx.query.campaign);
   const [cs, agg, bs] = await Promise.all([ctx.db.all("SELECT id,name,COALESCE(kind,'college') kind,coordinator,coord_phone,phone FROM colleges WHERE active=1 ORDER BY name"),
     ctx.db.all("SELECT college_id,COUNT(*) people,SUM(CASE WHEN eligible=1 THEN 1 ELSE 0 END) eligible,SUM(CASE WHEN status IN ('issued','ok') THEN 1 ELSE 0 END) issued,SUM(CASE WHEN status='ok' THEN 1 ELSE 0 END) ok,SUM(CASE WHEN eligible=1 AND status='none' THEN 1 ELSE 0 END) remaining,SUM(CASE WHEN allow_regen=1 THEN 1 ELSE 0 END) allowed FROM cert_people WHERE campaign_id=? GROUP BY college_id", camp.id),
-    ctx.db.all('SELECT college_id,status,submitted_at,generated_at FROM cert_batches WHERE campaign_id=?', camp.id)]);
+    ctx.db.all('SELECT college_id,status,submitted_at,generated_at,approved_at,approved_by,review_note FROM cert_batches WHERE campaign_id=?', camp.id)]);
   const A = new Map(agg.map(r => [r.college_id, r])), B = new Map(bs.map(r => [r.college_id, r]));
   const rows = cs.filter(c => !s || s.colleges.has(c.id)).map(c => { const a = A.get(c.id) || { people: 0, eligible: 0, issued: 0, ok: 0, remaining: 0, allowed: 0 }, b = B.get(c.id);
-    return { id: c.id, name: c.name, kind: c.kind === 'school' ? 'school' : 'college', coordinator: c.coordinator, phone: c.coord_phone || c.phone, ...a, batch: b?.status || 'none', submitted_at: b?.submitted_at || null, generated_at: b?.generated_at || null }; });
+    return { id: c.id, name: c.name, kind: c.kind === 'school' ? 'school' : 'college', coordinator: c.coordinator, phone: c.coord_phone || c.phone, ...a, batch: b?.status || 'none', submitted_at: b?.submitted_at || null, generated_at: b?.generated_at || null, approved_at: b?.approved_at || null, approved_by: b?.approved_by || '', review_note: b?.review_note || '' }; });
   return { campaign: { id: camp.id, title: camp.title, live: camp.live }, rows };
 });
 route('GET', '/api/staff/certs/people', 'staff', async ctx => {
@@ -236,10 +240,24 @@ route('GET', '/api/staff/certs/people', 'staff', async ctx => {
   return rows.map(p => shape(p, false));
 });
 route('POST', '/api/staff/certs/reopen', OPS, async ctx => {
-  const camp = await campaignOr404(ctx.db, ctx.body.campaign_id), r = await ctx.db.run("UPDATE cert_batches SET status='draft',reopened_at=? WHERE campaign_id=? AND college_id=?", nowIso(), camp.id, Number(ctx.body.college_id));
+  const camp = await campaignOr404(ctx.db, ctx.body.campaign_id), r = await ctx.db.run("UPDATE cert_batches SET status='draft',reopened_at=?,approved_at=NULL,approved_by='' WHERE campaign_id=? AND college_id=?", nowIso(), camp.id, Number(ctx.body.college_id));
   if (!r.changes) throw new HttpError(404, 'Nothing submitted by this institution yet');
   await slog(ctx, 'cert_reopen', `${camp.title}: institution ${ctx.body.college_id}`);
   return { ok: true };
+});
+// the district admin approves an institution's request, so it can generate its certificates; or sends it back with a reason
+route('POST', '/api/staff/certs/approve', OPS, async ctx => {
+  const camp = await campaignOr404(ctx.db, ctx.body.campaign_id), cid = Number(ctx.body.college_id), b = await ctx.db.get('SELECT id,status FROM cert_batches WHERE campaign_id=? AND college_id=?', camp.id, cid);
+  if (!b || b.status !== 'submitted') throw bad('This institution has no request waiting for approval');
+  await ctx.db.run("UPDATE cert_batches SET status='approved',approved_at=?,approved_by=?,review_note='' WHERE id=?", nowIso(), ctx.user.name || ctx.user.username, b.id);
+  await slog(ctx, 'cert_approve', `${camp.title}: institution ${cid}`); return { ok: true };
+});
+route('POST', '/api/staff/certs/reject', OPS, async ctx => {
+  const camp = await campaignOr404(ctx.db, ctx.body.campaign_id), cid = Number(ctx.body.college_id), note = str(ctx.body.note, 300), b = await ctx.db.get('SELECT id,status FROM cert_batches WHERE campaign_id=? AND college_id=?', camp.id, cid);
+  if (!b || b.status !== 'submitted') throw bad('This institution has no request waiting for approval');
+  if (!note) throw bad('Write a short reason, so the coordinator knows what to correct');
+  await ctx.db.run("UPDATE cert_batches SET status='draft',review_note=?,approved_at=NULL,approved_by='' WHERE id=?", note, b.id);
+  await slog(ctx, 'cert_reject', `${camp.title}: institution ${cid}: ${note}`); return { ok: true };
 });
 // let an institution generate again: for named students, or for everyone it has already generated for
 route('POST', '/api/staff/certs/allow', OPS, async ctx => {

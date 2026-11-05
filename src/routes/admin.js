@@ -26,14 +26,15 @@ route('GET', '/api/staff/dashboard', STAFF, async ctx => {
   const stats = (await collegeStats(db)).filter(c => !s || s.colleges.has(c.id));
   const sum = k => stats.reduce((t, c) => t + c[k], 0);
   const cids = stats.map(c => c.id), L = inList(cids);
-  const [pending, awaiting, noPass, openIssues] = await Promise.all([
+  const [pending, awaiting, noPass, openIssues, certAsk] = await Promise.all([
     db.get(`SELECT COUNT(*) n FROM change_requests WHERE status='pending' AND college_id IN (${L})`, ...cids),
     db.get(`SELECT COUNT(*) n FROM assignments WHERE ack_status='submitted' AND college_id IN (${L})`, ...cids),
     db.get(`SELECT COUNT(*) n FROM colleges WHERE active=1 AND passcode_sent_at IS NULL AND id IN (${L})`, ...cids),
-    db.get(`SELECT COUNT(*) n FROM issues WHERE status<>'resolved' AND college_id IN (${L})`, ...cids)]);
+    db.get(`SELECT COUNT(*) n FROM issues WHERE status<>'resolved' AND college_id IN (${L})`, ...cids),
+    db.get(`SELECT COUNT(*) n FROM cert_batches WHERE status='submitted' AND college_id IN (${L})`, ...cids)]);
   return {
     totals: { colleges: stats.length, villages: sum('villages'), volunteers: sum('volunteers'), days_done: sum('days_done'), addressed: sum('addressed'),
-      registered: sum('registered'), villages_ack: sum('villages_ack'), pending_requests: pending.n, awaiting_ack: awaiting.n, passcode_pending: noPass.n, open_issues: openIssues.n },
+      registered: sum('registered'), villages_ack: sum('villages_ack'), pending_requests: pending.n, awaiting_ack: awaiting.n, passcode_pending: noPass.n, open_issues: openIssues.n, pending_certs: certAsk.n },
     colleges: stats,
   };
 });

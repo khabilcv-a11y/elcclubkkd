@@ -7,7 +7,7 @@ async function apUnbound(el) {
   const d = await api('/api/staff/pwd/overview'); UB.d = d; const ops = isOps();
   const head = pageHead('Vote Unbound', 'Call campaign for persons with disabilities, from the district UDID data. Each institution is allotted local bodies or wards and calls only the people there.', html`${ops && d.total ? html`<button class="btn secondary" data-act="ubImportOpen">${icon('upload')} Import again</button>` : ''}`, 'Special drives');
   if (!d.total) { show(el, html`${head}<div class="card ub-empty"><img src="/img/drives/vote-unbound.webp" alt="Vote Unbound" class="ub-logo">${ops ? html`<h3>Import the district's PwD list</h3><p class="muted">Choose the CSV file (the columns: Name, DOB, Age, Gender, Mobile, Address, Ward, Anganwadi, ICDS, LSGD, Bedridden, Disability, Disability%, UDID Status). It is kept in a private register, separate from the Google Sheet. Aadhaar and UDID numbers in the file are ignored and never stored.</p><label class="btn primary lg">${icon('upload')} Choose the file<input type="file" id="ubfile" accept=".csv,text/csv" hidden></label><div id="uberr" style="margin-top:12px"></div>` : html`<p class="muted">The register has not been imported yet.</p>`}</div>`); $('#ubfile')?.addEventListener('change', e => e.target.files[0] && ubImport(e.target.files[0])); return; }
-  const tabs = [['areas', 'Local bodies and allotment'], ['colleges', 'Institutions'], ['data', 'The data']];
+  const tabs = [['areas', 'Local bodies and allotment'], ['villages', 'Villages'], ['colleges', 'Institutions'], ['data', 'The data']];
   show(el, html`${head}
     <div class="kpis">${kpi('People in the register', d.total, { ic: 'users' })}${kpi('Bedridden', d.bedridden, { ic: 'alert', tone: 'saffron', sub: 'may need home voting' })}${kpi('Phone numbers to call', d.numbers, { ic: 'help', count: false, sub: 'some numbers are shared by a family' })}${kpi('Called so far', ubPct(d.called, d.total) + '%', { ic: 'check-circle', tone: 'green', count: false, sub: d.called + ' people' })}${kpi('Need help', d.needs_help, { ic: 'target' })}</div>
     <div class="chips" style="margin:16px 0 14px" role="tablist">${tabs.map(([k, l]) => html`<button class="chip ${UB.tab === k ? 'on' : ''}" role="tab" aria-selected="${UB.tab === k}" data-act="ubTab" data-k="${k}">${l}</button>`)}</div><div id="ubbody"></div>`);
@@ -25,6 +25,7 @@ function ubBody() {
         <td>${a.allotted.length ? html`<div class="ub-chips">${a.allotted.map(x => html`<span class="ub-chip">${x.college}${x.ward ? html` <i>ward ${x.ward}</i>` : ''}${ops ? html`<button class="x" data-act="ubUnalloc" data-id="${x.id}" aria-label="Remove ${esc(x.college)}">×</button>` : ''}</span>`)}</div>` : html`<span class="muted small">not allotted</span>`}</td>
         <td class="num">${ubPct(a.called, a.n)}%</td>${ops ? html`<td class="ia"><button class="btn sm secondary" data-act="ubAllot" data-key="${esc(a.lsgd_key)}">Allot</button></td>` : ''}</tr>`)}</tbody></table></div></div>`);
     const qi = $('#ubq', b); qi?.addEventListener('input', () => { UB.q = qi.value; clearTimeout(UB.t); UB.t = setTimeout(() => { ubBody(); const x = $('#ubq'); x.focus(); x.setSelectionRange(x.value.length, x.value.length); }, 250); });
+  } else if (UB.tab === 'villages') { ubVillages(b);
   } else if (UB.tab === 'colleges') {
     show(b, d.progress.length ? html`<div class="card pad0"><div class="tablewrap"><table><thead><tr><th>Institution</th><th class="num">Areas</th><th class="num">People allotted</th><th class="num">People called</th><th class="num">Reached</th><th class="num">Need help</th><th>Last call</th></tr></thead><tbody>
       ${d.progress.map(c => html`<tr><td><b>${c.name}</b></td><td class="num">${c.areas}</td><td class="num">${n(c.people)}</td><td class="num">${n(c.called)} <span class="muted small">(${ubPct(c.called, c.people)}%)</span></td><td class="num">${n(c.reached)}</td><td class="num">${c.help}</td><td class="small">${c.last ? fdt(c.last) : html`<span class="muted">no calls yet</span>`}</td></tr>`)}</tbody></table></div></div>`
@@ -82,3 +83,47 @@ actions.ubSuggest = async () => {
 };
 actions.ubExport = () => { window.location.href = '/api/staff/pwd/export-calls'; };
 actions.ubClear = async () => { const t = prompt('This removes every person from the register so you can import a fresh file. Call history is kept. Type DELETE to confirm.'); if (t === null) return; await api('/api/staff/pwd/clear', 'POST', { confirm: t.trim() }); toast('The register is empty'); apUnbound($('#pg')); };
+
+// ---- villages: the register knows only local body and ward, so a village is a set of wards ----
+async function ubVillages(b) {
+  show(b, html`<div class="loading"><div class="spin"></div></div>`); const ops = isOps(); let v; try { v = await api('/api/staff/pwd/villages'); } catch (e) { return show(b, html`<div class="alert err">${e.message}</div>`); }
+  UB.v = v;
+  show(b, html`<div class="card pad0"><div class="filterbar"><div class="row gap-s">${ops ? html`<button class="btn primary sm" data-act="ubvAdd">${icon('map-pin')} Link a village to wards</button><button class="btn secondary sm" data-act="ubvImportOpen">${icon('upload')} Import a sheet</button>` : ''}<span class="small muted">${v.villages.length} village${v.villages.length === 1 ? '' : 's'} linked</span></div></div>
+    ${v.villages.length ? html`<div class="tablewrap"><table data-nosort><thead><tr><th>Village</th><th>Wards it covers</th><th class="num">People</th><th>Allotted to</th>${ops ? html`<th class="ia"></th>` : ''}</tr></thead><tbody>
+      ${v.villages.map(g => html`<tr><td><b>${g.village}</b></td><td class="small">${g.links.map(l => html`<span class="ub-chip">${l.lsgd.replace(/ (Grama )?Panchayat$/i, '')} <i>${l.ward ? 'ward ' + l.ward : 'all wards'}</i>${ops ? html`<button class="x" data-act="ubvLink" data-id="${l.id}" aria-label="Remove this ward from ${esc(g.village)}">×</button>` : ''}</span> `)}</td><td class="num">${n(g.n)}</td>
+        <td>${g.allotted.length ? g.allotted.map(c => html`<div class="small">${c}</div>`) : html`<span class="muted small">not allotted</span>`}</td>${ops ? html`<td class="ia"><div class="row gap-s nowrap"><button class="btn sm secondary" data-act="ubvAllot" data-v="${esc(g.village)}">Allot</button><button class="ib danger" data-act="ubvDel" data-v="${esc(g.village)}" aria-label="Remove ${esc(g.village)}">${icon('trash')}</button></div></td>` : ''}</tr>`)}</tbody></table></div>`
+      : html`<div class="pad">${empty('No village is linked yet', 'The register knows each person by local body and ward only. Tell the portal which wards each village covers, then give a village to an institution in one step. A sheet with the columns Village, Local body and Ward (several wards can be written together, like 3, 4, 5) can be imported.', 'map-pin')}</div>`}</div>`);
+}
+actions.ubvAdd = () => {
+  const v = UB.v; modal(html`<h2>Link a village to wards</h2><p class="muted small">Choose the local body the village is in, then the wards it covers. A village can cover wards in more than one local body: add it again for the next one.</p>
+    <form data-form="ubvAddF" class="stack-s"><label class="f"><span>Village *</span><input name="village" required maxlength="80" list="ubvnames" autocomplete="off"><datalist id="ubvnames">${[...new Set([...v.names, ...v.villages.map(g => g.village)])].map(x => html`<option value="${esc(x)}">`)}</datalist></label>
+      <label class="f"><span>Local body *</span><select name="lsgd_key" id="ubvlsgd" required><option value="">Choose…</option>${v.areas.map(a => html`<option value="${esc(a.lsgd_key)}">${a.lsgd}</option>`)}</select></label>
+      <label class="chk"><input type="checkbox" name="all" id="ubvall" checked> All wards of this local body</label><div class="ub-wards" id="ubvwards"></div>${mfoot('Link')}</form>`, { wide: true });
+  const all = $('#ubvall'), box = $('#ubvwards');
+  $('#ubvlsgd').addEventListener('change', async e => { box.innerHTML = ''; if (!e.target.value) return; const { wards } = await api('/api/staff/pwd/wards/' + encodeURIComponent(e.target.value)); box.innerHTML = wards.map(w => `<label class="chk"><input type="checkbox" data-w="${esc(w.ward)}"> Ward ${esc(w.ward)} <span class="muted xs">${w.n}</span></label>`).join(''); box.querySelectorAll('[data-w]').forEach(c => c.addEventListener('change', () => { if (c.checked) all.checked = false; })); });
+  all.addEventListener('change', () => { if (all.checked) box.querySelectorAll('[data-w]').forEach(c => { c.checked = false; }); });
+};
+forms.ubvAddF = async f => {
+  const v = fd(f), wards = [...f.querySelectorAll('[data-w]:checked')].map(c => c.dataset.w); if (!v.all && !wards.length) throw new Error('Choose all wards or at least one ward');
+  await api('/api/staff/pwd/villages', 'POST', { village: v.village, lsgd_key: v.lsgd_key, wards: v.all ? [] : wards }); f.closest('.overlay').close(); toast('Linked'); ubVillages($('#ubbody'));
+};
+actions.ubvLink = async el => { await api('/api/staff/pwd/villages/link/' + el.dataset.id, 'DELETE'); ubVillages($('#ubbody')); };
+actions.ubvDel = async el => { if (!await confirmBox('Remove this village and its ward links? Institutions keep any areas already allotted to them.', 'Remove', true)) return; await api('/api/staff/pwd/villages/remove', 'POST', { village: el.dataset.v }); toast('Removed'); ubVillages($('#ubbody')); };
+actions.ubvAllot = el => {
+  const g = UB.v.villages.find(x => x.village === el.dataset.v);
+  modal(html`<h2>Allot ${g.village}</h2><p class="muted small">${n(g.n)} people in ${g.links.length} area${g.links.length === 1 ? '' : 's'}: ${g.links.map(l => l.lsgd.replace(/ (Grama )?Panchayat$/i, '') + (l.ward ? ' ward ' + l.ward : ' (all wards)')).join('; ')}.</p>
+    <form data-form="ubvAllotF" data-v="${esc(g.village)}" class="stack-s"><label class="f"><span>Institution *</span><select name="college_id" required><option value="">Choose…</option>${UB.d.colleges.map(c => html`<option value="${c.id}">${c.name}</option>`)}</select></label>${mfoot('Allot')}</form>`);
+};
+forms.ubvAllotF = async f => { const v = fd(f), r = await api('/api/staff/pwd/alloc-village', 'POST', { college_id: v.college_id, village: f.dataset.v }); f.closest('.overlay').close(); toast(r.n ? 'Allotted' : 'Already allotted'); ubVillages($('#ubbody')); };
+actions.ubvImportOpen = () => { modal(html`<h2>Import villages</h2><p class="muted small">A CSV with the columns <b>Village</b>, <b>Local body</b> and <b>Ward</b>. Several wards can go in one cell (3, 4, 5); leave Ward empty for the whole local body. A village can appear on several rows.</p><label class="btn primary lg">${icon('upload')} Choose the file<input type="file" id="ubvfile" accept=".csv,text/csv" hidden></label><div id="ubverr" style="margin-top:12px"></div>`); $('#ubvfile').addEventListener('change', e => e.target.files[0] && ubvImport(e.target.files[0])); };
+async function ubvImport(file) {
+  const box = $('#ubverr'), say = (t, c = 'info') => { box.innerHTML = `<div class="alert ${c}">${esc(t)}</div>`; };
+  try {
+    const rows = parseCsv((await file.text()).replace(/^\ufeff/, '')); if (rows.length < 2) throw new Error('The file has no rows');
+    const head = rows[0].map(h => String(h).trim()), at = { village: head.findIndex(h => /village/i.test(h)), lsgd: head.findIndex(h => /lsgd|local\s*body|lsgi|panchayat|municipal/i.test(h)), ward: head.findIndex(h => /ward/i.test(h)) };
+    if (at.village < 0 || at.lsgd < 0) throw new Error('The file needs a "Village" column and a "Local body" column');
+    const data = rows.slice(1).filter(r => r.some(x => String(x).trim())); let added = 0; const un = new Set();
+    for (let i = 0; i < data.length; i += 1000) { say('Importing…'); const r = await api('/api/staff/pwd/villages/import', 'POST', { first: i === 0, rows: data.slice(i, i + 1000).map(r => ({ village: r[at.village], lsgd: r[at.lsgd], ward: at.ward < 0 ? '' : r[at.ward] })) }); added += r.added; r.unmatched.forEach(x => un.add(x)); }
+    say(`Done: ${added} village-ward link${added === 1 ? '' : 's'} added.${un.size ? ' Not found in the register (check the spelling): ' + [...un].join(', ') + '.' : ''}`, un.size ? 'warn' : 'ok'); ubVillages($('#ubbody'));
+  } catch (e) { say(e.message, 'err'); }
+}
