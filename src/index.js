@@ -1,5 +1,6 @@
 // Thin front door. Static pages come straight from Cloudflare's edge; every /api call is handed to the Portal object.
 export { Portal } from './portal.js';
+export { Registry } from './registry.js';   // the private register of the Vote Unbound call campaign
 
 const stub = env => env.PORTAL.get(env.PORTAL.idFromName('main'), { locationHint: 'apac' });
 

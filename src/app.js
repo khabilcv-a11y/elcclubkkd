@@ -22,6 +22,7 @@ import './routes/social.js';
 import './routes/selfie.js';
 import './routes/ac.js';
 import './routes/quiz.js';
+import './routes/pwd.js';
 
 // ---------- public + auth routes ----------
 let boardCache = { at: 0, data: null };
