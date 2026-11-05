@@ -23,6 +23,7 @@ import './routes/selfie.js';
 import './routes/ac.js';
 import './routes/quiz.js';
 import './routes/pwd.js';
+import './routes/drives.js';
 
 // ---------- public + auth routes ----------
 let boardCache = { at: 0, data: null };
