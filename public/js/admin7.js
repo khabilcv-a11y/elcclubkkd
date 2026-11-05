@@ -34,6 +34,7 @@ function ubBody() {
     show(b, html`<div class="grid g2"><div class="card"><div class="card-head"><h3>UDID status</h3></div>${bar(d.udid, d.total)}</div><div class="card"><div class="card-head"><h3>Type of disability</h3></div>${bar(d.disability, d.total)}</div></div>
       <div class="card" style="margin-top:16px"><div class="card-head"><h3>${icon('shield')} Privacy and records</h3></div><ul class="small muted" style="margin:0 0 12px 18px"><li>The people are kept in a private register, not in the Google Sheet. Aadhaar and UDID numbers are never imported.</li><li>An institution sees only the people in the local bodies and wards allotted to it, and every time it opens the list or a person the portal records it.</li><li>Calls are saved against the institution that made them. Download the call log from time to time as a backup.</li></ul>
         ${ops ? html`<button class="btn secondary" data-act="ubExport">${icon('download')} Download the call log (CSV)</button>` : ''}
+        ${isSuper() ? html`<button class="btn ghost danger" data-act="ubClear" style="margin-left:8px">${icon('trash')} Empty the register</button>` : ''}
         <h4 style="margin:16px 0 6px">Recent access</h4>${d.views.length ? html`<div class="tablewrap"><table data-nosort><thead><tr><th>When</th><th>Institution</th><th>What</th><th class="num">People shown</th></tr></thead><tbody>${d.views.map(v => html`<tr><td class="small">${fdt(v.at)}</td><td>${v.who}</td><td>${{ open: 'Opened the page', list: 'Opened the list', person: 'Opened a person' }[v.action] || v.action}</td><td class="num">${v.n}</td></tr>`)}</tbody></table></div>` : html`<p class="muted small">No access yet.</p>`}</div>`);
   }
 }
@@ -80,3 +81,4 @@ actions.ubSuggest = async () => {
   apUnbound($('#pg'));
 };
 actions.ubExport = () => { window.location.href = '/api/staff/pwd/export-calls'; };
+actions.ubClear = async () => { const t = prompt('This removes every person from the register so you can import a fresh file. Call history is kept. Type DELETE to confirm.'); if (t === null) return; await api('/api/staff/pwd/clear', 'POST', { confirm: t.trim() }); toast('The register is empty'); apUnbound($('#pg')); };

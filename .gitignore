@@ -11,3 +11,6 @@ data/
 .wrangler/
 .dev.vars*
 apps-script/*.local.gs
+
+# promo video files (large)
+promo/

@@ -110,3 +110,9 @@ route('POST', '/api/college/pwd/call', 'college', async ctx => {
   const r = await reg(ctx).logCall(pids, ctx.college.id, str(ctx.college.coordinator || ctx.college.name, 80), b.outcome, help, str(b.note, 300));
   await clog(ctx, 'pwd_call', `${pids.length} call record${pids.length === 1 ? '' : 's'}: ${OUTCOMES[b.outcome]}`); return r;
 });
+
+// start again with a fresh file: only the super admin, and only with the word typed (the call history is kept)
+route('POST', '/api/staff/pwd/clear', ['super_admin'], async ctx => {
+  if (String(ctx.body.confirm || '') !== 'DELETE') throw bad('Type DELETE to confirm');
+  await reg(ctx).clearAll(); await slog(ctx, 'pwd_clear', 'the register was emptied'); return { ok: true };
+});
