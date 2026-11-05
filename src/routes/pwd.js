@@ -8,7 +8,8 @@ import { normName } from '../lib/ac.js';
 import { OUTCOMES, HELP } from '../registry.js';
 
 const OPS = ['super_admin', 'admin'];
-const reg = ctx => ctx.env.REGISTRY.get(ctx.env.REGISTRY.idFromName('pwd'));
+// the register lives in its own Durable Object; when the free daily write allowance is used up it refuses, and people should be told why
+const reg = ctx => { const stub = ctx.env.REGISTRY.get(ctx.env.REGISTRY.idFromName('pwd')); return new Proxy({}, { get: (_, k) => (k === 'then' ? undefined : async (...a) => { try { return await stub[k](...a); } catch (e) { if (/rows (written|read)|free tier|allowance/i.test(String(e && e.message))) throw new HttpError(503, 'The Vote Unbound register is paused: the free daily storage allowance is used up. It works again after 5:30 AM IST.'); throw e; } }) }); }
 const slog = (ctx, a, d) => log(ctx.db, 'staff', ctx.user.username, ctx.user.role, a, d, ctx.ip);
 const clog = (ctx, a, d) => log(ctx.db, 'college', ctx.college.name, null, a, d, ctx.ip);
 
