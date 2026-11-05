@@ -65,10 +65,11 @@ const tourVisible = el => !!el && el.getClientRects().length > 0;
 function tourEnd() {
   if (!tour) return;
   document.removeEventListener('keydown', tour.onKey);
-  tour.root.remove(); tour.prevFocus?.focus?.(); tour = null;
+  tour.root.remove(); tour.prevFocus?.focus?.(); tour = null; document.body.classList.remove('nav-open');
 }
 function tourDraw() {
-  const t = tour, s = t.steps[t.i], el = s.sel ? document.querySelector(s.sel) : null, vis = tourVisible(el);
+  const t = tour, s = t.steps[t.i], el = s.sel ? document.querySelector(s.sel) : null, vis = tourVisible(el), drawer = !!el?.closest?.('.side') && innerWidth <= 960;
+  document.body.classList.toggle('nav-open', drawer);          // on a phone the menu is a drawer: open it while a menu item is explained
   if (vis) el.scrollIntoView({ block: 'nearest' });
   t.card.innerHTML = `<div class="tour-count">Step ${t.i + 1} of ${t.steps.length}</div><h2 id="tour-h"></h2><p></p>
     <div class="tour-dots" aria-hidden="true">${t.steps.map((_, k) => `<i class="${k === t.i ? 'on' : ''}"></i>`).join('')}</div>
@@ -87,7 +88,7 @@ function tourDraw() {
     if (top + c.offsetHeight > vh - 12) top = Math.max(12, vh - c.offsetHeight - 12);
     c.style.left = left + 'px'; c.style.top = top + 'px';
   };
-  t.place();
+  t.place(); if (drawer) setTimeout(() => t.place?.(), 320);
 }
 function startTour(kind, who, role) {
   if (tour) tourEnd();

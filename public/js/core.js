@@ -299,17 +299,29 @@ actions.doPrint = () => { document.body.classList.add('pc'); window.print(); set
 // ---------- logos + the workspace frame used by the college, officer and staff consoles ----------
 const LOGO = { nvlb: '/img/nvlb.png', sweepDark: '/img/sweep-dark.webp', sweepWhite: '/img/sweep-white.webp', district: '/img/district.png' };
 // nav = [{ group: 'Title', items: [{ id, label, icon, count }] }]; base = '#/me' etc.
-function consoleShell({ product, who, role, nav, active, base, content, extra = '', avatarUrl = '', chip = '' }) {
+function consoleShell({ product, who, role, nav, active, base, content, extra = '', avatarUrl = '', chip = '', quick = [] }) {
   const tkind = base === '#/me' ? 'college' : base === '#/officer' ? 'officer' : 'staff';
   if (typeof maybeTour === 'function') maybeTour(tkind, who, role);
   const items = g => g.items.map(i => html`<a class="nav" href="${base}/${i.id}" ${i.id === active ? 'aria-current="page"' : ''}>${icon(i.icon)}<span>${i.label}</span>${i.count ? html`<span class="count" aria-label="${i.count} new">${i.count}</span>` : ''}</a>`);
-  return html`<header class="topbar" data-tour-kind="${tkind}" data-tour-who="${who}" data-tour-role="${role}"><div class="wrap"><a class="brand" href="${base}/${nav[0].items[0].id}"><img src="${LOGO.district}" alt="District Administration Kozhikode" style="height:36px"><span class="sep"></span><img src="${LOGO.sweepDark}" alt="SWEEP Kozhikode" style="height:32px"><span class="sep"></span><span><b>${product}</b><small>Electoral Literacy Clubs</small></span></a><span class="spacer"></span>${extra}
-      <span class="userchip">${avatarUrl ? html`<img class="avatar" src="${avatarUrl}" alt="">` : html`<span class="avatar" aria-hidden="true">${initials(who)}</span>`}<span class="who"><b>${who}</b><br><small class="muted">${role}</small></span></span>
-      ${chip}<button class="btn secondary sm" data-act="tour">${icon('help')}<span>Tour</span></button>${typeof ME !== 'undefined' && ME.kind === 'college' ? html`<button class="btn secondary sm" data-act="logoModal">${icon('image')}<span>Logo</span></button><button class="btn secondary sm" data-act="changePw">${icon('key')}<span>Password</span></button>` : ''}
-      <button class="btn secondary sm" data-act="signout">${icon('logout')}<span>Sign out</span></button></div></header>
-    <div class="shell"><nav class="side" aria-label="Workspace">${nav.map(g => html`${g.group ? html`<h4>${g.group}</h4>` : ''}${items(g)}`)}</nav>
-    <main id="main" class="main page-in" tabindex="-1">${content}</main></div>`;
+  const flat = nav.flatMap(g => g.items), qk = quick.map(id => flat.find(i => i.id === id)).filter(Boolean);
+  const av = avatarUrl ? html`<img class="avatar" src="${avatarUrl}" alt="">` : html`<span class="avatar" aria-hidden="true">${initials(who)}</span>`;
+  // Tour, Logo, Password and Sign out: in the top bar on a computer, at the foot of the menu on a phone
+  const acts = html`<button class="btn secondary sm" data-act="tour">${icon('help')}<span>Tour</span></button>${typeof ME !== 'undefined' && ME.kind === 'college' ? html`<button class="btn secondary sm" data-act="logoModal">${icon('image')}<span>Logo</span></button><button class="btn secondary sm" data-act="changePw">${icon('key')}<span>Password</span></button>` : ''}<button class="btn secondary sm" data-act="signout">${icon('logout')}<span>Sign out</span></button>`;
+  return html`<header class="topbar" data-tour-kind="${tkind}" data-tour-who="${who}" data-tour-role="${role}"><div class="wrap"><button class="menu-btn" data-act="navToggle" aria-label="Open the menu" aria-expanded="false">${icon('menu')}</button><a class="brand" href="${base}/${nav[0].items[0].id}"><img src="${LOGO.district}" alt="District Administration Kozhikode" style="height:36px"><span class="sep"></span><img src="${LOGO.sweepDark}" alt="SWEEP Kozhikode" style="height:32px"><span class="sep"></span><span><b>${product}</b><small>Electoral Literacy Clubs</small></span></a><span class="spacer"></span>${extra}
+      <span class="userchip">${av}<span class="who"><b>${who}</b><br><small class="muted">${role}</small></span></span>
+      ${chip}<span class="tb-actions">${acts}</span></div></header>
+    <div class="nav-scrim" data-act="navClose"></div>
+    <div class="shell"><nav class="side" aria-label="Workspace"><div class="side-user">${av}<span><b>${who}</b><small>${role}</small></span><button class="ib" data-act="navClose" aria-label="Close the menu">${icon('x')}</button></div>${nav.map(g => html`${g.group ? html`<h4>${g.group}</h4>` : ''}${items(g)}`)}<div class="side-actions">${acts}</div></nav>
+    <main id="main" class="main page-in" tabindex="-1">${content}</main></div>
+    ${qk.length ? html`<nav class="tabbar" aria-label="Quick links">${qk.map(i => html`<a class="tab" href="${base}/${i.id}" ${i.id === active ? 'aria-current="page"' : ''}>${icon(i.icon)}<span>${i.tab || i.label}</span></a>`)}<button class="tab" data-act="navToggle">${icon('menu')}<span>Menu</span></button></nav>` : ''}`;
 }
+// the menu drawer (phones): opens from the menu button, closes on a choice, the dark backdrop, Escape or a page change
+actions.navToggle = () => { const o = document.body.classList.toggle('nav-open'); document.querySelectorAll('[data-act=navToggle]').forEach(x => x.setAttribute('aria-expanded', String(o))); if (o) setTimeout(() => document.querySelector('.side a.nav[aria-current=page]')?.scrollIntoView({ block: 'center' }), 300); };
+actions.navClose = () => document.body.classList.remove('nav-open');
+actions.pubMenu = () => { const o = document.body.classList.toggle('pub-open'); document.querySelectorAll('[data-act=pubMenu]').forEach(x => x.setAttribute('aria-expanded', String(o))); };
+addEventListener('hashchange', () => document.body.classList.remove('nav-open', 'pub-open'));
+document.addEventListener('keydown', e => { if (e.key === 'Escape') document.body.classList.remove('nav-open', 'pub-open'); });
+document.addEventListener('click', e => { if (e.target.closest('.side a.nav,.side-actions button,.pubmenu a,.tabbar a')) setTimeout(() => document.body.classList.remove('nav-open', 'pub-open'), 0); });
 
 // ---------- every table can be sorted: each column heading becomes a sort button ----------
 // Tables that already have their own sorting (reports, volunteer list) or that hold merged cells are left alone. Total rows stay at the bottom.

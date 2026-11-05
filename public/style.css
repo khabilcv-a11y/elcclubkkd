@@ -128,7 +128,9 @@ caption{text-align:left;padding:10px 14px;font-weight:600;color:var(--muted)}
 .page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:20px}
 .page-head p{color:var(--muted);margin-top:4px}
 .crumb{font-size:.78rem;font-weight:700;color:var(--saffron);text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px}
-.menu-btn{display:none}
+.menu-btn{display:none;place-items:center;width:44px;height:44px;border:0;background:transparent;border-radius:12px;color:var(--ink);cursor:pointer;flex:none}.menu-btn:hover{background:var(--brand-50)}
+.side-user,.side-actions,.tabbar,.nav-scrim,.pubmenu{display:none}
+.pub-only{display:none}
 @media(max-width:960px){
   .shell{display:block}
   .side{position:static;height:auto;display:flex;gap:6px;overflow-x:auto;padding:8px 12px;border-right:0;border-bottom:1px solid var(--line);scrollbar-width:none}
@@ -900,3 +902,52 @@ button.albpic{border:0;background:none;padding:0;cursor:pointer;font:inherit;wid
 @media(max-width:600px){.qd-q{flex-direction:column;align-items:flex-start}.qd-segs{max-width:90vw}}
 @media(max-height:720px){.qd-top{min-height:60px;padding-top:8px;padding-bottom:4px}.qd-stage{gap:12px}.qd-q{padding:12px 22px;border-radius:20px}.qd-qno{width:68px;border-radius:16px}.qd-qno small{font-size:.5rem;letter-spacing:.06em}.qd-qno b{font-size:1.8rem}.qd-q h1{font-size:clamp(1.2rem,2.6vw,2rem)}.qd-opt{min-height:60px;padding:10px 16px;font-size:1rem;border-radius:16px}.qd-l{width:38px;height:38px;border-radius:12px}.qd-ctl{min-height:70px;padding-bottom:12px}.qd-ctl .btn.lg{min-height:48px}.qd-ring{width:60px;height:60px}}
 .qd-opt.dim{opacity:.6}
+
+/* ---------- phones and small tablets: drawer menu, quick-links bar, comfortable touch targets ---------- */
+@media(max-width:960px){
+  .menu-btn{display:grid}.pubbar .menu-btn.pub-only{display:grid;background:var(--brand-50);color:var(--brand)}
+  .topbar .wrap{gap:8px;padding:0 10px}.topbar .brand{gap:8px}.topbar .brand .sep,.topbar .brand b,.topbar .brand small{display:none}
+  .tb-actions,.userchip{display:none}
+  .shell{display:block}
+  .side{position:fixed;top:0;left:0;bottom:0;width:min(86vw,330px);height:auto;display:block;transform:translateX(-104%);visibility:hidden;transition:transform .26s ease,visibility .26s;z-index:70;padding:0 0 24px;border-right:0;border-bottom:0;box-shadow:var(--shadow-lg);overflow-y:auto;overflow-x:hidden}
+  body.nav-open .side{transform:none;visibility:visible}
+  .side-user{display:flex;align-items:center;gap:12px;padding:16px;background:var(--brand-50);margin-bottom:8px;position:sticky;top:0;z-index:1}.side-user span{flex:1;min-width:0;display:grid;line-height:1.25}.side-user b{color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.side-user small{color:var(--muted)}
+  .side h4{display:block;margin:16px 16px 6px}
+  .nav{width:calc(100% - 16px);margin:0 8px 2px;min-height:48px;padding:12px 14px;font-size:1rem;white-space:normal;flex:none}
+  .side-actions{display:grid;gap:8px;padding:16px;margin-top:10px;border-top:1px solid var(--line)}.side-actions .btn{justify-content:flex-start;min-height:46px}
+  .nav-scrim{display:block;position:fixed;inset:0;background:rgba(15,22,48,.5);z-index:65;opacity:0;pointer-events:none;transition:opacity .2s}body.nav-open .nav-scrim{opacity:1;pointer-events:auto}
+  .tabbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:55;background:#fff;border-top:1px solid var(--line);padding:4px 6px calc(4px + env(safe-area-inset-bottom));box-shadow:0 -8px 24px rgba(16,24,64,.08)}
+  .tab{flex:1;display:grid;justify-items:center;align-content:center;gap:2px;padding:6px 2px;min-height:56px;border:0;background:transparent;color:var(--muted);font:inherit;font-size:.74rem;font-weight:600;text-decoration:none;border-radius:12px;cursor:pointer}.tab .icon{width:22px;height:22px}.tab[aria-current=page]{color:var(--brand);background:var(--brand-50)}
+  .main{padding:16px 14px calc(88px + env(safe-area-inset-bottom))}
+  .pubbar .wrap{gap:8px;height:60px}.pubbar .pubnav{gap:4px}
+  .pubmenu{display:block;position:fixed;top:60px;left:0;right:0;bottom:0;background:#fff;z-index:59;opacity:0;transform:translateY(-8px);pointer-events:none;visibility:hidden;transition:opacity .2s,transform .2s,visibility .2s;overflow-y:auto}
+  body.pub-open .pubmenu{opacity:1;transform:none;pointer-events:auto;visibility:visible}
+  .pubmenu .pm{display:flex;align-items:center;min-height:58px;border-bottom:1px solid var(--line);font-size:1.12rem;font-weight:600;color:var(--ink);text-decoration:none}.pubmenu .pm[aria-current=page]{color:var(--brand)}
+  .pm-sign{display:grid;gap:10px;padding:22px 0 40px}
+}
+@media(max-width:420px){.topbar .brand img:first-child{display:none}}
+/* touch targets: buttons, chips, fields and icon buttons are at least 40 to 46 pixels, and fields are 16px so a phone does not zoom in */
+@media(max-width:960px),(pointer:coarse){
+  .btn{min-height:44px}.btn.sm{min-height:40px;padding:8px 14px}.chip{min-height:40px;display:inline-flex;align-items:center}
+  .ib{min-width:40px;min-height:40px}
+  input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]),select,textarea{min-height:46px;font-size:16px}
+  .chk input{width:22px;height:22px}
+}
+@media(max-width:960px){body:has(.tabbar) .a11y-fab{bottom:calc(76px + env(safe-area-inset-bottom))}body:has(.tabbar) .a11y-panel{bottom:calc(132px + env(safe-area-inset-bottom))}.tab span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+
+body.nav-open .a11y-fab,body.pub-open .a11y-fab{display:none}
+
+/* phones: text never below 12px, and small controls get a proper touch area */
+@media(max-width:960px),(pointer:coarse){
+  .badge,.sortbtn,th,.sfst,.tab,.crumb,.xs,.qx-topic,.qx-kicker,.hof-kind,.pchip,.sfn,.chip{font-size:max(12px,.75rem)}
+  small{font-size:max(12px,80%)}
+  .iconbtn{width:44px;height:44px}
+  .sortbtn{min-height:36px;padding-top:8px;padding-bottom:8px}
+  .topbar .brand,.qx-brand,.qx-exit{min-height:44px;display:inline-flex;align-items:center}
+  .pchip{min-height:40px}
+  .pubnav>.btn.secondary{display:none}
+}
+@media(max-width:960px),(pointer:coarse){
+  .foot .cols a{display:inline-block;padding:9px 0;min-height:40px}
+  .epic-eyebrow,.albn,.sf-pdf,.sf-meta dt,.wcap small,.res small,.resgrid small,.hof-sub{font-size:12px}
+}

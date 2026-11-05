@@ -27,7 +27,7 @@ async function route() {
   try { DASH = (await api('/api/staff/dashboard')); } catch (e) { if (e.status === 401) return; }
   const t = DASH?.totals || {};
   const navAll = [{ group: 'Overview', items: [{ id: 'dashboard', label: 'Dashboard', icon: 'grid' }] },
-    { group: 'Campus to booth', items: [{ id: 'enrol', label: 'Enrolment drive', icon: 'target' }, { id: 'desk', label: 'Help desk reports', icon: 'clipboard' }, { id: 'gallery', label: 'Gallery', icon: 'image' }, { id: 'templates', label: 'Frames, posters, certificates', icon: 'crop' }, { id: 'certs', label: 'Certificates', icon: 'certificate' }, { id: 'social', label: 'Social media', icon: 'megaphone' }, { id: 'selfie', label: 'Selfie contest', icon: 'camera' }, { id: 'quiz', label: 'Quiz competition', icon: 'help' }] },
+    { group: 'Campus to booth', items: [{ id: 'enrol', label: 'Enrolment drive', icon: 'target' }, { id: 'desk', label: 'Help desk reports', icon: 'clipboard' }, { id: 'gallery', label: 'Gallery', icon: 'image' }, { id: 'templates', label: 'Frames, posters, certificates', icon: 'crop' }, { id: 'certs', label: 'Certificates', icon: 'certificate' }, { id: 'social', label: 'Social media', icon: 'megaphone' }, { id: 'selfie', label: 'Selfie contest', icon: 'camera' }, { id: 'quiz', label: 'Quiz competition', tab: 'Quiz', icon: 'help' }] },
     { group: 'Manage', items: [{ id: 'colleges', label: 'Colleges', icon: 'building' }, { id: 'schools', label: 'Schools', icon: 'book' }, { id: 'villages', label: 'Villages', icon: 'map-pin' }, { id: 'allot', label: 'Allotments', icon: 'link' }, ...(isOps() ? [{ id: 'officers', label: 'Village officers', icon: 'landmark' }] : [])] },
     { group: 'Operations', items: [{ id: 'requests', label: 'Change requests', icon: 'refresh', count: t.pending_requests }, { id: 'cert', label: 'Certification', icon: 'certificate', count: t.awaiting_ack }, { id: 'issues', label: 'Help desk issues', icon: 'help', count: t.open_issues },
       ...(isOps() ? [{ id: 'notices', label: 'Announcements', icon: 'megaphone' }, { id: 'resources', label: 'Resources', icon: 'book' }] : [])] },
@@ -35,7 +35,7 @@ async function route() {
     ...(isOps() ? [{ group: 'Administration', items: [...(isSuper() ? [{ id: 'team', label: 'Team', icon: 'users' }, { id: 'features', label: 'Access control', icon: 'settings' }, { id: 'logs', label: 'Activity log', icon: 'shield' }] : [])] }] : [])];
   const nav = navAll.map(g => ({ ...g, items: g.items.filter(i => (!STAFF_FEATURED.includes(i.id) || feat('staff', i.id)) && PAGES()[i.id]) })).filter(g => g.items.length);
   const extra = html`${isSuper() && SU.sheet_url ? html`<a class="btn secondary sm" href="${SU.sheet_url}" target="_blank" rel="noopener">${icon('external')}<span>Open Google Sheet</span></a>` : ''}<button class="btn ghost sm" data-act="pw" aria-label="Change password">${icon('key')}</button>`;
-  show(app, consoleShell({ product: 'Staff console', who: SU.user.name, role: ROLE[SU.user.role], nav, active: page, base: '#', content: html`<div id="pg"><div class="loading"><div class="spin"></div></div></div>`, extra }));
+  show(app, consoleShell({ product: 'Staff console', who: SU.user.name, role: ROLE[SU.user.role], nav, active: page, base: '#', quick: ['dashboard', 'colleges', 'quiz'], content: html`<div id="pg"><div class="loading"><div class="spin"></div></div></div>`, extra }));
   document.title = TITLES[page] + ' · Staff console';
   try { await PAGES()[page]($('#pg')); } catch (e) { handleErr(e); }
   announce(TITLES[page]);
