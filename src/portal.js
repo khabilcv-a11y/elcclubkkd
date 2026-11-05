@@ -65,7 +65,7 @@ export class Portal {
     r.n++; this.thr.set(k, r);
     try { await this.state.storage.put(k, r); } catch { /* the daily write allowance is used up: the in-memory count still limits attempts */ }
   }
-  clearThrottle(key) { this.thr?.delete('thr:' + key); return this.state.storage.delete('thr:' + key).catch(() => {}); }
+  async clearThrottle(key) { this.thr?.delete('thr:' + key); try { await this.state.storage.delete('thr:' + key); } catch { /* storage refused (daily allowance used up): the in-memory count is already cleared */ } }
 
   async fetch(req) {
     await initEngine();
