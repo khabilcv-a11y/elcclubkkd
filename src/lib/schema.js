@@ -53,7 +53,7 @@ export const TABLES = {
   gallery: { pk: ['id'], cols: [['id', 'INTEGER'], ['college_id', 'INTEGER', { ref: ['colleges', 'CASCADE'] }], ['title', 'TEXT', { nn: 1 }], ['description', 'TEXT'], ['activity', 'TEXT'],
     ['event_date', 'TEXT'], ['drive_id', 'TEXT', { nn: 1 }], ['mime', 'TEXT'], ['size', 'INTEGER'], ['orientation', 'TEXT'], ['visible', 'INTEGER', { nn: 1, def: 1 }], ['created_at', 'TEXT'], ['thumb', 'TEXT'], ['album_id', 'INTEGER'], ['by_staff', 'TEXT'], ['home', 'INTEGER'], ['ext_url', 'TEXT'], ['src_key', 'TEXT']] },
   // albums the district office creates to sort the public gallery (current = part of the running campaign, otherwise "previous works")
-  gallery_albums: { pk: ['id'], cols: [['id', 'INTEGER'], ['title', 'TEXT', { nn: 1 }], ['description', 'TEXT'], ['current', 'INTEGER', { nn: 1, def: 0 }], ['sort_order', 'INTEGER', { nn: 1, def: 0 }], ['created_by', 'TEXT'], ['created_at', 'TEXT']] },
+  gallery_albums: { pk: ['id'], cols: [['id', 'INTEGER'], ['title', 'TEXT', { nn: 1 }], ['description', 'TEXT'], ['current', 'INTEGER', { nn: 1, def: 0 }], ['sort_order', 'INTEGER', { nn: 1, def: 0 }], ['created_by', 'TEXT'], ['created_at', 'TEXT'], ['category', 'TEXT']] },
   // photo frames and poster / banner templates: an image plus the boxes where text (or the logo) is placed
   templates: { pk: ['id'], cols: [['id', 'INTEGER'], ['title', 'TEXT', { nn: 1 }], ['kind', 'TEXT', { nn: 1, def: "'poster'" }], ['category', 'TEXT'], ['width', 'INTEGER'], ['height', 'INTEGER'], ['fields', 'TEXT'],
     ['drive_id', 'TEXT'], ['mime', 'TEXT'], ['size', 'INTEGER'], ['thumb', 'TEXT'], ['active', 'INTEGER', { nn: 1, def: 1 }], ['sort_order', 'INTEGER', { nn: 1, def: 0 }], ['created_by', 'TEXT'], ['created_at', 'TEXT']] },

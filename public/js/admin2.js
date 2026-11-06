@@ -50,7 +50,7 @@ actions.dkKind = el => { DKKIND = el.dataset.k; apDesk($('#pg')); };
 actions.deskRep = el => { REP = { type: el.dataset.t, filters: {}, sort: '', dir: 'asc', cols: null }; location.hash = '#/reports'; };
 
 // ---------- Gallery: photos from colleges and schools, photos added by the office, and the albums that sort the public gallery ----------
-let GALF = 'all', GALV = '', GALN = 48;   // GALV: '' = the albums, 'all' = every photo, 'cur' = current campaign, or an album id
+let GALF = 'all', GALV = '', GALN = 48, GALC = 'all';   // GALC: the category chip   // GALV: '' = the albums, 'all' = every photo, 'cur' = current campaign, or an album id
 async function apGallery(el) {
   const [items, albums] = await Promise.all([api('/api/staff/gallery'), api('/api/staff/gallery-albums').catch(() => [])]);
   window.__gal = items; window.__albums = albums;
@@ -62,10 +62,11 @@ async function apGallery(el) {
   const head = pageHead('Gallery', 'Photos are kept in albums. The current campaign holds the photos colleges, schools and the office add now; earlier work such as a previous election drive goes in its own album.', ops ? html`<button class="btn secondary" data-act="pxImport">${icon('image')} Import from Pixieset</button><button class="btn secondary" data-act="albAdd">${icon('plus')} New album</button><button class="btn primary" data-act="galAdd">${icon('upload')} Add photos</button>` : '', 'Campus to booth');
   if (!GALV) {
     const cover = list => list.find(g => g.visible) || list[0];
-    const tiles = [{ k: 'cur', title: 'Current campaign', sub: 'Photos from colleges, schools and the office', list: cur, cur: true }, ...albums.map(a => ({ k: String(a.id), title: a.title, sub: a.description || '', list: items.filter(g => g.album_id === a.id), a }))];
+    const tiles = [{ k: 'cur', title: 'Current campaign', sub: 'Photos from colleges, schools and the office', list: cur, cur: true, cat: 'current' }, ...albums.map(a => ({ k: String(a.id), title: a.title, sub: a.description || '', list: items.filter(g => g.album_id === a.id), a, cat: a.category }))].filter(t => GALC === 'all' || t.cat === GALC);
     return show(el, html`${head}
-      <div class="card" style="margin-bottom:16px"><div class="row between"><div class="small muted"><b>${n(items.length)}</b> photos in <b>${tiles.length}</b> albums. Open an album to manage its photos.</div><div class="row gap-s"><a class="btn ghost sm" href="/#/gallery" target="_blank" rel="noopener">${icon('external')} See the public gallery</a><button class="btn secondary sm" data-act="galView" data-k="all">${icon('image')} See all photos once</button></div></div></div>
-      <div class="albgrid2">${tiles.map(t => { const c = cover(t.list); return html`<div class="albtile adm"><button class="albpic" data-act="galView" data-k="${t.k}" aria-label="Open album ${esc(t.title)}"><i></i>${c ? html`<img src="${gUrl(c, 'medium', `/api/staff/gallery/${c.id}/thumb`)}" alt="" loading="lazy" decoding="async">` : html`<span class="muted small" style="position:absolute;inset:0;display:grid;place-items:center">No photos yet</span>`}<span class="albn">${t.list.length}</span></button><b>${t.title}</b><small>${t.cur ? badge('Current campaign', 'ok') : (t.a.current ? badge('Current campaign', 'ok') : badge('Previous works', 'grey'))}</small>${t.a && ops ? html`<div class="row gap-s" style="margin-top:6px">${rowBtn('albEdit', 'Edit', 'edit', `data-id="${t.a.id}"`)}${rowBtn('albDel', '', 'trash', `data-id="${t.a.id}" aria-label="Delete album ${esc(t.a.title)}"`, 'danger')}</div>` : ''}</div>`; })}</div>`);
+      <div class="card" style="margin-bottom:16px"><div class="row between"><div class="small muted"><b>${n(items.length)}</b> photos in <b>${tiles.length}</b> albums, the most recently added first. Open an album to manage its photos.</div><div class="row gap-s"><a class="btn ghost sm" href="/#/gallery" target="_blank" rel="noopener">${icon('external')} See the public gallery</a><button class="btn secondary sm" data-act="galView" data-k="all">${icon('image')} See all photos once</button></div></div></div>
+      <div class="chips" style="margin-bottom:14px" role="group" aria-label="Category">${[['all', 'All'], ...Object.entries(ALBCAT)].map(([k, l]) => html`<button class="chip ${GALC === k ? 'on' : ''}" data-act="galCat" data-k="${k}">${l}</button>`)}</div>
+      <div class="albgrid2">${tiles.map(t => { const c = cover(t.list); return html`<div class="albtile adm"><button class="albpic" data-act="galView" data-k="${t.k}" aria-label="Open album ${esc(t.title)}"><i></i>${c ? html`<img src="${gUrl(c, 'medium', `/api/staff/gallery/${c.id}/thumb`)}" alt="" loading="lazy" decoding="async">` : html`<span class="muted small" style="position:absolute;inset:0;display:grid;place-items:center">No photos yet</span>`}<span class="albn">${t.list.length}</span></button><b>${t.title}</b><small>${t.cat === 'current' ? badge('Current campaign', 'ok') : t.cat === 'press' ? badge('Press reports', 'info') : badge('Past events', 'grey')}</small>${t.a && ops ? html`<div class="row gap-s" style="margin-top:6px">${rowBtn('albEdit', 'Edit', 'edit', `data-id="${t.a.id}"`)}${rowBtn('albDel', '', 'trash', `data-id="${t.a.id}" aria-label="Delete album ${esc(t.a.title)}"`, 'danger')}</div>` : ''}</div>`; })}</div>`);
   }
   const title = GALV === 'all' ? 'All photos' : GALV === 'cur' ? 'Current campaign' : album.title;
   show(el, html`${head}
@@ -77,6 +78,7 @@ async function apGallery(el) {
       ${ops ? html`<div class="row gap-s" style="margin-top:10px"><button class="btn sm secondary" data-act="galVis" data-id="${g.id}" data-v="${g.visible ? 0 : 1}">${g.visible ? 'Hide' : 'Show'}</button><button class="btn sm secondary" data-act="galMove" data-id="${g.id}">${icon('folder')} Album</button><button class="btn sm danger" data-act="galDel" data-id="${g.id}" aria-label="Delete ${g.title}">${icon('trash')}</button></div>` : ''}</div></article>`)}</div>
       ${pool.length > shown.length ? html`<p class="center" style="margin-top:16px"><button class="btn secondary" data-act="galMore">Show 48 more (${n(pool.length - shown.length)} left)</button></p>` : ''}` : html`<div class="card">${empty('No photos here yet', 'Photos appear as colleges and schools save framed photos. You can also add photos yourself.', 'image')}</div>`}`);
 }
+actions.galCat = el => { GALC = el.dataset.k; apGallery($('#pg')); };
 actions.galView = el => { GALV = el.dataset.k; GALN = 48; GALF = 'all'; apGallery($('#pg')); window.scrollTo(0, 0); };
 actions.galMore = () => { GALN += 48; apGallery($('#pg')); };
 actions.galFilter = el => { GALF = el.dataset.k; GALN = 48; apGallery($('#pg')); };
@@ -99,7 +101,7 @@ forms.galAdd = async f => {
   const v = fd(f), files = [...$('input[type=file]', f).files]; if (!files.length) throw new Error('Choose at least one photo');
   const box = $('[data-err]', f);
   let album = v.album || null;
-  if (album === 'new') { const t = String(v.new_album || '').trim(); if (!t) throw new Error('Type the new album title'); album = (await api('/api/staff/gallery-albums', 'POST', { title: t, current: false })).id; }
+  if (album === 'new') { const t = String(v.new_album || '').trim(); if (!t) throw new Error('Type the new album title'); album = (await api('/api/staff/gallery-albums', 'POST', { title: t, category: 'past' })).id; }
   let done = 0;
   for (const file of files) {
     box.innerHTML = `<div class="alert info">Uploading photo ${done + 1} of ${files.length}… please keep this window open.</div>`;
@@ -116,12 +118,13 @@ actions.galMove = el => {
     <label class="chk"><input type="checkbox" name="home" ${g.home ? 'checked' : ''}> Also show on the home page</label>${mfoot('Save')}</form>`);
 };
 forms.galMove = async f => { const v = fd(f); await api(`/api/staff/gallery/${f.dataset.id}/album`, 'POST', { album_id: v.album || null, home: !!v.home }); f.closest('.overlay').close(); toast('Saved'); apGallery($('#pg')); };
+const ALBCAT = { current: 'Current campaign', press: 'Press reports', past: 'Past events' };
 const albumForm = a => html`<form data-form="album" data-id="${a?.id || ''}" class="stack-s"><label class="f"><span>Album title *</span><input type="text" name="title" maxlength="80" required value="${a?.title || ''}" placeholder="e.g. Assembly election 2024"></label>
   <label class="f"><span>Short description (optional)</span><input type="text" name="description" maxlength="300" value="${a?.description || ''}"></label>
-  <label class="chk"><input type="checkbox" name="current" ${a?.current ? 'checked' : ''}> This is part of the current campaign (shown in the highlighted section and on the home page). Leave off for earlier work.</label>${mfoot(a ? 'Save' : 'Create album')}</form>`;
+  <label class="f"><span>Category *</span><select name="category">${Object.entries(ALBCAT).map(([k, l]) => html`<option value="${k}" ${(a?.category || 'past') === k ? 'selected' : ''}>${l}</option>`)}</select><span class="hint">Current campaign: the running drive, shown first and on the home page. Press reports: newspaper and media coverage. Past events: earlier work, such as the sets from Pixieset.</span></label>${mfoot(a ? 'Save' : 'Create album')}</form>`;
 actions.albAdd = () => { window.__albums ||= []; modal(html`<h2>New album</h2>${albumForm()}`); };
 actions.albEdit = el => modal(html`<h2>Edit album</h2>${albumForm(window.__albums.find(a => a.id === Number(el.dataset.id)))}`);
-forms.album = async f => { const id = f.dataset.id, v = fd(f); await api(id ? '/api/staff/gallery-albums/' + id : '/api/staff/gallery-albums', id ? 'PUT' : 'POST', { title: v.title, description: v.description, current: !!v.current }); f.closest('.overlay').close(); toast('Saved'); apGallery($('#pg')); };
+forms.album = async f => { const id = f.dataset.id, v = fd(f); await api(id ? '/api/staff/gallery-albums/' + id : '/api/staff/gallery-albums', id ? 'PUT' : 'POST', { title: v.title, description: v.description, category: v.category }); f.closest('.overlay').close(); toast('Saved'); apGallery($('#pg')); };
 actions.albDel = async el => { const a = window.__albums.find(x => x.id === Number(el.dataset.id)); if (!await confirmBox(a.count ? `Delete this album and its ${a.count} photos? This works only for albums of photos linked from another site; uploaded photos must be moved or deleted first.` : 'Delete this empty album?', 'Delete', true)) return; await api('/api/staff/gallery-albums/' + el.dataset.id + (a.count ? '?force=1' : ''), 'DELETE'); toast('Deleted'); apGallery($('#pg')); };
 
 // ---------- Dashboard: total coverage, and every college's input and performance ----------
@@ -163,10 +166,10 @@ actions.dbSort = el => { DBSORT = el.dataset.k; apDashboard($('#pg')); };
 // ---------- link the photos of the district's Pixieset galleries into albums (one album per set; report screenshots and clippings are left out) ----------
 actions.pxImport = async () => {
   let M; try { M = await (await fetch('/pixieset-import.json')).json(); } catch { return toast('The photo list could not be loaded', true); }
-  window.__px = M; const total = M.galleries.reduce((n, g) => n + g.sets.filter(x => !x.report).reduce((m, x) => m + x.photos.length, 0), 0);
-  const mdl = modal(html`<h2>Import photos from Pixieset</h2><p class="muted small">Each set becomes an album in <b>Previous works</b>, with the photos shown straight from the Pixieset gallery (nothing is copied to the portal's storage, so it costs nothing). Sets that hold press clippings and social media statistics are left unticked. Running this again skips photos already imported.</p>
+  window.__px = M; const total = M.galleries.reduce((n, g) => n + g.sets.reduce((m, x) => m + x.photos.length, 0), 0);
+  const mdl = modal(html`<h2>Import photos from Pixieset</h2><p class="muted small">Each set becomes an album, with the photos shown straight from the Pixieset gallery (nothing is copied to the portal's storage, so it costs nothing). Event sets go to <b>Past events</b>; press and media reports go to <b>Press reports</b>. Running this again skips photos already imported.</p>
     <div class="tablewrap" style="max-height:48vh"><table data-nosort><thead><tr><th style="width:36px"><input type="checkbox" id="pxall" checked aria-label="Select all sets"></th><th>Set</th><th class="num">Photos</th></tr></thead><tbody>
-    ${M.galleries.map(g => html`<tr class="total"><td colspan="3"><b>${g.album}</b> <span class="xs muted">${g.host}</span></td></tr>${g.sets.map(x => html`<tr><td><input type="checkbox" data-px="${g.key}|${x.slug}" ${x.report ? '' : 'checked'} aria-label="${esc(x.title)}"></td><td>${x.title}${x.report ? html` <span class="badge grey">press / social media reports</span>` : ''}</td><td class="num">${x.photos.length}</td></tr>`)}`)}</tbody></table></div>
+    ${M.galleries.map(g => html`<tr class="total"><td colspan="3"><b>${g.album}</b> <span class="xs muted">${g.host}</span></td></tr>${g.sets.map(x => html`<tr><td><input type="checkbox" data-px="${g.key}|${x.slug}" ${x.report && /statistic/i.test(x.title) ? '' : 'checked'} aria-label="${esc(x.title)}"></td><td>${x.title}${x.report ? html` <span class="badge info">press reports</span>` : ''}</td><td class="num">${x.photos.length}</td></tr>`)}`)}</tbody></table></div>
     <div id="pxinfo" class="small muted" style="margin:10px 0"></div><div id="pxbar" class="progress hide"><i style="width:0%"></i></div>
     <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn secondary" data-act="closeModal">Close</button><button class="btn primary" id="pxgo" data-act="pxRun">${icon('upload')} Import the ticked sets</button></div>`, { wide: true });
   const upd = () => { const sel = $$('[data-px]:checked').map(i => i.dataset.px), n = M.galleries.flatMap(g => g.sets.filter(x => sel.includes(g.key + '|' + x.slug))).reduce((m, x) => m + x.photos.length, 0); $('#pxinfo').textContent = `${sel.length} set${sel.length === 1 ? '' : 's'} ticked, ${n.toLocaleString('en-IN')} photos (of ${total.toLocaleString('en-IN')} activity photos).`; };
@@ -181,7 +184,7 @@ actions.pxRun = async el => {
       const title = g.album + ': ' + x.title;
       for (let i = 0; i < x.photos.length; i += 300) {
         $('#pxinfo').textContent = `Importing ${title}… (${done.toLocaleString('en-IN')} of ${all.toLocaleString('en-IN')})`; $('i', bar).style.width = Math.round(done * 100 / all) + '%';
-        const r = await api('/api/staff/gallery/import-external', 'POST', { album_title: title, album_description: g.about, photo_title: x.title,
+        const r = await api('/api/staff/gallery/import-external', 'POST', { album_title: title, album_description: g.about, photo_title: x.title, category: x.report ? 'press' : 'past',
           photos: x.photos.slice(i, i + 300).map(p => ({ k: g.key + ':' + p[0], u: `https://images.pixieset.com/${p[1]}-{s}.${p[2]}`, w: p[3], h: p[4], d: p[5] })) });
         added += r.added; skipped += r.skipped; if (r.created && i === 0) albums++; done += Math.min(300, x.photos.length - i);
       }

@@ -103,7 +103,7 @@ async function renderCampusBoard() {
 // "Featured" puts the district administration's photos first; Newest, Oldest and Shuffle change the order. Opening a photo gives a full-screen viewer
 // (swipe, filmstrip, slideshow, link to the photo). Albums stay available as an optional page for anyone who prefers them.
 let WALL = null;
-const SORT_LABEL = { featured: 'Featured', newest: 'Newest first', oldest: 'Oldest first', shuffle: 'Shuffle' };
+const SORT_LABEL = { featured: 'Recent uploads first', newest: 'Newest first', oldest: 'Oldest first', shuffle: 'Shuffle' };
 const wallTile = g => html`<button class="wtile ${g.orientation === 'portrait' ? 'tall' : ''}" data-act="viewPhoto" data-id="${g.id}" aria-label="Open photo: ${g.title}, ${g.college}"><img src="${gUrl(g, g.orientation === 'portrait' ? 'xlarge' : 'large', `/api/public/album/${g.id}/thumb`)}" alt="" loading="lazy" decoding="async"><span class="wcap"><b>${g.title}</b><small>${g.college}</small></span></button>`;
 async function wallLoad(reset) {
   const W = WALL; if (!W || W.loading || (W.done && !reset)) return false;
@@ -157,22 +157,27 @@ async function renderPublicGallery(a, b) {
   }
 }
 // albums: an optional page, a plain grid of covers
+let AC = 'all';
+const ALB_CATS = [['current', 'Current campaign', 'the running drive'], ['press', 'Press reports', 'newspaper and media coverage'], ['past', 'Past events', 'earlier work']];
 async function renderAlbumIndex() {
   show($('#app'), publicShell(html`<div class="wrap section"><div class="loading"><div class="spin"></div>Loading the albums…</div></div>`, 'gallery'));
   let G; try { G = await api('/api/public/gallery'); } catch (e) { return show($('#app'), publicShell(html`<div class="wrap section"><div class="alert err">${e.message}</div></div>`, 'gallery')); }
   show($('#app'), publicShell(html`<div class="wrap" style="padding-top:26px">${pageHead('Gallery', 'Photos gathered by campaign and event. Open an album to look through it, or see every photo at once.', html`<a class="btn secondary" href="#/gallery/all">${icon('image')} See all photos once</a>`, 'Electoral Literacy Clubs')}
+    <div class="chips albchips" role="group" aria-label="Category">${[['all', 'All'], ...ALB_CATS.map(([k, l]) => [k, l])].map(([k, l]) => html`<button class="chip ${AC === k ? 'on' : ''}" data-k="${k}">${l}</button>`)}</div>
     <div class="wall-bar"><label class="f wall-search"><span class="sr">Search albums</span>${icon('search')}<input type="search" id="alq" placeholder="Search albums…"></label><span class="wall-count" id="alc"></span></div><div id="galbums"></div></div>`, 'gallery'));
   const paint = () => {
     const q = $('#alq').value.toLowerCase().trim(), list = G.albums.filter(a => !q || [a.title, a.description].some(x => String(x || '').toLowerCase().includes(q)));
-    $('#alc').textContent = `${list.length + (G.current?.length && !q ? 1 : 0)} album${list.length === 1 && !(G.current?.length && !q) ? '' : 's'}`;
-    const cur = G.current && G.current.length && !q ? html`<a class="albtile" href="#/gallery/current" aria-label="Open album: Current campaign"><span class="albpic"><i></i><img src="${gUrl(G.current[0], 'large', `/api/public/album/${G.current[0].id}/thumb`)}" alt="" loading="lazy" decoding="async"><span class="albn">${G.current.length}</span></span><b>Current campaign</b><small>Colleges, schools and the district office</small></a>` : '';
-    show($('#galbums'), list.length || cur ? html`<div class="albgrid2">${cur}${list.map(a => html`<a class="albtile" href="#/gallery/${a.id}" aria-label="Open album: ${a.title}, ${a.count} photos"><span class="albpic"><i></i><img src="${a.cover_ext ? a.cover_ext.replace('{s}', 'large') : `/api/public/album/${a.cover}/thumb`}" alt="" loading="lazy" decoding="async"><span class="albn">${a.count}</span></span><b>${a.title}</b><small>${a.last ? new Date(a.last + 'T00:00:00').toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : ''}</small></a>`)}</div>` : empty('No album matches', 'Try another word.', 'folder'));
+    const showCur = G.current && G.current.length && !q && (AC === 'all' || AC === 'current'), tile = a => html`<a class="albtile" href="#/gallery/${a.id}" aria-label="Open album: ${a.title}, ${a.count} photos"><span class="albpic"><i></i><img src="${a.cover_ext ? a.cover_ext.replace('{s}', 'large') : `/api/public/album/${a.cover}/thumb`}" alt="" loading="lazy" decoding="async"><span class="albn">${a.count}</span></span><b>${a.title}</b><small>${a.last ? new Date(a.last + 'T00:00:00').toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : ''}</small></a>`;
+    const cur = showCur ? html`<a class="albtile" href="#/gallery/current" aria-label="Open album: Current campaign"><span class="albpic"><i></i><img src="${gUrl(G.current[0], 'large', `/api/public/album/${G.current[0].id}/thumb`)}" alt="" loading="lazy" decoding="async"><span class="albn">${G.current.length}</span></span><b>Current campaign</b><small>Colleges, schools and the district office</small></a>` : '';
+    const secs = ALB_CATS.filter(([k]) => AC === 'all' || AC === k).map(([k, label, sub]) => ({ k, label, sub, list: list.filter(a => a.category === k), cur: k === 'current' ? cur : '' })).filter(s => s.list.length || s.cur);
+    $('#alc').textContent = `${list.length + (showCur ? 1 : 0)} album${list.length + (showCur ? 1 : 0) === 1 ? '' : 's'}`;
+    show($('#galbums'), secs.length ? html`${secs.map(s => html`<section class="albsec"><h2 class="albh">${s.label}<span>${s.sub}</span></h2><div class="albgrid2">${s.cur}${s.list.map(tile)}</div></section>`)}` : empty('No album matches', 'Try another word.', 'folder'));
   };
-  $('#alq').addEventListener('input', paint); paint();
+  $('#alq').addEventListener('input', paint); $$('.albchips .chip').forEach(b => b.addEventListener('click', () => { AC = b.dataset.k; $$('.albchips .chip').forEach(x => x.classList.toggle('on', x === b)); paint(); })); paint();
 }
 function renderAlbumPage(d) {
   const a = d.album; window.__pubgalList = d.photos; window.__pubgalOpts = {};
-  show($('#app'), publicShell(html`<div class="wrap" style="padding-top:26px">${pageHead(a.title, a.description || `${d.photos.length} photo${d.photos.length === 1 ? '' : 's'}`, html`<a class="btn secondary" href="#/gallery">${icon('arrow-left')} All albums</a><a class="btn secondary" href="#/gallery/all">${icon('image')} All photos</a>`, a.current ? 'Happening now' : 'Album')}
+  show($('#app'), publicShell(html`<div class="wrap" style="padding-top:26px">${pageHead(a.title, a.description || `${d.photos.length} photo${d.photos.length === 1 ? '' : 's'}`, html`<a class="btn secondary" href="#/gallery">${icon('arrow-left')} All albums</a><a class="btn secondary" href="#/gallery/all">${icon('image')} All photos</a>`, { current: 'Happening now', press: 'Press reports', past: 'Past events' }[a.category] || 'Album')}
     ${d.photos.length ? html`<p class="small muted" style="margin:-4px 0 14px">${d.photos.length} photo${d.photos.length === 1 ? '' : 's'}. Tap a photo to open it.</p><div class="wgrid">${d.photos.map(wallTile)}</div>` : empty('No photos in this album yet', '', 'image')}</div>`, 'gallery'));
 }
 actions.viewPhoto = el => { const list = window.__pubgalList || []; openLightbox(list, Math.max(0, list.findIndex(x => x.id === Number(el.dataset.id))), window.__pubgalOpts || {}); };

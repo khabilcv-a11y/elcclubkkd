@@ -91,7 +91,10 @@ route('DELETE', '/api/college/gallery/:id', 'college', async ctx => {
 const PUBLIC_FROM = `FROM gallery g LEFT JOIN colleges c ON c.id=g.college_id LEFT JOIN gallery_albums a ON a.id=g.album_id WHERE g.visible=1 AND (g.college_id IS NULL OR c.active=1)`;
 const PUBLIC_COLS = `g.ext_url,g.description,g.id,g.title,g.activity,g.event_date,g.orientation,g.album_id,g.college_id,c.logo_at logo_v,COALESCE(c.name,'District Election Office') college,a.title album`;
 // photos from the district administration (added by the office) come before those of colleges and schools
-const DISTRICT_FIRST = 'CASE WHEN g.college_id IS NULL THEN 0 ELSE 1 END';
+// Albums fall in three categories: the running campaign, press reports, and past events (for example the sets imported from Pixieset).
+// Within a category the most recent uploads come first, whoever uploaded them.
+export const ALBUM_CATS = { current: 'Current campaign', press: 'Press reports', past: 'Past events' };
+const catOf = a => (ALBUM_CATS[a.category] ? a.category : a.current ? 'current' : /press|media report|social media/i.test(a.title || '') ? 'press' : 'past');
 async function albumOn(ctx) { if (!(await featureMap(ctx.db)).public.album) throw new HttpError(404, 'Not available'); }
 route('GET', '/api/public/album', null, async ctx => {
   await albumOn(ctx);
@@ -114,20 +117,20 @@ route('GET', '/api/public/album/:id/thumb', null, async ctx => thumbResponse(ctx
 route('GET', '/api/public/gallery', null, async ctx => {
   await albumOn(ctx);
   const [current, albums, counts] = await Promise.all([
-    ctx.db.all(`SELECT ${PUBLIC_COLS} ${PUBLIC_FROM} AND (g.album_id IS NULL OR a.current=1) ORDER BY ${DISTRICT_FIRST}, g.id DESC LIMIT 300`),
-    ctx.db.all('SELECT id,title,description,current,sort_order FROM gallery_albums ORDER BY sort_order,id DESC'),
-    ctx.db.all(`SELECT g.album_id,COUNT(*) n,MAX(g.id) cover,MAX(g.event_date) last ${PUBLIC_FROM} AND g.album_id IS NOT NULL GROUP BY g.album_id`)]);
+    ctx.db.all(`SELECT ${PUBLIC_COLS} ${PUBLIC_FROM} AND (g.album_id IS NULL OR a.current=1) ORDER BY g.id DESC LIMIT 300`),
+    ctx.db.all('SELECT id,title,description,current,sort_order,category FROM gallery_albums ORDER BY sort_order,id DESC'),
+    ctx.db.all(`SELECT g.album_id,COUNT(*) n,MAX(g.id) cover,MAX(g.id) last_id,MAX(g.event_date) last ${PUBLIC_FROM} AND g.album_id IS NOT NULL GROUP BY g.album_id`)]);
   const cnt = new Map(counts.map(r => [r.album_id, r])), ext = new Map((await ctx.db.all(`SELECT id,ext_url FROM gallery WHERE id IN (${counts.map(r => Number(r.cover)).join(',') || 0}) AND ext_url IS NOT NULL`)).map(r => [r.id, r.ext_url]));
   return {
     current,
-    albums: albums.filter(a => cnt.has(a.id)).map(a => ({ ...a, count: cnt.get(a.id).n, last: cnt.get(a.id).last || '', cover: cnt.get(a.id).cover, cover_ext: ext.get(cnt.get(a.id).cover) || null })),
+    albums: albums.filter(a => cnt.has(a.id)).map(a => ({ ...a, category: catOf(a), count: cnt.get(a.id).n, last: cnt.get(a.id).last || '', last_id: cnt.get(a.id).last_id, cover: cnt.get(a.id).cover, cover_ext: ext.get(cnt.get(a.id).cover) || null })).sort((x, y) => y.last_id - x.last_id),   // most recently uploaded to first
     stats: { photos: current.length, institutions: new Set(current.filter(x => x.college_id).map(x => x.college_id)).size },
   };
 });
 // The photo wall: every public photo as one endless stream, newest or featured first, searchable, shuffle-able and paged.
 // "Featured" puts the district administration's photos of the running campaign first, then colleges and schools, then the earlier albums.
 const WALL_SORTS = {
-  featured: "CASE WHEN (g.album_id IS NULL OR a.current=1) THEN (CASE WHEN g.college_id IS NULL THEN 0 ELSE 1 END) ELSE 2 END, COALESCE(g.event_date,'') DESC, g.id DESC",
+  featured: 'CASE WHEN (g.album_id IS NULL OR a.current=1) THEN 0 ELSE 1 END, g.id DESC',          // the running campaign first, newest uploads first, then the earlier albums
   newest: "CASE WHEN g.event_date IS NULL THEN 1 ELSE 0 END, g.event_date DESC, g.id DESC",
   oldest: "CASE WHEN g.event_date IS NULL THEN 1 ELSE 0 END, g.event_date ASC, g.id ASC",
 };
@@ -148,8 +151,9 @@ route('GET', '/api/public/gallery/photo/:id', null, async ctx => {
 });
 route('GET', '/api/public/gallery/album/:id', null, async ctx => {
   await albumOn(ctx);
-  const a = await ctx.db.get('SELECT id,title,description,current FROM gallery_albums WHERE id=?', Number(ctx.params.id));
+  const a = await ctx.db.get('SELECT id,title,description,current,category FROM gallery_albums WHERE id=?', Number(ctx.params.id));
   if (!a) throw new HttpError(404, 'Album not found');
+  a.category = catOf(a);
   return { album: a, photos: await ctx.db.all(`SELECT ${PUBLIC_COLS} ${PUBLIC_FROM} AND g.album_id=? ORDER BY g.event_date DESC,g.id DESC LIMIT 400`, a.id) };
 });
 
@@ -212,22 +216,22 @@ route('DELETE', '/api/staff/gallery/:id', OPS, async ctx => {
 
 // albums: the titles that sort the public gallery
 route('GET', '/api/staff/gallery-albums', 'staff', async ctx => {
-  const [albums, counts] = await Promise.all([ctx.db.all('SELECT id,title,description,current,sort_order FROM gallery_albums ORDER BY sort_order,id DESC'), ctx.db.all('SELECT album_id,COUNT(*) n FROM gallery WHERE album_id IS NOT NULL GROUP BY album_id')]);
-  const cnt = new Map(counts.map(r => [r.album_id, r.n]));
-  return albums.map(a => ({ ...a, count: cnt.get(a.id) || 0 }));
+  const [albums, counts] = await Promise.all([ctx.db.all('SELECT id,title,description,current,sort_order,category FROM gallery_albums ORDER BY sort_order,id DESC'), ctx.db.all('SELECT album_id,COUNT(*) n,MAX(id) last_id FROM gallery WHERE album_id IS NOT NULL GROUP BY album_id')]);
+  const cnt = new Map(counts.map(r => [r.album_id, r]));
+  return albums.map(a => ({ ...a, category: catOf(a), count: cnt.get(a.id)?.n || 0, last_id: cnt.get(a.id)?.last_id || 0 })).sort((x, y) => y.last_id - x.last_id || y.id - x.id);
 });
-const albumBody = b => ({ title: reqStr(b.title, 'Album title', 80), description: str(b.description, 300), current: b.current ? 1 : 0 });
+const albumBody = b => { const category = ALBUM_CATS[b.category] ? b.category : b.current ? 'current' : 'past'; return { title: reqStr(b.title, 'Album title', 80), description: str(b.description, 300), category, current: category === 'current' ? 1 : 0 }; };
 route('POST', '/api/staff/gallery-albums', OPS, async ctx => {
   const o = albumBody(ctx.body);
   if (await ctx.db.get('SELECT 1 x FROM gallery_albums WHERE lower(title)=lower(?)', o.title)) throw new HttpError(409, 'An album with this title already exists');
-  const id = await ctx.db.insert('INSERT INTO gallery_albums(title,description,current,sort_order,created_by,created_at) VALUES (?,?,?,?,?,?)', o.title, o.description, o.current, 0, ctx.user.username, nowIso());
+  const id = await ctx.db.insert('INSERT INTO gallery_albums(title,description,current,sort_order,created_by,created_at,category) VALUES (?,?,?,?,?,?,?)', o.title, o.description, o.current, 0, ctx.user.username, nowIso(), o.category);
   await slog(ctx, 'album_add', o.title);
   return { ok: true, id };
 });
 route('PUT', '/api/staff/gallery-albums/:id', OPS, async ctx => {
   const o = albumBody(ctx.body), id = Number(ctx.params.id);
   if (await ctx.db.get('SELECT 1 x FROM gallery_albums WHERE lower(title)=lower(?) AND id<>?', o.title, id)) throw new HttpError(409, 'An album with this title already exists');
-  const r = await ctx.db.run('UPDATE gallery_albums SET title=?,description=?,current=? WHERE id=?', o.title, o.description, o.current, id);
+  const r = await ctx.db.run('UPDATE gallery_albums SET title=?,description=?,current=?,category=? WHERE id=?', o.title, o.description, o.current, o.category, id);
   if (!r.changes) throw new HttpError(404, 'Album not found');
   await slog(ctx, 'album_edit', o.title);
   return { ok: true };
@@ -252,7 +256,7 @@ route('POST', '/api/staff/gallery/import-external', OPS, async ctx => {
   const b = ctx.body, title = reqStr(b.album_title, 'Album title', 80), photos = Array.isArray(b.photos) ? b.photos.slice(0, 400) : [];
   if (!photos.length) throw bad('There are no photos to import');
   let album = await ctx.db.get('SELECT * FROM gallery_albums WHERE lower(title)=lower(?)', title), created = false;
-  if (!album) { const id = await ctx.db.insert('INSERT INTO gallery_albums(title,description,current,sort_order,created_by,created_at) VALUES (?,?,?,?,?,?)', title, str(b.album_description, 300), b.current ? 1 : 0, 0, ctx.user.username, nowIso()); album = { id }; created = true; }
+  if (!album) { const cat = ALBUM_CATS[b.category] ? b.category : b.current ? 'current' : null; const id = await ctx.db.insert('INSERT INTO gallery_albums(title,description,current,sort_order,created_by,created_at,category) VALUES (?,?,?,?,?,?,?)', title, str(b.album_description, 300), cat === 'current' ? 1 : 0, 0, ctx.user.username, nowIso(), cat); album = { id }; created = true; }
   const have = new Set((await ctx.db.all('SELECT src_key FROM gallery WHERE album_id=? AND src_key IS NOT NULL', album.id)).map(r => r.src_key));
   const ptitle = str(b.photo_title, 100) || title, now = nowIso(); let added = 0, skipped = 0;
   for (const p of photos) {
