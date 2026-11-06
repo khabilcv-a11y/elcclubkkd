@@ -84,7 +84,7 @@ route('GET', '/api/college/overview', 'college', async ctx => {
     delete out.lat; delete out.lng; return out;
   });
   return {
-    college: { id: c.id, kind: c.kind === 'school' ? 'school' : 'college', logo_v: c.logo_at || null, name: c.name, short_name: c.short_name, address: c.address, phone: c.phone, email: c.email, coordinator: c.coordinator, lsgi: c.lsgi },
+    college: { id: c.id, kind: c.kind === 'school' ? 'school' : 'college', logo_v: c.logo_at || null, elc_status: c.elc_status || '', name: c.name, short_name: c.short_name, address: c.address, phone: c.phone, email: c.email, coordinator: c.coordinator, lsgi: c.lsgi },
     profile: profileStatus(c), stats: stats.find(s => s.id === c.id), assignments, requests, days, pool, today: todayStr(),
     photos_enabled: driveConfigured(ctx.env),
   };

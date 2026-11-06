@@ -171,6 +171,9 @@ Three rounds, each one quiz with a six-character join code (`#/quiz`, `#/quiz/CO
 - **Question bank** tab (add, edit, switch off questions) and **Compliance report** tab (the district's row of Annexure-II, the winners, a CSV and a print view).
 Live rounds poll every 1.5 to 2.5 seconds, so one 30-minute final with about 130 students uses roughly 50,000 requests of the 100,000 a day on the free plan.
 
+### ELC registration prompt
+When a college or school opens its workspace, a popup asks whether its Electoral Literacy Club is registered on the ECINET app. **Yes** shows how to track the application on https://elc.eci.gov.in/ and the answer is remembered (no more popups). **No** shows a short video and a *Register My ELC* button (Play Store); the question comes back on every visit until the answer is Yes. Every popup has a cross to close it. The answer is stored in `colleges.elc_status` (`yes` / `no`), shown as a small *ELC status* line on the Institution profile page (with a Change link) and in the staff Colleges row details. The video is embedded from youtube-nocookie.com, allowed in `public/_headers`.
+
 ### Institution profile chip and Hall of fame
 The college and school top bar shows an icon and the percentage of the institution profile that is filled in (red under 50%, amber below 100%, green at 100%); hovering lists what is missing, and it opens the profile. *Institution profile* is the only item of its own group, *Your institution*, at the end of the menu.
 The **Hall of fame** (home page, below *Campus to booth*, and the display board) shows the leader of each award with its logo, full name, type and figure; awards with no leader show *Up for grabs*.
