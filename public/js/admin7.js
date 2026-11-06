@@ -5,7 +5,7 @@ let UB = { d: null, tab: 'areas', q: '' };
 const ubPct = (a, b) => (b ? Math.round(a / b * 100) : 0);
 async function apUnbound(el) {
   const d = await api('/api/staff/pwd/overview'); UB.d = d; const ops = isOps();
-  const head = pageHead('Vote Unbound', 'Call campaign for persons with disabilities, from the district UDID data. Each institution is allotted local bodies or wards and calls only the people there.', html`${ops && d.total ? html`<button class="btn secondary" data-act="ubImportOpen">${icon('upload')} Import again</button>` : ''}`, 'Special drives');
+  const head = pageHead('Vote Unbound', 'Call campaign for persons with disabilities, from the district UDID data. Each institution is allotted local bodies or wards and calls only the people there.', html`${ops && d.total ? html`<button class="btn secondary" data-act="ubImportOpen">${icon('upload')} Import again</button>` : ''}${isSuper() && d.total ? html`<button class="btn ghost danger" data-act="ubClear">${icon('trash')} Delete the whole list</button>` : ''}`, 'Special drives');
   if (!d.total) { show(el, html`${head}<div class="card ub-empty"><img src="/img/drives/vote-unbound.webp" alt="Vote Unbound" class="ub-logo">${ops ? html`<h3>Import the district's PwD list</h3><p class="muted">Choose the CSV file (the columns: Name, DOB, Age, Gender, Mobile, Address, Ward, Anganwadi, ICDS, LSGD, Bedridden, Disability, Disability%, UDID Status). It is kept in a private register, separate from the Google Sheet. Aadhaar and UDID numbers in the file are ignored and never stored.</p><label class="btn primary lg">${icon('upload')} Choose the file<input type="file" id="ubfile" accept=".csv,text/csv" hidden></label><div id="uberr" style="margin-top:12px"></div>` : html`<p class="muted">The register has not been imported yet.</p>`}</div>`); $('#ubfile')?.addEventListener('change', e => e.target.files[0] && ubImport(e.target.files[0])); return; }
   const tabs = [['areas', 'Local bodies and allotment'], ['villages', 'Villages'], ['colleges', 'Institutions'], ['data', 'The data']];
   show(el, html`${head}
@@ -40,7 +40,7 @@ function ubBody() {
   }
 }
 // ---- importing the district's file ----
-actions.ubImportOpen = () => { modal(html`<h2>Import the PwD list again</h2><p class="muted small">People already in the register are updated, and their call history is kept. Aadhaar and UDID numbers in the file are ignored.</p><label class="btn primary lg">${icon('upload')} Choose the file<input type="file" id="ubfile2" accept=".csv,text/csv" hidden></label><div id="uberr" style="margin-top:12px"></div>`); $('#ubfile2').addEventListener('change', e => e.target.files[0] && ubImport(e.target.files[0])); };
+actions.ubImportOpen = () => { modal(html`<h2>Import the PwD list again</h2><p class="muted small">People already in the register are updated, and their call history is kept. Aadhaar and UDID numbers in the file are ignored.</p><label class="btn primary lg">${icon('upload')} Choose the file<input type="file" id="ubfile2" accept=".csv,text/csv" hidden></label>${isSuper() ? html`<label class="chk" style="margin-top:12px"><input type="checkbox" id="ubreplace"> Replace the whole list: remove everyone in the register first, then import this file (call history is kept)</label>` : ''}<div id="uberr" style="margin-top:12px"></div>`); $('#ubfile2').addEventListener('change', e => e.target.files[0] && ubImport(e.target.files[0])); };
 const UB_COLS = { name: /^name$/i, dob: /^(dob|date of birth)/i, age: /^age$/i, gender: /^gender|^sex$/i, mobile: /mobile|phone/i, address: /^address/i, ward: /^ward/i, anganwadi: /anganwadi/i, icds: /icds/i, lsgd: /lsgd|local\s*body|lsgi/i, bedridden: /bedridden/i, disability: /^disability$/i, pct: /disability\s*%|percent/i, udid_status: /udid\s*status/i };
 async function ubImport(file) {
   const box = $('#uberr'), say = (t, c = 'info') => { box.innerHTML = `<div class="alert ${c}">${esc(t)}</div>`; };
@@ -49,6 +49,7 @@ async function ubImport(file) {
     const head = rows[0].map(h => String(h).trim()), at = {}; for (const [k, re] of Object.entries(UB_COLS)) { const i = head.findIndex(h => re.test(h)); at[k] = i; }
     for (const need of ['name', 'lsgd', 'mobile']) if (at[need] < 0) throw new Error(`The file has no "${need === 'lsgd' ? 'LSGD' : need}" column`);
     const data = rows.slice(1); let done = 0, skipped = 0, total = 0;
+    if ($('#ubreplace')?.checked) { if (!await confirmBox('Remove everyone now in the register, then import this file? Call history is kept.', 'Replace', true)) return say('Nothing changed.'); await api('/api/staff/pwd/clear', 'POST', { confirm: 'DELETE' }); }
     for (let i = 0; i < data.length; i += 1500) {
       say(`Importing… ${Math.min(i + 1500, data.length).toLocaleString('en-IN')} of ${data.length.toLocaleString('en-IN')}`);
       const part = data.slice(i, i + 1500).map(r => Object.fromEntries(Object.entries(at).map(([k, ix]) => [k, ix < 0 ? '' : r[ix]])));
@@ -82,7 +83,7 @@ actions.ubSuggest = async () => {
   apUnbound($('#pg'));
 };
 actions.ubExport = () => { window.location.href = '/api/staff/pwd/export-calls'; };
-actions.ubClear = async () => { const t = prompt('This removes every person from the register so you can import a fresh file. Call history is kept. Type DELETE to confirm.'); if (t === null) return; await api('/api/staff/pwd/clear', 'POST', { confirm: t.trim() }); toast('The register is empty'); apUnbound($('#pg')); };
+actions.ubClear = async () => { if (!await confirmBox('Delete the whole list? Every person is removed from the register so you can import a fresh file. Allotments and call history are kept. This cannot be undone.', 'Delete the list', true)) return; await api('/api/staff/pwd/clear', 'POST', { confirm: 'DELETE' }); toast('The register is empty'); apUnbound($('#pg')); };
 
 // ---- villages: the register knows only local body and ward, so a village is a set of wards ----
 async function ubVillages(b) {

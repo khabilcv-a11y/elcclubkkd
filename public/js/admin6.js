@@ -10,7 +10,7 @@ async function apQuiz(el) {
   QA.round = null;
   const d = await api('/api/staff/quiz/overview'); QA.d = d;
   const tabs = [['overview', 'Institutions'], ['rounds', 'AC rounds and final'], ['bank', 'Question bank'], ['report', 'Compliance report']];
-  show(el, html`${pageHead('Quiz competition', 'ELC Quiz Competition (ECI letter of 30 Oct 2026): the institution round is run by each ELC coordinator; the AC rounds and the district final are run from here.', html`<a class="btn secondary" href="/#/quiz" target="_blank" rel="noopener">${icon('external')} Public join page</a>`, 'Campus to booth')}
+  show(el, html`${pageHead('Quiz competition', 'ELC Quiz Competition (ECI letter of 30 Oct 2026): the institution round is run by each ELC coordinator; the AC rounds and the district final are run from here.', html`${isOps() ? html`<button class="btn secondary" data-act="qaMixAll">${icon('refresh')} Mix the answers in all quizzes</button>` : ''}<a class="btn secondary" href="/#/quiz" target="_blank" rel="noopener">${icon('external')} Public join page</a>`, 'Campus to booth')}
     ${d.on ? '' : html`<div class="alert warn" style="margin-bottom:14px">${icon('alert')}<div>The quiz is switched off in Access control, so students cannot join.</div></div>`}
     <div class="chips" style="margin-bottom:14px" role="tablist">${tabs.map(([k, l]) => html`<button class="chip ${QA.tab === k ? 'on' : ''}" role="tab" aria-selected="${QA.tab === k}" data-act="qaTab" data-k="${k}">${l}</button>`)}</div><div id="qabody"></div>`);
   await qaBody();
@@ -172,3 +172,9 @@ async function qaReport(b) {
 }
 actions.qaRepCsv = () => { const r = window.__qar; download('quiz-compliance-kozhikode.csv', toCsv(['District', 'Institutions participated', 'Institution-level participants (Quiz)', 'AC-level participants (Quiz)', 'District finalists (Quiz)', 'Top 10 winners list attached', 'Winners'], [['Kozhikode', r.institutions_participated, r.institution_participants, r.ac_participants, r.district_finalists, r.winners.length ? 'Y' : 'N', r.winners.map(w => `${w.name} (${w.college})`).join('; ')]])); };
 actions.qaRepPrint = () => { const r = window.__qar; document.getElementById('printarea')?.remove(); const d = document.createElement('div'); d.id = 'printarea'; d.innerHTML = `<div class="pp-head"><b>ELC Quiz Competition 2026: compliance report (Annexure-II)</b><span>Kozhikode</span></div><table class="pp-tbl"><tbody><tr><th>Institutions participated</th><td>${r.institutions_participated}</td></tr><tr><th>Institution-level participants</th><td>${r.institution_participants}</td></tr><tr><th>AC-level participants</th><td>${r.ac_participants}</td></tr><tr><th>District finalists</th><td>${r.district_finalists}</td></tr></tbody></table><h3>District winners</h3><ol>${r.winners.map(w => `<li>${qaEsc(w.name)}, ${qaEsc(w.college)}</li>`).join('')}</ol>`; document.body.append(d); const done = () => { d.remove(); removeEventListener('afterprint', done); }; addEventListener('afterprint', done); setTimeout(() => print(), 80); };
+
+// quizzes made before the answers were balanced: spread the right answers evenly in every quiz that no student has started
+actions.qaMixAll = async () => {
+  if (!await confirmBox('Spread the right answers evenly over A, B, C and D in every quiz that no student has started yet? Any paper or answer key printed earlier must be printed again. Quizzes already started are left alone.', 'Mix', false)) return;
+  const r = await api('/api/staff/quiz/mix-all', 'POST', {}); toast(`${r.mixed} quiz${r.mixed === 1 ? '' : 'zes'} mixed${r.locked ? `, ${r.locked} already started and left as they are` : ''}`);
+};

@@ -319,6 +319,16 @@ async function setOrder(ctx, q, b) {
   } else await ctx.db.run('UPDATE quizzes SET shuffle_q=? WHERE id=?', mix ? 1 : 0, q.id);
   return { ok: true };
 }
+// the quizzes made before the answers were balanced: give each one that no student has started its even spread (the question order stays as it is)
+route('POST', '/api/staff/quiz/mix-all', OPS, async ctx => {
+  ctx.db.deferred = true; let mixed = 0, locked = 0;
+  for (const q of await ctx.db.all('SELECT id,opt_seed FROM quizzes')) {
+    if (q.opt_seed) continue;
+    if ((await ctx.db.get('SELECT COUNT(*) c FROM quiz_people WHERE quiz_id=? AND (token IS NOT NULL OR score IS NOT NULL)', q.id)).c) { locked++; continue; }
+    await ctx.db.run('UPDATE quizzes SET opt_seed=? WHERE id=?', newSeed(), q.id); mixed++;
+  }
+  await slog(ctx, 'quiz_mix_all', `${mixed} mixed, ${locked} already started`); return { ok: true, mixed, locked };
+});
 route('POST', '/api/college/quiz/order', 'college', async ctx => { const q = await myQuiz(ctx.db, ctx); if (!q) throw new HttpError(404, 'Start the quiz first'); const r = await setOrder(ctx, q, ctx.body); await clog(ctx, 'quiz_order', ctx.body.again ? 'shuffled again' : 'order set'); return r; });
 route('POST', '/api/staff/quiz/rounds/:id/order', OPS, async ctx => { const q = await roundOf(ctx); const r = await setOrder(ctx, q, ctx.body); await slog(ctx, 'quiz_order', q.title); return r; });
 
