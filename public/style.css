@@ -992,3 +992,7 @@ body.nav-open .a11y-fab,body.pub-open .a11y-fab{display:none}
 .qd-rest li{padding:5px 14px;font-size:clamp(.9rem,2.1vh,1.05rem);gap:10px;min-width:0}.qd-rest span{min-width:0}.qd-rest span,.qd-rest small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.qd-rest small{font-size:.8em}
 @media(max-width:760px){.qd-rest{grid-template-columns:1fr;grid-template-rows:none;grid-auto-flow:row}.qd-podium{grid-template-columns:1fr 1fr 1fr}}
 .qs-tools .qs-read{display:contents}.qs-tools .qs-auto{flex-basis:100%;font-size:.85rem;color:var(--muted,#5b6385)}
+tr.xr{cursor:pointer}tr.xr:hover td{background:#f1f3ff}
+.rdetail{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px 20px;margin:0}
+.rdetail dt{font-size:.72rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted,#667)}
+.rdetail dd{margin:2px 0 0;white-space:pre-line;overflow-wrap:anywhere}

@@ -370,3 +370,38 @@ document.addEventListener('click', e => {
   $$('th', t.tHead).forEach(h => { h.setAttribute('aria-sort', h === th ? (dir === 1 ? 'ascending' : 'descending') : 'none'); const s = $('.sico', h), bt = $('.sortbtn', h); if (s) s.className = 'sico' + (h === th ? (dir === 1 ? ' asc' : ' desc') : ''); bt?.classList.toggle('on', h === th); });
 });
 { let tsTimer = 0; new MutationObserver(() => { clearTimeout(tsTimer); tsTimer = setTimeout(() => enhanceTables(), 60); }).observe(document.documentElement, { childList: true, subtree: true }); document.addEventListener('DOMContentLoaded', () => enhanceTables()); }
+
+// ---------- staff console: click a table row to see the whole record in a popup ----------
+document.addEventListener('DOMContentLoaded', () => { if (!document.querySelector('script[src="/js/admin.js"]')) return;
+  const SKIP = 'a,button,input,select,textarea,label,summary,.ib,[data-act],.dropdown';
+  const rowInfo = tr => {
+    const t = tr.closest('table'); if (!t || t.hasAttribute('data-noexpand') || t.closest('.overlay,#printarea') || tr.classList.contains('total') || !t.tHead || t.tHead.rows.length !== 1) return null;
+    const ths = [...t.tHead.rows[0].cells]; if (ths.some(h => h.colSpan > 1) || tr.cells.length !== ths.length) return null;
+    const txt = el => { let t = el.innerText || el.textContent || ''; el.querySelectorAll('.av,.ftile,.nmav > :first-child:not(span)').forEach(x => { const a = (x.innerText || '').trim(); if (a && t.trimStart().startsWith(a)) t = t.trimStart().slice(a.length); }); return t.replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim(); };
+    const fields = [];
+    ths.forEach((h, i) => {
+      const label = (h.getAttribute('title') || h.getAttribute('aria-label') || txt(h)).replace(/\s+/g, ' ').trim(), c = tr.cells[i];
+      if (!label || label.length > 60) return;
+      const hasTool = c.querySelector('button,select,input[type=checkbox]') && !txt(c); if (hasTool) return;
+      fields.push([label, txt(c) || '—']);
+    });
+    let more = {}; try { more = JSON.parse(tr.dataset.more || '{}'); } catch { /* ignore */ }
+    for (const [k, v] of Object.entries(more)) fields.push([k, String(v ?? '') || '—']);
+    if (!fields.length) return null;
+    const first = (tr.querySelector('b')?.innerText || '').trim() || [...tr.cells].map(txt).find(s => s && s !== '—') || 'Details';
+    return { title: first.split('\n')[0].slice(0, 90), fields };
+  };
+  const open = tr => {
+    const d = rowInfo(tr); if (!d) return;
+    modal(html`<h2>${d.title}</h2><dl class="rdetail">${d.fields.map(([k, v]) => html`<div><dt>${k}</dt><dd>${v}</dd></div>`)}</dl>
+      <div class="row" style="justify-content:flex-end;margin-top:18px"><button class="btn secondary" data-x="0">Close</button></div>`, { label: d.title })
+      .addEventListener('click', e => { if (e.target.closest('[data-x]')) e.currentTarget.close(); });
+  };
+  document.addEventListener('click', e => {
+    const tr = e.target.closest?.('tbody tr'); if (!tr || e.target.closest(SKIP) || getSelection().toString()) return;
+    if (tr.closest('.overlay')) return; open(tr);
+  });
+  document.addEventListener('keydown', e => { if ((e.key === 'Enter') && e.target.matches?.('tbody tr.xr')) open(e.target); });
+  const mark = () => document.querySelectorAll('.main tbody tr:not(.xr)').forEach(tr => { if (rowInfo(tr)) { tr.classList.add('xr'); tr.title = 'Click for full details'; } });
+  let xt = 0; new MutationObserver(() => { clearTimeout(xt); xt = setTimeout(mark, 120); }).observe(document.documentElement, { childList: true, subtree: true });
+});
