@@ -63,6 +63,15 @@ route('POST', '/api/staff/drives/:drive/unit', OPS, async ctx => {
   } else await insUnit(ctx, k, u);
   await slog(ctx, `${k}_unit`, `${id ? 'edited' : 'added'} ${u.name}`); return { ok: true };
 });
+route('POST', '/api/staff/drives/:drive/units/remove', OPS, async ctx => {
+  drive(ctx); const k = ctx.params.drive, ids = [...new Set((Array.isArray(ctx.body.ids) ? ctx.body.ids : []).map(Number).filter(Number.isInteger))].slice(0, 5000);
+  if (!ids.length) throw bad('Choose at least one entry'); let n = 0;
+  for (const id of ids) {
+    if (!await ctx.db.get('SELECT id FROM drive_units WHERE id=? AND drive=?', id, k)) continue;
+    await ctx.db.run('DELETE FROM drive_visits WHERE unit_id=?', id); await ctx.db.run('DELETE FROM drive_alloc WHERE unit_id=?', id); await ctx.db.run('DELETE FROM drive_units WHERE id=?', id); n++;
+  }
+  await slog(ctx, `${k}_unit_del`, `${n} entries removed`); return { ok: true, n };
+});
 route('DELETE', '/api/staff/drives/:drive/unit/:id', OPS, async ctx => {
   drive(ctx); const k = ctx.params.drive, id = Number(ctx.params.id), u = await ctx.db.get('SELECT id,name FROM drive_units WHERE id=? AND drive=?', id, k); if (!u) throw new HttpError(404, 'Not found');
   await ctx.db.run('DELETE FROM drive_visits WHERE unit_id=?', id); await ctx.db.run('DELETE FROM drive_alloc WHERE unit_id=?', id); await ctx.db.run('DELETE FROM drive_units WHERE id=?', id);
