@@ -26,14 +26,30 @@ function ensureBank(db) {
 }
 const shuffle = (a, rnd = Math.random) => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const seeded = seed => { let t = (Number(seed) || 1) >>> 0; return () => { t = (t + 0x6D2B79F5) >>> 0; let r = Math.imul(t ^ (t >>> 15), 1 | t); r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r; return ((r ^ (r >>> 14)) >>> 0) / 4294967296; }; };
+const SEEDMAX = 2147483000, newSeed = () => 1 + Math.floor(Math.random() * SEEDMAX);
+const tcache = new Map();
+function targets(seed, n) {
+  const key = seed + '|' + n; if (tcache.has(key)) return tcache.get(key);
+  const rnd = seeded(seed); let pool;
+  for (let t = 0; t < 60; t++) { pool = shuffle(Array.from({ length: n }, (_, i) => i % 4), rnd); if (!pool.some((x, i) => i >= 2 && x === pool[i - 1] && x === pool[i - 2])) break; }
+  if (tcache.size > 200) tcache.clear(); tcache.set(key, pool); return pool;
+}
+// the order in which the four answers are shown for question number k of n: position -> original option index. Without a seed the original order is kept.
+function orderFor(seed, k, n, r) {
+  if (!seed) return [0, 1, 2, 3];
+  const t = targets(seed, n)[k] ?? 0, rest = shuffle([0, 1, 2, 3].filter(x => x !== r.correct), seeded((seed ^ Math.imul(r.id, 2654435761)) >>> 0));
+  let j = 0; return [0, 1, 2, 3].map(pos => (pos === t ? r.correct : rest[j++]));
+}
+const ordersOf = (q, rows) => { const m = new Map(); rows.forEach((r, k) => m.set(r.id, orderFor(q.opt_seed, k, rows.length, r))); return m; };
 // n questions, taken in turn from the four themes so every theme is covered
-async function pickQuestions(db, n) {
-  const rows = await db.all('SELECT id,theme FROM quiz_questions WHERE active=1');
+async function pickQuestions(db, n, mix = true) {
+  const rows = await db.all('SELECT id,theme,sort_order FROM quiz_questions WHERE active=1 ORDER BY sort_order,id');
   if (!rows.length) throw bad('The question bank is empty');
   const by = new Map(); for (const r of shuffle(rows)) { if (!by.has(r.theme)) by.set(r.theme, []); by.get(r.theme).push(r.id); }
   const lists = [...by.values()], out = [];
   for (let k = 0; out.length < Math.min(n, rows.length); k++) for (const l of lists) if (l[k] !== undefined && out.length < n) out.push(l[k]);
-  return shuffle(out);
+  if (mix) return shuffle(out);
+  const at = new Map(rows.map((r, i) => [r.id, i])); return out.sort((a, b) => at.get(a) - at.get(b));
 }
 const newCode = async db => {
   for (let t = 0; t < 30; t++) { let c = ''; for (const x of crypto.getRandomValues(new Uint8Array(6))) c += CODE_CH[x % CODE_CH.length]; if (!(await db.get('SELECT 1 x FROM quizzes WHERE code=?', c))) return c; }
@@ -44,13 +60,13 @@ const questionsOf = async (db, ids) => {
   return ids.map(id => m.get(id)).filter(Boolean);
 };
 // the answer given for each question, in the order of the quiz: a letter string such as "abcd-ca" ("-" or "." = not answered)
-function scorePaper(str0, rows) {
+function scorePaper(str0, rows, orders) {
   const s = String(str0 || '').toLowerCase().replace(/[\s,]+/g, '');
   if (!s) throw bad('Type the answers as letters, for example abcdabcd');
   if (s.length > rows.length) throw bad(`There are only ${rows.length} questions, but ${s.length} answers were typed`);
   if (/[^a-d\-.x?]/.test(s)) throw bad('Use only the letters a, b, c, d (and - for a question left blank)');
   let score = 0; const ans = {};
-  [...s].forEach((ch, i) => { const k = LETTERS.indexOf(ch); if (k >= 0) { ans[rows[i].id] = { c: k }; if (k === rows[i].correct) score++; } });
+  [...s].forEach((ch, i) => { const k = LETTERS.indexOf(ch); if (k >= 0) { const c = (orders?.get(rows[i].id) || [0, 1, 2, 3])[k]; ans[rows[i].id] = { c }; if (c === rows[i].correct) score++; } });
   return { score, ans };
 }
 function rankPeople(list, topN) {
@@ -71,7 +87,7 @@ const byCode = async (db, code) => {
   if (!q) throw new HttpError(404, 'No quiz has this code. Please check it and try again.');
   return q;
 };
-const quizDto = (q, extra = {}) => ({ id: q.id, code: q.code, level: q.level, ac: q.ac || '', title: q.title, mode: q.mode, status: q.status, n: parse(q.q_ids, []).length, minutes: q.minutes, per_q: q.per_q, top_n: q.top_n, created_at: q.created_at, ...extra });
+const quizDto = (q, extra = {}) => ({ id: q.id, code: q.code, level: q.level, ac: q.ac || '', title: q.title, mode: q.mode, status: q.status, n: parse(q.q_ids, []).length, minutes: q.minutes, per_q: q.per_q, top_n: q.top_n, shuffle: q.shuffle_q !== 0, balanced: !!q.opt_seed, created_at: q.created_at, ...extra });
 const nameOk = (s, label = 'Name') => { const v = reqStr(s, label, 60).replace(/\s+/g, ' '); if (v.length < 2) throw bad(label + ' is too short'); return v; };
 
 // ======================================================================= students (no sign-in)
@@ -109,9 +125,14 @@ route('POST', '/api/public/quiz/:code/start', null, async ctx => {
   if (q.mode === 'live') return { ok: true, live: true, token: p.token, name: p.name };
   if (p.finished_at) return { ok: true, finished: true, token: p.token, score: p.score, total: p.total };
   if (!p.started_at) { p.started_at = nowIso(); await ctx.db.run('UPDATE quiz_people SET started_at=? WHERE id=?', p.started_at, p.id); }
-  const rows = await questionsOf(ctx.db, ids), rnd = seeded(p.id), order = shuffle(rows, rnd);
+  const rows = await questionsOf(ctx.db, ids), rnd = seeded(p.id), order = q.shuffle_q === 0 ? rows : shuffle(rows, rnd);
+  const optsOf = (r, k) => {
+    const arr = parse(r.opts, []); if (!q.opt_seed) return shuffle(arr.map((t, i) => ({ i, t })), rnd);          // a quiz made before the answers were balanced
+    const seed = q.shuffle_q === 0 ? q.opt_seed : (p.id * 7919 + q.id) % SEEDMAX + 1;
+    return orderFor(seed, k, order.length, r).map(i => ({ i, t: arr[i] }));
+  };
   const ends = new Date(p.started_at).getTime() + q.minutes * 60000 + 20000;
-  return { ok: true, token: p.token, name: p.name, ends_at: ends, now: Date.now(), minutes: q.minutes, questions: order.map(r => ({ id: r.id, theme: r.theme, text: r.text, opts: shuffle(parse(r.opts, []).map((t, i) => ({ i, t })), rnd) })) };
+  return { ok: true, token: p.token, name: p.name, ends_at: ends, now: Date.now(), minutes: q.minutes, questions: order.map((r, k) => ({ id: r.id, theme: r.theme, text: r.text, opts: optsOf(r, k) })) };
 });
 route('POST', '/api/public/quiz/:code/submit', null, async ctx => {
   ctx.db.deferred = true;
@@ -133,7 +154,7 @@ route('GET', '/api/public/quiz/:code/live', null, async ctx => {
   const out = { phase: live.phase, idx: live.idx, n: ids.length, title: q.title, per_q: q.per_q, status: q.status };
   if (live.phase === 'question' || live.phase === 'reveal') {
     const r = (await questionsOf(ctx.db, [ids[live.idx]]))[0];
-    if (r) { out.question = { id: r.id, theme: r.theme, text: r.text, opts: parse(r.opts, []).map((t, i) => ({ i, t })) }; if (live.phase === 'reveal') { out.correct = r.correct; out.counts = live.counts || [0, 0, 0, 0]; } }
+    if (r) { const arr = parse(r.opts, []); out.question = { id: r.id, theme: r.theme, text: r.text, opts: orderFor(q.opt_seed, live.idx, ids.length, r).map(i => ({ i, t: arr[i] })) }; if (live.phase === 'reveal') { out.correct = r.correct; out.counts = live.counts || [0, 0, 0, 0]; } }
     out.left = live.phase === 'question' ? Math.max(0, Math.ceil(q.per_q - (Date.now() - live.t0) / 1000)) : 0;
   }
   const p = ctx.query.token ? await ctx.db.get('SELECT id,name,score,answers FROM quiz_people WHERE quiz_id=? AND token=?', q.id, String(ctx.query.token)) : null;
@@ -189,8 +210,8 @@ async function makeTiebreak(ctx, parent, b) {
   let ids = shuffle(all.filter(x => !used.has(x.id)).map(x => x.id)).slice(0, n);
   if (ids.length < n) ids = [...ids, ...shuffle(all.map(x => x.id).filter(x => !ids.includes(x))).slice(0, n - ids.length)];    // not enough unused questions: some earlier ones are asked again
   if (!ids.length) throw bad('There are no questions left in the bank. Add some under Question bank.');
-  const id = await ctx.db.insert('INSERT INTO quizzes(code,level,college_id,ac,title,mode,status,q_ids,minutes,per_q,top_n,created_by,created_at,parent_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-    await newCode(ctx.db), 'tiebreak', parent.college_id, parent.ac || '', 'Tie-breaker · ' + parent.title, mode, 'open', JSON.stringify(ids), ids.length <= 4 ? 3 : 5, 20, 1, ctx.user ? ctx.user.username : ctx.college.name, nowIso(), parent.id);
+  const id = await ctx.db.insert('INSERT INTO quizzes(code,level,college_id,ac,title,mode,status,q_ids,minutes,per_q,top_n,created_by,created_at,parent_id,opt_seed) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+    await newCode(ctx.db), 'tiebreak', parent.college_id, parent.ac || '', 'Tie-breaker · ' + parent.title, mode, 'open', JSON.stringify(ids), ids.length <= 4 ? 3 : 5, 20, 1, ctx.user ? ctx.user.username : ctx.college.name, nowIso(), parent.id, newSeed());
   for (const p of people.filter(x => r.tied.includes(x.id))) await ctx.db.run('INSERT INTO quiz_people(quiz_id,name,klass,college_id,invited,total,created_at,from_id) VALUES (?,?,?,?,1,?,?,?)', id, p.name, p.klass, p.college_id, ids.length, nowIso(), p.id);
   return { ok: true, id, tied: r.tied.length, questions: ids.length };
 }
@@ -205,14 +226,14 @@ route('POST', '/api/college/quiz', 'college', async ctx => {
   if (!(await isOn(ctx.db))) throw new HttpError(403, 'The quiz is closed right now.');
   await ensureBank(ctx.db); ctx.db.deferred = true;
   const n = Math.max(5, Math.min(50, Number(ctx.body.n) || 20)), minutes = Math.max(5, Math.min(90, Number(ctx.body.minutes) || 20)), old = await myQuiz(ctx.db, ctx);
-  const ids = await pickQuestions(ctx.db, n);
+  const mix = ctx.body.shuffle !== false, ids = await pickQuestions(ctx.db, n, mix);
   if (old) {
     if ((await ctx.db.get('SELECT COUNT(*) c FROM quiz_people WHERE quiz_id=?', old.id)).c) throw bad('Students have already taken part, so the questions cannot be changed now.');
-    await ctx.db.run('UPDATE quizzes SET q_ids=?,minutes=? WHERE id=?', JSON.stringify(ids), minutes, old.id);
+    await ctx.db.run('UPDATE quizzes SET q_ids=?,minutes=?,opt_seed=?,shuffle_q=? WHERE id=?', JSON.stringify(ids), minutes, newSeed(), mix ? 1 : 0, old.id);
     await clog(ctx, 'quiz_reset', `${ids.length} questions`); return { ok: true, id: old.id };
   }
-  const id = await ctx.db.insert('INSERT INTO quizzes(code,level,college_id,title,mode,status,q_ids,minutes,per_q,top_n,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
-    await newCode(ctx.db), 'institution', ctx.college.id, `ELC Quiz · ${ctx.college.name}`, 'self', 'open', JSON.stringify(ids), minutes, 20, 2, ctx.college.name, nowIso());
+  const id = await ctx.db.insert('INSERT INTO quizzes(code,level,college_id,title,mode,status,q_ids,minutes,per_q,top_n,created_by,created_at,opt_seed,shuffle_q) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+    await newCode(ctx.db), 'institution', ctx.college.id, `ELC Quiz · ${ctx.college.name}`, 'self', 'open', JSON.stringify(ids), minutes, 20, 2, ctx.college.name, nowIso(), newSeed(), mix ? 1 : 0);
   await clog(ctx, 'quiz_create', `${ids.length} questions`);
   return { ok: true, id };
 });
@@ -224,8 +245,8 @@ route('POST', '/api/college/quiz/status', 'college', async ctx => {
 });
 // the printable question paper and the answer key
 async function paperOf(db, q) {
-  const rows = await questionsOf(db, parse(q.q_ids, []));
-  return { quiz: quizDto(q), questions: rows.map((r, i) => ({ no: i + 1, theme: r.theme, text: r.text, opts: parse(r.opts, []) })), key: rows.map(r => LETTERS[r.correct]) };
+  const rows = await questionsOf(db, parse(q.q_ids, [])), ord = ordersOf(q, rows);
+  return { quiz: quizDto(q), questions: rows.map((r, i) => { const arr = parse(r.opts, []); return { no: i + 1, theme: r.theme, text: r.text, opts: ord.get(r.id).map(x => arr[x]) }; }), key: rows.map(r => LETTERS[ord.get(r.id).indexOf(r.correct)]) };
 }
 route('GET', '/api/college/quiz/paper', 'college', async ctx => { const q = await myQuiz(ctx.db, ctx); if (!q) throw new HttpError(404, 'Start the quiz first'); return paperOf(ctx.db, q); });
 // a student who wrote on paper: the answers are typed as letters (or only the marks)
@@ -235,7 +256,7 @@ route('POST', '/api/college/quiz/people', 'college', async ctx => {
   const b = ctx.body, name = nameOk(b.name, 'Student name'), klass = str(b.klass, 40), rows = await questionsOf(ctx.db, parse(q.q_ids, []));
   if (await ctx.db.get('SELECT 1 x FROM quiz_people WHERE quiz_id=? AND lower(name)=lower(?) AND COALESCE(lower(klass),\'\')=lower(?)', q.id, name, klass)) throw new HttpError(409, 'A student with this name and class is already listed. Add the surname or division if it is another student.');
   let score, ans = {};
-  if (String(b.answers || '').trim()) ({ score, ans } = scorePaper(b.answers, rows));
+  if (String(b.answers || '').trim()) ({ score, ans } = scorePaper(b.answers, rows, ordersOf(q, rows)));
   else { score = Number(b.marks); if (!Number.isInteger(score) || score < 0 || score > rows.length) throw bad(`Type the answers, or the marks (0 to ${rows.length})`); }
   const id = await ctx.db.insert('INSERT INTO quiz_people(quiz_id,name,klass,college_id,invited,finished_at,score,total,answers,source,created_at) VALUES (?,?,?,?,0,?,?,?,?,?,?)', q.id, name, klass, ctx.college.id, nowIso(), score, rows.length, JSON.stringify(ans), 'paper', nowIso());
   await clog(ctx, 'quiz_paper_entry', `${name}: ${score}`); return { ok: true, id, score, total: rows.length };
@@ -277,7 +298,7 @@ route('POST', '/api/college/quiz/tiebreak/people/:pid', 'college', async ctx => 
   ctx.db.deferred = true;
   const t = await ownTb(ctx), p = await ctx.db.get('SELECT * FROM quiz_people WHERE id=? AND quiz_id=?', Number(ctx.params.pid), t.id); if (!p) throw new HttpError(404, 'Student not found');
   const rows = await questionsOf(ctx.db, parse(t.q_ids, [])), b = ctx.body; let score, ans = {};
-  if (String(b.answers || '').trim()) ({ score, ans } = scorePaper(b.answers, rows));
+  if (String(b.answers || '').trim()) ({ score, ans } = scorePaper(b.answers, rows, ordersOf(t, rows)));
   else { score = Number(b.marks); if (!Number.isInteger(score) || score < 0 || score > rows.length) throw bad(`Type the answers, or the marks (0 to ${rows.length})`); }
   await ctx.db.run('UPDATE quiz_people SET finished_at=?,score=?,total=?,answers=?,source=?,secs=NULL WHERE id=?', nowIso(), score, rows.length, JSON.stringify(ans), 'paper', p.id);
   return { ok: true, score };
@@ -285,6 +306,21 @@ route('POST', '/api/college/quiz/tiebreak/people/:pid', 'college', async ctx => 
 route('DELETE', '/api/college/quiz/tiebreak', 'college', async ctx => {
   const t = await ownTb(ctx); await ctx.db.run('DELETE FROM quiz_people WHERE quiz_id=?', t.id); await ctx.db.run('DELETE FROM quizzes WHERE id=?', t.id); return { ok: true };
 });
+
+// "Shuffle" settings. keep = the questions stay as they are; again = a new order of the same questions and new places for the right answers.
+// Only before any student has joined, because a printed paper or a student's phone would otherwise disagree with the key.
+async function setOrder(ctx, q, b) {
+  ctx.db.deferred = true;
+  if ((await ctx.db.get('SELECT COUNT(*) c FROM quiz_people WHERE quiz_id=? AND (token IS NOT NULL OR score IS NOT NULL)', q.id)).c) throw bad('Students have already taken part, so the order cannot be changed now.');
+  const mix = b.shuffle !== false; let ids = parse(q.q_ids, []);
+  if (b.again || !q.opt_seed) {
+    if (mix) ids = shuffle(ids); else { const o = new Map((await ctx.db.all('SELECT id,sort_order FROM quiz_questions')).map(r => [r.id, r.sort_order])); ids = ids.slice().sort((a, c) => (o.get(a) ?? 0) - (o.get(c) ?? 0)); }
+    await ctx.db.run('UPDATE quizzes SET q_ids=?,opt_seed=?,shuffle_q=? WHERE id=?', JSON.stringify(ids), newSeed(), mix ? 1 : 0, q.id);
+  } else await ctx.db.run('UPDATE quizzes SET shuffle_q=? WHERE id=?', mix ? 1 : 0, q.id);
+  return { ok: true };
+}
+route('POST', '/api/college/quiz/order', 'college', async ctx => { const q = await myQuiz(ctx.db, ctx); if (!q) throw new HttpError(404, 'Start the quiz first'); const r = await setOrder(ctx, q, ctx.body); await clog(ctx, 'quiz_order', ctx.body.again ? 'shuffled again' : 'order set'); return r; });
+route('POST', '/api/staff/quiz/rounds/:id/order', OPS, async ctx => { const q = await roundOf(ctx); const r = await setOrder(ctx, q, ctx.body); await slog(ctx, 'quiz_order', q.title); return r; });
 
 // ======================================================================= staff: bank, rounds, results, live host, report
 const ROUND_LABEL = { institution: 'Institution', ac: 'AC round', district: 'District final' };
@@ -356,8 +392,8 @@ route('POST', '/api/staff/quiz/rounds', OPS, async ctx => {
     title = 'District final';
   }
   if (!invited.length) throw bad(level === 'ac' ? 'No institution of this constituency has selected students yet.' : 'No AC round winners have been selected yet.');
-  const ids = await pickQuestions(ctx.db, n);
-  const id = await ctx.db.insert('INSERT INTO quizzes(code,level,college_id,ac,title,mode,status,q_ids,minutes,per_q,top_n,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', await newCode(ctx.db), level, null, ac, title, mode, 'draft', JSON.stringify(ids), minutes, per_q, top_n, ctx.user.username, nowIso());
+  const mix = b.shuffle !== false, ids = await pickQuestions(ctx.db, n, mix);
+  const id = await ctx.db.insert('INSERT INTO quizzes(code,level,college_id,ac,title,mode,status,q_ids,minutes,per_q,top_n,created_by,created_at,opt_seed,shuffle_q) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', await newCode(ctx.db), level, null, ac, title, mode, 'draft', JSON.stringify(ids), minutes, per_q, top_n, ctx.user.username, nowIso(), newSeed(), mix ? 1 : 0);
   for (const p of invited) await ctx.db.run('INSERT INTO quiz_people(quiz_id,name,klass,college_id,invited,total,created_at) VALUES (?,?,?,?,1,?,?)', id, p.name, p.klass, p.college_id, ids.length, nowIso());
   await slog(ctx, 'quiz_round_create', `${title}: ${invited.length} invited`); return { ok: true, id, invited: invited.length };
 });
@@ -376,7 +412,8 @@ route('POST', '/api/staff/quiz/rounds/:id/status', OPS, async ctx => {
 route('POST', '/api/staff/quiz/rounds/:id/settings', OPS, async ctx => {
   const q = await roundOf(ctx), b = ctx.body;
   if ((await ctx.db.get('SELECT COUNT(*) c FROM quiz_people WHERE quiz_id=? AND score IS NOT NULL', q.id)).c && b.regenerate) throw bad('Students have already answered, so the questions cannot be changed.');
-  const ids = b.regenerate ? await pickQuestions(ctx.db, Math.max(5, Math.min(50, Number(b.n) || parse(q.q_ids, []).length))) : parse(q.q_ids, []);
+  const ids = b.regenerate ? await pickQuestions(ctx.db, Math.max(5, Math.min(50, Number(b.n) || parse(q.q_ids, []).length)), q.shuffle_q !== 0) : parse(q.q_ids, []);
+  if (b.regenerate) await ctx.db.run('UPDATE quizzes SET opt_seed=? WHERE id=?', newSeed(), q.id);
   await ctx.db.run('UPDATE quizzes SET q_ids=?,minutes=?,per_q=?,top_n=?,mode=? WHERE id=?', JSON.stringify(ids), Math.max(5, Math.min(120, Number(b.minutes) || q.minutes)), Math.max(8, Math.min(90, Number(b.per_q) || q.per_q)), Math.max(1, Math.min(30, Number(b.top_n) || q.top_n)), b.mode === 'live' ? 'live' : b.mode === 'self' ? 'self' : q.mode, q.id);
   if (b.regenerate) await ctx.db.run('UPDATE quiz_people SET total=? WHERE quiz_id=?', ids.length, q.id);
   return { ok: true };
@@ -394,7 +431,7 @@ route('POST', '/api/staff/quiz/rounds/:id/people/:pid', OPS, async ctx => {
   ctx.db.deferred = true;
   const q = await roundOf(ctx), p = await ctx.db.get('SELECT * FROM quiz_people WHERE id=? AND quiz_id=?', Number(ctx.params.pid), q.id); if (!p) throw new HttpError(404, 'Student not found');
   const rows = await questionsOf(ctx.db, parse(q.q_ids, [])), b = ctx.body; let score, ans = {};
-  if (String(b.answers || '').trim()) ({ score, ans } = scorePaper(b.answers, rows));
+  if (String(b.answers || '').trim()) ({ score, ans } = scorePaper(b.answers, rows, ordersOf(q, rows)));
   else { score = Number(b.marks); if (!Number.isInteger(score) || score < 0 || score > rows.length) throw bad(`Type the answers, or the marks (0 to ${rows.length})`); }
   await ctx.db.run('UPDATE quiz_people SET finished_at=?,score=?,total=?,answers=?,source=?,secs=NULL WHERE id=?', nowIso(), score, rows.length, JSON.stringify(ans), 'paper', p.id);
   await slog(ctx, 'quiz_paper_entry', `${q.title}: ${p.name} ${score}`); return { ok: true, score };
@@ -419,7 +456,10 @@ async function hostView(ctx, q) {
   const out = { quiz: quizDto(q), live, joined: people.filter(p => p.token).length, invited: q.level === 'institution' ? 0 : people.length, names: people.filter(p => p.token).map(p => p.name).slice(-80) };
   if (live.phase === 'question' || live.phase === 'reveal') {
     const r = (await questionsOf(ctx.db, [ids[live.idx]]))[0];
-    if (r) { out.question = { id: r.id, theme: r.theme, text: r.text, opts: parse(r.opts, []) }; out.answered = people.filter(p => parse(p.answers, {})[r.id]).length; if (live.phase === 'reveal') out.correct = r.correct; }
+    if (r) {
+      const arr = parse(r.opts, []), ord = orderFor(q.opt_seed, live.idx, ids.length, r); out.question = { id: r.id, theme: r.theme, text: r.text, opts: ord.map(i => arr[i]) }; out.answered = people.filter(p => parse(p.answers, {})[r.id]).length;
+      if (live.phase === 'reveal') { out.correct = ord.indexOf(r.correct); if (live.counts) out.live = { ...live, counts: ord.map(i => live.counts[i]) }; }
+    }
     out.left = live.phase === 'question' ? Math.max(0, Math.ceil(q.per_q - (Date.now() - live.t0) / 1000)) : 0;
   }
   out.board = live.phase === 'end' ? live.board : topBoard(people).map(p => ({ name: p.name, college: cols.get(p.college_id) || '', score: p.score, rank: p.rank }));

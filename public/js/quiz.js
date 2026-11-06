@@ -14,7 +14,8 @@ function quizShell(inner, o = {}) {
     <div class="qx-title">${o.title || 'ELC Quiz Competition'}</div><div class="qx-right">${o.right || html`<a class="qx-exit" href="#/">${icon('home')}<span>Website</span></a>`}</div></header>${o.progress || ''}
     <main class="qx-main" id="main" tabindex="-1">${inner}</main>${o.foot || ''}</div>`;
 }
-const qzPaint = (inner, o) => { document.body.classList.add('in-quiz'); show($('#app'), quizShell(inner, o)); };
+const qsTools = () => html`<div class="qs-tools">${raw(qsBtn())}${raw(qsReadBar())}</div>`;
+const qzPaint = (inner, o) => { QS.use('phone'); document.body.classList.add('in-quiz'); show($('#app'), quizShell(inner, o)); };
 
 // ---------- the join page ----------
 async function renderQuiz(code) {
@@ -74,13 +75,17 @@ function quizPlay(info, r) {
   clearInterval(QZ.timer); QZ.timer = setInterval(() => {
     if (qzLeaving() || !QZ) return clearInterval(QZ?.timer);
     const left = (QZ.deadline - Date.now()) / 1000, t = $('#qzt'); if (t) { t.textContent = mmss(left); t.parentElement.classList.toggle('low', left < 60); }
-    if (left <= 0 && !QZ.done) { clearInterval(QZ.timer); toast('Time is up. Sending your answers.'); quizSubmit(true); }
+    if (left < 60 && left > 0 && !QZ.warned) { QZ.warned = true; QS.play('hint'); }
+    if (left <= 0 && !QZ.done) { clearInterval(QZ.timer); QS.play('timeup'); toast('Time is up. Sending your answers.'); quizSubmit(true); }
   }, 500);
 }
 function quizPaintQ() {
-  const { qs, i, ans, info } = QZ, q = qs[i], answered = qs.filter(x => ans[x.id] !== undefined).length, left = (QZ.deadline - Date.now()) / 1000;
+  const { qs, i, ans, info } = QZ, q = qs[i];
+  qsCurrent = () => qsQuestionText(i + 1, q.text, q.opts.map(o => o.t));
+  if (QZ.spoke !== q.id) { QZ.spoke = q.id; if (QS.read) setTimeout(qsReadCurrent, 250); else QS.hush(); }
+  const answered = qs.filter(x => ans[x.id] !== undefined).length, left = (QZ.deadline - Date.now()) / 1000;
   qzPaint(html`<div class="qx-qtop"><span class="qx-qn">Question <b>${i + 1}</b> of ${qs.length}</span>${q.theme ? html`<span class="qx-topic">${q.theme}</span>` : ''}</div>
-    <h1 class="qx-q">${q.text}</h1>
+    ${qsTools()}<h1 class="qx-q">${q.text}</h1>
     <div class="qx-opts" role="radiogroup" aria-label="Answers">${q.opts.map((o, k) => html`<button class="qx-opt ${ans[q.id] === o.i ? 'on' : ''}" role="radio" aria-checked="${ans[q.id] === o.i}" data-act="qzPick" data-q="${q.id}" data-i="${o.i}"><span class="qx-l">${'ABCD'[k]}</span><span class="qx-t">${o.t}</span><span class="qx-chk">${icon('check-circle')}</span></button>`)}</div>`,
     { title: info.title, cls: 'play',
       right: html`<span class="qx-timer ${left < 60 ? 'low' : ''}" title="Time left">${icon('clock')}<b id="qzt">${mmss(left)}</b></span>`,
@@ -88,7 +93,7 @@ function quizPaintQ() {
       foot: html`<footer class="qx-foot"><button class="btn secondary" data-act="qzGo" data-d="-1" ${i === 0 ? 'disabled' : ''}>${icon('arrow-left')}<span>Previous</span></button><span class="qx-count"><b>${answered}</b> of ${qs.length} answered</span>
         ${i < qs.length - 1 ? html`<button class="btn primary" data-act="qzGo" data-d="1"><span>Next</span>${icon('arrow-right')}</button>` : html`<button class="btn accent" data-act="qzFinish">${icon('check-circle')}<span>Finish</span></button>`}</footer>` });
 }
-actions.qzPick = el => { QZ.ans[el.dataset.q] = Number(el.dataset.i); lsSet('elcq:' + QZ.info.code + ':a', JSON.stringify(QZ.ans)); quizPaintQ(); $('.qx-opt.on')?.focus(); };
+actions.qzPick = el => { QS.play('pick'); QZ.ans[el.dataset.q] = Number(el.dataset.i); lsSet('elcq:' + QZ.info.code + ':a', JSON.stringify(QZ.ans)); quizPaintQ(); $('.qx-opt.on')?.focus(); };
 actions.qzGo = el => { QZ.i = Math.max(0, Math.min(QZ.qs.length - 1, QZ.i + Number(el.dataset.d))); quizPaintQ(); window.scrollTo(0, 0); };
 actions.qzFinish = async () => {
   const left = QZ.qs.filter(x => QZ.ans[x.id] === undefined).length;
@@ -103,7 +108,7 @@ async function quizSubmit(auto) {
   } catch (e) { QZ.done = false; toast(e.message, true); if (auto) setTimeout(() => quizSubmit(true), 3000); }
 }
 function quizResult(info, score, total) {
-  const pct = total ? Math.round(score / total * 100) : 0;
+  const pct = total ? Math.round(score / total * 100) : 0; QS.hush(); QS.play(pct >= 50 ? 'results' : 'win');
   qzPaint(html`<div class="qx-card center qx-result"><div class="qx-ring" style="--p:${pct}"><b>${score}</b><span>out of ${total}</span></div><h1>${pct >= 80 ? 'Excellent work!' : pct >= 50 ? 'Well done!' : 'Thank you for taking part!'}</h1>
     <p class="qx-lead">You answered <b>${score}</b> of ${total} questions correctly (${pct}%). Your coordinator or the quiz team will announce who goes on to the next round.</p><a class="btn secondary" href="#/">${icon('home')} Back to the website</a></div>`, { title: info.title });
 }
@@ -115,32 +120,41 @@ function quizLive(info, r) {
     if (qzLeaving() || !QZ || QZ.info !== info) return;
     let s; try { s = await api(`/api/public/quiz/${info.code}/live?token=${encodeURIComponent(QZ.token)}`); } catch { QZ.poll = setTimeout(tick, 3000); return; }
     const key = [s.phase, s.idx, s.you?.answered, s.status].join('|');
+    qsLiveSound(s);
     QZ.state = s; QZ.endAt = Date.now() + (s.left || 0) * 1000;
     if (key !== QZ.key) { QZ.key = key; qzLivePaint(s); }
     QZ.poll = setTimeout(tick, s.phase === 'question' ? 1200 : 2200);
   };
-  clearInterval(QZ.timer); QZ.timer = setInterval(() => { const t = $('#qzlt'); if (t && QZ?.endAt) { const l = Math.max(0, Math.ceil((QZ.endAt - Date.now()) / 1000)); t.textContent = l; t.parentElement.classList.toggle('low', l <= 5); } }, 250);
+  clearInterval(QZ.timer); QZ.timer = setInterval(() => { const t = $('#qzlt'); if (t && QZ?.endAt) { const l = Math.max(0, Math.ceil((QZ.endAt - Date.now()) / 1000)); if (l !== QZ.lastL) { QZ.lastL = l; if (l > 0 && l <= 5 && QZ.state?.you?.answered == null) QS.play('tick'); } t.textContent = l; t.parentElement.classList.toggle('low', l <= 5); } }, 250);
   tick();
+}
+// a sound when the live quiz moves on: a new question, the answer, the final standings
+function qsLiveSound(s) {
+  const ev = s.phase + '|' + s.idx; if (ev === QZ.ev) return; QZ.ev = ev; QS.use('phone'); QS.hush(); const you = s.you || {}, has = you.answered !== null && you.answered !== undefined;
+  if (s.phase === 'lobby') QS.play('join');
+  else if (s.phase === 'question' && s.question) { QS.play('question'); qsCurrent = () => qsQuestionText(s.idx + 1, s.question.text, s.question.opts.map(o => o.t)); if (QS.read) setTimeout(qsReadCurrent, 700); }
+  else if (s.phase === 'reveal') QS.play(!has ? 'answer' : you.answered === s.correct ? 'correct' : 'wrong');
+  else if (s.phase === 'end') QS.play('results');
 }
 function qzLivePaint(s) {
   const info = QZ.info, you = s.you || { score: 0 }, has = you.answered !== null && you.answered !== undefined, who = html`<span class="qx-who">${icon('user-check')}<b>${QZ.name}</b></span>`;
   let body;
   if (s.phase === 'lobby') body = html`<div class="qx-card center qx-wait"><span class="qx-pulse">${icon('check-circle')}</span><h1>You are in, ${QZ.name.split(' ')[0]}!</h1><p class="qx-lead">Look at the main screen. The first question appears when the host starts.</p></div>`;
   else if (s.phase === 'question' && s.question) body = html`<div class="qx-qtop"><span class="qx-qn">Question <b>${s.idx + 1}</b> of ${s.n}</span><span class="qx-timer ${s.left <= 5 ? 'low' : ''}">${icon('clock')}<b id="qzlt">${s.left}</b><small>s</small></span></div>
-      <p class="qx-hint">${has ? 'Answer locked. Wait for the answer to be shown on the main screen.' : 'Read the question on the main screen, then choose your answer.'}</p>
-      <div class="qx-opts big">${s.question.opts.map(o => html`<button class="qx-opt c${o.i} ${you.answered === o.i ? 'on' : ''} ${has && you.answered !== o.i ? 'dim' : ''}" data-act="qzLiveAns" data-i="${o.i}" ${has ? 'disabled' : ''}><span class="qx-l">${'ABCD'[o.i]}</span><span class="qx-t">${o.t}</span></button>`)}</div>
+      ${qsTools()}<p class="qx-hint">${has ? 'Answer locked. Wait for the answer to be shown on the main screen.' : 'Read the question on the main screen, then choose your answer.'}</p>
+      <div class="qx-opts big">${s.question.opts.map((o, k) => html`<button class="qx-opt c${k} ${you.answered === o.i ? 'on' : ''} ${has && you.answered !== o.i ? 'dim' : ''}" data-act="qzLiveAns" data-i="${o.i}" ${has ? 'disabled' : ''}><span class="qx-l">${'ABCD'[k]}</span><span class="qx-t">${o.t}</span></button>`)}</div>
       <details class="qx-showq"><summary>Show the question on my phone</summary><p>${s.question.text}</p></details>`;
   else if (s.phase === 'reveal' && s.question) { const ok = you.answered === s.correct; body = html`<div class="qx-qtop"><span class="qx-qn">Question <b>${s.idx + 1}</b> of ${s.n}</span><span class="qx-score">Score <b>${you.score}</b></span></div>
       <div class="qx-verdict ${!has ? 'none' : ok ? 'ok' : 'no'}">${icon(ok ? 'check-circle' : 'alert')}<div><b>${!has ? 'No answer given' : ok ? 'Correct!' : 'Not this time'}</b>${you.rank ? html`<span>You are number ${you.rank}</span>` : ''}</div></div>
       <h2 class="qx-q small">${s.question.text}</h2>
-      <div class="qx-opts">${s.question.opts.map(o => html`<div class="qx-opt static ${o.i === s.correct ? 'win' : 'dim'} ${you.answered === o.i ? 'mine' : ''}"><span class="qx-l">${'ABCD'[o.i]}</span><span class="qx-t">${o.t}</span><em>${s.counts?.[o.i] ?? 0}</em></div>`)}</div>`; }
+      <div class="qx-opts">${s.question.opts.map((o, k) => html`<div class="qx-opt static ${o.i === s.correct ? 'win' : 'dim'} ${you.answered === o.i ? 'mine' : ''}"><span class="qx-l">${'ABCD'[k]}</span><span class="qx-t">${o.t}</span><em>${s.counts?.[o.i] ?? 0}</em></div>`)}</div>`; }
   else if (s.phase === 'end') body = html`<div class="qx-card center"><h1>The quiz is over</h1><p class="qx-lead">You scored <b>${you.score}</b> of ${s.n}${you.rank ? html` and finished <b>number ${you.rank}</b>` : ''}.</p>
       <ol class="qx-board">${(s.board || []).slice(0, 10).map(b => html`<li><b>${b.rank}</b><span>${b.name}<small>${b.college}</small></span><i>${b.score}</i></li>`)}</ol></div>`;
   else body = html`<div class="qx-card center qx-wait"><div class="spin" style="margin:0 auto 10px"></div><p class="muted">Waiting for the next question…</p></div>`;
   qzPaint(body, { title: info.title, right: who, cls: 'live' });
 }
 actions.qzLiveAns = async el => {
-  const s = QZ.state, i = Number(el.dataset.i);
+  const s = QZ.state, i = Number(el.dataset.i); QS.play('pick');
   try { await api(`/api/public/quiz/${QZ.info.code}/answer`, 'POST', { token: QZ.token, idx: s.idx, choice: i }); QZ.state.you = { ...(s.you || {}), answered: i }; QZ.key = [s.phase, s.idx, i, s.status].join('|'); qzLivePaint({ ...s, you: { ...(s.you || {}), answered: i } }); }
   catch (e) { toast(e.message, true); }
 };
@@ -152,7 +166,7 @@ async function pgQuiz(el) {
   const q = d.quiz;
   if (!q) return show(el, html`${pageHead('Quiz competition', 'Run the institution round of the ELC Quiz Competition for your students. The 50 questions of the Election Commission are already loaded.', '', 'Campus to booth')}
     <div class="card qz-start"><div class="qz-steps"><div><span class="n">1</span><b>Create the quiz</b><p>Press the button. Questions are chosen for you from all four topics.</p></div><div><span class="n">2</span><b>Students join</b><p>Show the code or QR on a screen. Students answer on their phones. No phones? Print the paper instead.</p></div><div><span class="n">3</span><b>Send the top 2</b><p>The results are ranked automatically. Select the best 2 students for the next round.</p></div></div>
-      ${d.on ? html`<form data-form="qzCreate" class="row" style="gap:14px;align-items:flex-end;margin-top:14px"><label class="f" style="margin:0"><span>Questions</span><select name="n"><option>10</option><option>15</option><option selected>20</option><option>25</option><option>30</option></select></label><label class="f" style="margin:0"><span>Minutes</span><select name="minutes"><option>10</option><option>15</option><option selected>20</option><option>30</option><option>45</option></select></label><button class="btn accent lg" type="submit">${icon('check-circle')} Create the quiz</button></form><div data-err></div>`
+      ${d.on ? html`<form data-form="qzCreate" class="row" style="gap:14px;align-items:flex-end;margin-top:14px"><label class="f" style="margin:0"><span>Questions</span><select name="n"><option>10</option><option>15</option><option selected>20</option><option>25</option><option>30</option></select></label><label class="f" style="margin:0"><span>Minutes</span><select name="minutes"><option>10</option><option>15</option><option selected>20</option><option>30</option><option>45</option></select></label><label class="f" style="margin:0"><span>Order of the questions</span><select name="shuffle"><option value="1" selected>Shuffled</option><option value="0">Same as the question bank</option></select></label><button class="btn accent lg" type="submit">${icon('check-circle')} Create the quiz</button></form><div data-err></div>`
         : html`<div class="alert warn" style="margin-top:14px">${icon('alert')}<div>The quiz is not open right now.</div></div>`}</div>
     <div class="card" style="margin-top:16px"><div class="card-head"><h3>What the quiz covers</h3></div><div class="pillrow">${d.bank.themes.map(t => badge(`${t.theme} (${t.n})`, 'info'))}</div></div>`);
   const link = `${location.origin}/#/quiz/${q.code}`, open = q.status === 'open', ppl = d.people, done = ppl.filter(p => p.score !== null);
@@ -160,6 +174,7 @@ async function pgQuiz(el) {
     <div class="card qz-codecard"><div class="qz-qr" id="qzqr">${raw(qrSvg(link))}</div><div class="qz-codetxt"><span class="small muted">Quiz code</span><div class="qz-bigcode">${q.code}</div><div class="small">Students open <b>${location.host}</b> and choose <b>Quiz</b>, or scan the QR code.</div>
       <div class="row gap-s" style="margin-top:8px"><button class="btn secondary sm" data-act="qzCopy">${icon('copy')} Copy the link</button><a class="btn secondary sm" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(`ELC Quiz: join with code ${q.code} or open ${link}`)}">${icon('share')} WhatsApp</a></div></div>
       <div class="qz-status"><div class="small muted">${q.n} questions · ${q.mode === 'live' ? q.per_q + ' seconds each, live' : q.minutes + ' minutes'}</div><div>${open ? badge('Open for students', 'ok') : badge('Closed', 'grey')}</div><button class="btn sm ${open ? 'secondary' : 'primary'}" data-act="qzStatus" data-s="${open ? 'closed' : 'open'}">${open ? 'Close the quiz' : 'Open the quiz'}</button></div></div>
+    ${qzOrderCard(q, ppl.length)}
     <div class="card" style="margin-top:16px"><div class="card-head"><h3>${icon('target')} How will you run the quiz?</h3></div>
       <div class="qz-modes"><button class="qz-mode ${q.mode === 'live' ? 'on' : ''}" data-act="qzMode" data-m="live"><b>Live on the screen</b><span>You show each question on the classroom screen or projector. Students see only the answer buttons on their phones, and the next question appears when you move on. Like Mentimeter or Kahoot.</span></button>
         <button class="qz-mode ${q.mode === 'live' ? '' : 'on'}" data-act="qzMode" data-m="self"><b>On phones, at their own pace</b><span>Every student gets all the questions on their phone and answers within the time. Good when the screen cannot be shared or students join from home.</span></button></div>
@@ -182,7 +197,7 @@ async function pgQuiz(el) {
   }));
   $('#qzans', el)?.addEventListener('input', e => { const n = e.target.value.replace(/[\s,]+/g, '').length; $('#qzansn').textContent = `${n} of ${q.n}`; });
 }
-forms.qzCreate = async f => { const v = fd(f); await api('/api/college/quiz', 'POST', { n: Number(v.n), minutes: Number(v.minutes) }); toast('Quiz created'); pgQuiz($('#pg')); };
+forms.qzCreate = async f => { const v = fd(f); await api('/api/college/quiz', 'POST', { n: Number(v.n), minutes: Number(v.minutes), shuffle: v.shuffle !== '0' }); toast('Quiz created'); pgQuiz($('#pg')); };
 forms.qzPaper = async f => {
   const v = fd(f); const r = await api('/api/college/quiz/people', 'POST', { name: v.name, klass: v.klass, answers: v.answers, marks: v.marks });
   toast(`${v.name}: ${r.score} of ${r.total}`); await pgQuiz($('#pg')); $('form[data-form=qzPaper] input[name=name]')?.focus();

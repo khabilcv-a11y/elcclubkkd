@@ -373,33 +373,50 @@ function quizProjector(p) {
 
 // the live quiz: the host moves the questions on, the phones follow
 function quizHost({ code, url, onClose }) {
-  const box = qdOpen(); let stop = false, last = '', endAt = 0, per = 20;
-  const close = () => { stop = true; clearInterval(ringTimer); box.remove(); document.body.style.overflow = ''; onClose?.(); };
+  const box = qdOpen(); let stop = false, last = '', endAt = 0, per = 20, prev = null, lastSec = -1, upFor = -1, curIdx = -1;
+  QS.use('host'); QS.unlock();
+  const tune = () => QS.music_(prev?.phase === 'lobby' ? 'lobby' : prev?.phase === 'question' ? 'think' : null);
+  window.addEventListener('qs:music', tune);
+  const close = () => { stop = true; clearInterval(ringTimer); window.removeEventListener('qs:music', tune); QS.music_(null); QS.hush(); QS.use('phone'); box.remove(); document.body.style.overflow = ''; onClose?.(); };
   box.addEventListener('click', e => { const b = e.target.closest('[data-h]'); if (!b) return; if (b.dataset.h === 'close') return close(); act(b.dataset.h); });
   const act = async a => { try { await api(url, 'POST', { action: a }); last = ''; tick(true); } catch (e) { toast(e.message, true); } };
   const ringTimer = setInterval(() => {            // the countdown runs smoothly between polls
-    if (!endAt) return; const left = Math.max(0, (endAt - Date.now()) / 1000), r = document.getElementById('qdring'), t = document.getElementById('qdleft'); if (!r) return;
+    if (!endAt) return; const left = Math.max(0, (endAt - Date.now()) / 1000), r = document.getElementById('qdring'), t = document.getElementById('qdleft');
+    const sec = Math.ceil(left); if (sec !== lastSec) { lastSec = sec; if (sec > 0 && sec <= 5) QS.play(sec <= 3 ? 'urgent' : 'tick'); else if (sec === 0 && upFor !== curIdx) { upFor = curIdx; QS.play('timeup'); } }
+    if (!r) return;
     const c = Number(r.getAttribute('stroke-dasharray')); r.setAttribute('stroke-dashoffset', (c * (1 - Math.min(1, left / per))).toFixed(1)); t.textContent = Math.ceil(left);
     document.getElementById('qdringsvg')?.classList.toggle('low', left <= 5);
   }, 200);
   const paint = s => {
     const l = s.live, q = s.question, n = s.quiz.n; per = s.quiz.per_q || 20; endAt = l.phase === 'question' ? Date.now() + s.left * 1000 : 0;
+    const was = prev, changed = !was || was.phase !== l.phase || was.idx !== l.idx; curIdx = l.idx;
+    prev = { phase: l.phase, idx: l.idx, joined: s.joined };
+    if (was && l.phase === 'lobby' && s.joined > was.joined && !changed) QS.play('join');
+    if (changed) {
+      lastSec = -1; QS.hush();
+      if (l.phase === 'question' && q) { if (was?.phase === 'lobby') { QS.play('start'); setTimeout(() => QS.play('question'), 700); } else QS.play('question'); if (QS.read) setTimeout(() => QS.say(qsQuestionText(l.idx + 1, q.text, q.opts)), 900); }
+      else if (l.phase === 'reveal' && q) { QS.play('answer'); if (QS.read) setTimeout(() => QS.say('The answer is option ' + QD_L[s.correct] + ': ' + q.opts[s.correct] + '.'), 900); }
+      else if (l.phase === 'end') QS.play('results');
+    }
+    if (changed || !was) tune();
+    qsCurrent = () => (q ? (l.phase === 'reveal' ? 'The answer is option ' + QD_L[s.correct] + ': ' + q.opts[s.correct] + '.' : qsQuestionText(l.idx + 1, q.text, q.opts)) : '');
+    const tools = qsBtn(true);
     let frame;
     if (l.phase === 'lobby') {
-      frame = qdFrame({ title: s.quiz.title, mid: '<span class="qd-pill">Waiting for students</span>',
+      frame = qdFrame({ title: s.quiz.title, mid: '<span class="qd-pill">Waiting for students</span>', right: tools,
         stage: `<div class="qd-lobby"><section class="qd-join"><h1>Join the quiz</h1><div class="qd-qr">${qrSvg(`${location.origin}/#/quiz/${code}`)}</div><p>Scan the code, or open <b>${qpEsc(location.host)}</b> and choose <b>Quiz</b></p><div class="qd-code">${qpEsc(code)}</div></section>
           <section class="qd-people"><div class="qd-count"><b>${s.joined}</b><span>${s.invited ? 'of ' + s.invited + ' students' : (s.joined === 1 ? 'student' : 'students')} joined</span></div><div class="qd-chips">${(s.names || []).map(x => `<span>${qpEsc(x)}</span>`).join('') || '<em>Names appear here as students join</em>'}</div></section></div>`,
         ctl: `<span class="qd-hintline">${n} questions · ${s.quiz.per_q} seconds each</span><div class="qd-btns"><button class="btn accent lg" data-h="next">Start the quiz</button></div>` });
     } else if ((l.phase === 'question' || l.phase === 'reveal') && q) {
       const reveal = l.phase === 'reveal', joined = Math.max(1, s.joined);
-      frame = qdFrame({ title: s.quiz.title, mid: qdSegs(l.idx, n), right: reveal ? `<span class="qd-state">${qdCheck()} Answer</span>` : qdRing(s.left, per),
+      frame = qdFrame({ title: s.quiz.title, mid: qdSegs(l.idx, n), right: (reveal ? `<span class="qd-state">${qdCheck()} Answer</span>` : qdRing(s.left, per)) + tools,
         stage: `${qdQuestion(q, l.idx + 1)}${qdOptions(q.opts, { reveal, correct: s.correct, counts: l.counts })}`,
         ctl: reveal
-          ? `<ol class="qd-mini">${s.board.slice(0, 5).map(b => `<li><b>${b.rank}</b><span>${qpEsc(b.name)}</span><i>${b.score}</i></li>`).join('')}</ol><div class="qd-btns"><button class="btn accent lg" data-h="${l.idx + 1 >= n ? 'end' : 'next'}">${l.idx + 1 >= n ? 'Finish and show the winners' : 'Next question'}</button></div>`
-          : `<div class="qd-answered"><span><b>${s.answered}</b> of ${s.joined} answered</span><div class="qd-meter"><i style="width:${Math.round(s.answered / joined * 100)}%"></i></div></div><div class="qd-btns"><button class="btn accent lg" data-h="reveal">Show the answer</button></div>` });
+          ? `${qsReadBar()}<ol class="qd-mini">${s.board.slice(0, 5).map(b => `<li><b>${b.rank}</b><span>${qpEsc(b.name)}</span><i>${b.score}</i></li>`).join('')}</ol><div class="qd-btns"><button class="btn accent lg" data-h="${l.idx + 1 >= n ? 'end' : 'next'}">${l.idx + 1 >= n ? 'Finish and show the winners' : 'Next question'}</button></div>`
+          : `${qsReadBar()}<div class="qd-answered"><span><b>${s.answered}</b> of ${s.joined} answered</span><div class="qd-meter"><i style="width:${Math.round(s.answered / joined * 100)}%"></i></div></div><div class="qd-btns"><button class="btn accent lg" data-h="reveal">Show the answer</button></div>` });
     } else if (l.phase === 'end') {
       const b = s.board || [], pod = [b[1], b[0], b[2]];
-      frame = qdFrame({ title: s.quiz.title, mid: '<span class="qd-pill">Final standings</span>',
+      frame = qdFrame({ title: s.quiz.title, mid: '<span class="qd-pill">Final standings</span>', right: tools,
         stage: `<div class="qd-end"><h1>Congratulations!</h1><div class="qd-podium">${pod.map((x, k) => x ? `<div class="qd-pod p${[2, 1, 3][k]}"><span class="qd-medal">${[2, 1, 3][k]}</span><b>${qpEsc(x.name)}</b><small>${qpEsc(x.college || '')}</small><div class="qd-step"><i>${x.score}</i><span>points</span></div></div>` : '<div class="qd-pod"></div>').join('')}</div>
           ${b.length > 3 ? `<ol class="qd-rest">${b.slice(3, 10).map(x => `<li><b>${x.rank}</b><span>${qpEsc(x.name)}<small>${qpEsc(x.college || '')}</small></span><i>${x.score}</i></li>`).join('')}</ol>` : ''}</div>`,
         ctl: `<span class="qd-hintline">The results are saved in the quiz. Select the students who go on from the results table.</span><div class="qd-btns"><button class="btn accent lg" data-h="close">Back to the quiz</button></div>` });
@@ -442,3 +459,13 @@ actions.tbRefresh = () => tbDone();
 actions.tbHost = () => quizHost({ code: window.__tbCode, url: window.__tbT.live, onClose: () => tbDone() });
 actions.tbEnter = el => modal(html`<h2>Tie-breaker result of ${el.dataset.name}</h2><p class="muted small">Type the answers in order as letters, or only the marks.</p><form data-form="tbEnterF" data-id="${el.dataset.id}" class="stack-s"><label class="f"><span>Answers (a b c d, - if blank) · ${el.dataset.n} questions</span><input name="answers" maxlength="20" autocomplete="off" spellcheck="false"></label><label class="f"><span>or only the marks (0 to ${el.dataset.n})</span><input name="marks" type="number" min="0" max="${el.dataset.n}"></label><div data-err></div><div class="row" style="justify-content:flex-end"><button type="button" class="btn secondary" data-act="closeModal">Cancel</button><button class="btn primary" type="submit">Save</button></div></form>`);
 forms.tbEnterF = async f => { const v = fd(f), r = await api(`${window.__tbT.people}/${f.dataset.id}`, 'POST', { answers: v.answers, marks: v.marks }); f.closest('.overlay').close(); tbDone('Score ' + r.score); };
+
+// the order of the questions and where the right answers sit (also used on the district team's round page)
+const qzOrderCard = (q, people, url = '/api/college/quiz/order') => html`<div class="card" style="margin-top:16px"><div class="card-head"><h3>${icon('refresh')} Order of the questions</h3></div>
+  <p class="small" style="margin-bottom:10px">Questions are <b>${q.shuffle ? 'shuffled: every student on a phone gets them in a different order' : 'in the order of the question bank, the same for everyone'}</b>. The right answer is ${q.balanced ? html`<b>spread evenly over A, B, C and D, with no pattern</b>` : html`<b>still in its original place</b> (mostly B and C). Press <b>Mix questions and answers</b> to spread it evenly`}.</p>
+  ${people ? html`<p class="small muted">${icon('info')} Locked, because students have already joined.</p>`
+    : html`<div class="row gap-s"><button class="btn secondary sm" data-act="qzOrder" data-url="${url}" data-again="1" data-shuffle="${q.shuffle ? 1 : 0}">${icon('refresh')} Mix questions and answers${q.balanced ? ' again' : ''}</button><button class="btn secondary sm" data-act="qzOrder" data-url="${url}" data-shuffle="${q.shuffle ? 0 : 1}">${q.shuffle ? 'Keep the bank order instead' : 'Shuffle the questions'}</button></div><p class="small muted" style="margin-top:8px">If you have already printed the paper or the key, print them again after changing this.</p>`}</div>`;
+actions.qzOrder = async el => {
+  if (el.dataset.again && !await confirmBox('Mix the questions and the places of the right answers? A paper or key you printed before will no longer match.', 'Mix', false)) return;
+  await api(el.dataset.url, 'POST', { again: !!el.dataset.again, shuffle: el.dataset.shuffle === '1' }); toast('Done'); (typeof QA !== 'undefined' && QA?.round && el.dataset.url.includes('/staff/') ? qaOpenRound(qaId()) : pgQuiz($('#pg')));
+};
