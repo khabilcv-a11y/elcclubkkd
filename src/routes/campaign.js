@@ -100,9 +100,9 @@ export async function performanceReport(ctx, q) {
   const cs = await campusStats(ctx.db);
   const rows = cs.institutions.filter(i => (!s || s.colleges.has(i.id)) && (!q.college || String(i.id) === String(q.college)) && (!q.kind || i.kind === q.kind) && (!text || i.name.toLowerCase().includes(text)))
     .map(i => ({ college: i.name, type: i.kind === 'school' ? 'School' : 'College', strength: i.strength, registered: i.registered, ineligible: i.ineligible, eligible: i.eligible, balance: i.balance, pct: i.pct, depts: i.depts, classes: i.classes,
-      desk_days: i.desk_days, desk_regs: i.desk_regs, desk_vols: i.desk_vols, activity: i.activity, photos: i.photos, last: i.last_active, status: STATUS[i.status] }));
+      desk_days: i.desk_days, desk_regs: i.desk_regs, desk_vols: i.desk_vols, activity: i.activity, photos: i.photos, last: i.last_active, elc: i.elc === 'yes' ? 'Yes' : i.elc === 'no' ? 'Not yet' : 'Not answered', status: STATUS[i.status] }));
   return { title: 'College and school performance', cols: [T('college', 'Institution'), T('type', 'Type'), N('strength', 'Total students'), N('registered', 'Registered'), N('ineligible', 'Not eligible (under 17)'), N('eligible', 'Eligible'), N('balance', 'Yet to register'), N('pct', 'Covered %'),
-    N('depts', 'Departments reported'), N('classes', 'Classes'), N('desk_days', 'Help desk days reported'), N('desk_regs', 'Help desk registrations'), N('desk_vols', 'Help desk volunteer-days'), N('activity', 'Volunteer-days in other activities'), N('photos', 'Photos shared'), T('last', 'Last activity'), T('status', 'Status')], rows };
+    N('depts', 'Departments reported'), N('classes', 'Classes'), N('desk_days', 'Help desk days reported'), N('desk_regs', 'Help desk registrations'), N('desk_vols', 'Help desk volunteer-days'), N('activity', 'Volunteer-days in other activities'), N('photos', 'Photos shared'), T('last', 'Last activity'), T('elc', 'ELC registered on ECINET'), T('status', 'Status')], rows };
 }
 
 // ---------- section switches ----------

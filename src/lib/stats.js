@@ -123,7 +123,7 @@ const pctOf = (a, b) => (b ? Math.min(100, Math.round(a * 100 / b)) : null);
 export async function campusStats(db) {
   const today = todayStr(), since = addDays(today, -6);
   const [insts, enrol, desk, acts, photos, trend] = await Promise.all([
-    db.all("SELECT id,name,short_name,COALESCE(kind,'college') kind,coordinator,phone,logo_at,last_login_at FROM colleges WHERE active=1 ORDER BY name"),
+    db.all("SELECT id,name,short_name,COALESCE(kind,'college') kind,coordinator,phone,logo_at,last_login_at,elc_status FROM colleges WHERE active=1 ORDER BY name"),
     db.all('SELECT college_id id,SUM(strength) strength,SUM(registered) registered,SUM(ineligible) ineligible,SUM(COALESCE(remaining, MAX(0, strength - ineligible - registered))) balance,COUNT(DISTINCT dept) depts,COUNT(*) classes,MAX(updated_at) last FROM enrol_classes GROUP BY college_id'),
     db.all('SELECT college_id id,COUNT(*) days,SUM(registrations) regs,SUM(volunteers) vols,MAX(date) last FROM desk_days GROUP BY college_id'),
     db.all("SELECT college_id id,COUNT(*) n,MAX(date) last FROM activity_log WHERE activity<>'Help desk' GROUP BY college_id"),
@@ -136,7 +136,7 @@ export async function campusStats(db) {
     const eligible = Math.max(0, e.strength - e.ineligible), last = [String(e.last || '').slice(0, 10), d.last || '', a.last || '', p.last || ''].sort().at(-1) || '';
     const started = e.strength > 0 || d.days > 0 || a.n > 0 || p.n > 0;
     const reg = e.registered + (d.regs || 0), bal = Math.max(0, (e.balance || 0) - (d.regs || 0)), pc = pctOf(reg, eligible);
-    return { id: c.id, name: c.name, short_name: c.short_name || c.name, kind: c.kind, coordinator: c.coordinator, phone: c.phone, logo_v: c.logo_at || null,
+    return { id: c.id, name: c.name, short_name: c.short_name || c.name, kind: c.kind, coordinator: c.coordinator, phone: c.phone, logo_v: c.logo_at || null, elc: c.elc_status || '',
       strength: e.strength, registered: reg, ineligible: e.ineligible, eligible, balance: bal, pct: pc, epic: eligible > 0 && pc >= 100, badges: badgesFor(pc, d.days, p.n, e.last),
       depts: e.depts, classes: e.classes, desk_days: d.days, desk_regs: d.regs || 0, desk_vols: d.vols || 0, activity: a.n, photos: p.n,
       last_active: last, status: !started ? 'new' : last >= since ? 'active' : 'quiet', joined: started || !!c.last_login_at };
