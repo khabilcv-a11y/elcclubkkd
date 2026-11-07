@@ -383,7 +383,7 @@ function quizHost({ code, url, onClose }) {
   const tune = () => QS.music_(prev?.phase === 'lobby' ? 'lobby' : prev?.phase === 'question' ? 'think' : null);
   window.addEventListener('qs:music', tune);
   const close = () => { stop = true; clearInterval(ringTimer); window.removeEventListener('qs:music', tune); QS.music_(null); QS.hush(); QS.use('phone'); box.remove(); document.body.style.overflow = ''; onClose?.(); };
-  box.addEventListener('click', e => { const b = e.target.closest('[data-h]'); if (!b) return; if (b.dataset.h === 'close') return close(); act(b.dataset.h); });
+  box.addEventListener('click', e => { const b = e.target.closest('[data-h]'); if (!b) return; if (b.dataset.h === 'close') return close(); if (b.dataset.h === 'stop') { if (confirm('End the quiz now? Nobody can answer any more, and the winners are shown from the answers given so far.')) act('end'); return; } act(b.dataset.h); });
   const act = async a => { try { await api(url, 'POST', { action: a }); last = ''; tick(true); } catch (e) { toast(e.message, true); } };
   const ringTimer = setInterval(() => {            // the countdown runs smoothly between polls
     if (!endAt) return; const left = Math.max(0, (endAt - Date.now()) / 1000), r = document.getElementById('qdring'), t = document.getElementById('qdleft');
@@ -417,8 +417,8 @@ function quizHost({ code, url, onClose }) {
       frame = qdFrame({ title: s.quiz.title, mid: qdSegs(l.idx, n), right: (reveal ? `<span class="qd-state">${qdCheck()} Answer</span>` : qdRing(s.left, per)) + tools,
         stage: `${qdQuestion(q, l.idx + 1)}${qdOptions(q.opts, { reveal, correct: s.correct, counts: l.counts })}`,
         ctl: reveal
-          ? `${qsReadBar()}<ol class="qd-mini">${s.board.slice(0, 5).map(b => `<li><b>${b.rank}</b><span>${qpEsc(b.name)}</span><i>${b.score}</i></li>`).join('')}</ol><div class="qd-btns"><button class="btn accent lg" data-h="${l.idx + 1 >= n ? 'end' : 'next'}">${l.idx + 1 >= n ? 'Finish and show the winners' : 'Next question'}</button></div>`
-          : `${qsReadBar()}<div class="qd-answered"><span><b>${s.answered}</b> of ${s.joined} answered</span><div class="qd-meter"><i style="width:${Math.round(s.answered / joined * 100)}%"></i></div></div><div class="qd-btns"><button class="btn accent lg" data-h="reveal">Show the answer</button></div>` });
+          ? `${qsReadBar()}<ol class="qd-mini">${s.board.slice(0, 5).map(b => `<li><b>${b.rank}</b><span>${qpEsc(b.name)}</span><i>${b.score}</i></li>`).join('')}</ol><div class="qd-btns"><button class="btn secondary lg" data-h="stop" title="Stop the quiz here and show the winners">End quiz now</button><button class="btn accent lg" data-h="${l.idx + 1 >= n ? 'end' : 'next'}">${l.idx + 1 >= n ? 'Finish and show the winners' : 'Next question'}</button></div>`
+          : `${qsReadBar()}<div class="qd-answered"><span><b>${s.answered}</b> of ${s.joined} answered</span><div class="qd-meter"><i style="width:${Math.round(s.answered / joined * 100)}%"></i></div></div><div class="qd-btns"><button class="btn secondary lg" data-h="stop" title="Stop the quiz here and show the winners">End quiz now</button><button class="btn accent lg" data-h="reveal">Show the answer</button></div>` });
     } else if (l.phase === 'end') {
       const b = s.board || [], pod = [b[1], b[0], b[2]];
       frame = qdFrame({ title: s.quiz.title, mid: '<span class="qd-pill">Final standings</span>', right: tools,
