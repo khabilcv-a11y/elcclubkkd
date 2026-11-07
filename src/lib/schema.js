@@ -6,7 +6,7 @@ export const TABLES = {
   colleges: { pk: ['id'], cols: [['id', 'INTEGER'], ['name', 'TEXT', { nn: 1 }], ['short_name', 'TEXT'], ['address', 'TEXT'], ['phone', 'TEXT'], ['email', 'TEXT'], ['coordinator', 'TEXT'],
     ['lat', 'REAL'], ['lng', 'REAL'], ['passcode_hash', 'TEXT'], ['passcode_sent_at', 'TEXT'], ['last_login_at', 'TEXT'], ['active', 'INTEGER', { nn: 1, def: 1 }], ['created_at', 'TEXT'],
     ['lsgi', 'TEXT'], ['passcode_plain', 'TEXT'], ['kind', 'TEXT'], ['drive_token', 'TEXT'], ['logo', 'TEXT'], ['logo_mime', 'TEXT'], ['logo_at', 'TEXT'],
-    ['coord_phone', 'TEXT'], ['coord_email', 'TEXT'], ['designation', 'TEXT'], ['head_name', 'TEXT'], ['head_phone', 'TEXT'], ['inst_type', 'TEXT'], ['inst_code', 'TEXT'], ['profile_at', 'TEXT'], ['ac', 'TEXT'], ['ac_all', 'TEXT'], ['elc_status', 'TEXT']] },
+    ['coord_phone', 'TEXT'], ['coord_email', 'TEXT'], ['designation', 'TEXT'], ['head_name', 'TEXT'], ['head_phone', 'TEXT'], ['inst_type', 'TEXT'], ['inst_code', 'TEXT'], ['profile_at', 'TEXT'], ['ac', 'TEXT'], ['ac_all', 'TEXT'], ['elc_status', 'TEXT'], ['stu1_name', 'TEXT'], ['stu1_phone', 'TEXT'], ['stu2_name', 'TEXT'], ['stu2_phone', 'TEXT']] },
   villages: { pk: ['id'], unique: [['name']], cols: [['id', 'INTEGER'], ['name', 'TEXT', { nn: 1 }], ['taluk', 'TEXT'], ['lat', 'REAL'], ['lng', 'REAL'],
     ['officer_name', 'TEXT'], ['officer_phone', 'TEXT'], ['officer_email', 'TEXT'],
     ['lsgi', 'TEXT'], ['office_address', 'TEXT'], ['office_phone', 'TEXT'], ['officer_id', 'INTEGER', { ref: ['officers', 'SET NULL'] }]] },

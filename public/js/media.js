@@ -216,6 +216,11 @@ const detailFields = (c, staff) => html`<h4 class="fsec">Institution</h4>
     <label class="f"><span>Designation</span><input type="text" name="designation" value="${c?.designation || ''}" maxlength="80" placeholder="e.g. Assistant Professor"></label>
     <label class="f"><span>Mobile (WhatsApp)</span><input type="tel" name="coord_phone" value="${c?.coord_phone || ''}" maxlength="30"></label>
     <label class="f"><span>Email</span><input type="email" name="coord_email" value="${c?.coord_email || ''}"></label></div>
+  <h4 class="fsec">Student coordinator</h4>
+  <div class="formgrid"><label class="f"><span>Name</span><input type="text" name="stu1_name" value="${c?.stu1_name || ''}" maxlength="100"></label><label class="f"><span>Mobile (WhatsApp)</span><input type="tel" name="stu1_phone" value="${c?.stu1_phone || ''}" maxlength="30"></label></div>
+  <label class="chk" style="margin:4px 0 8px"><input type="checkbox" data-stu2 ${c?.stu2_name || c?.stu2_phone ? 'checked' : ''}> Add one more student coordinator</label>
+  <div class="stu2box" ${c?.stu2_name || c?.stu2_phone ? '' : 'hidden'}><h4 class="fsec">Student coordinator 2</h4>
+    <div class="formgrid"><label class="f"><span>Name</span><input type="text" name="stu2_name" value="${c?.stu2_name || ''}" maxlength="100" ${c?.stu2_name || c?.stu2_phone ? '' : 'disabled'}></label><label class="f"><span>Mobile (WhatsApp)</span><input type="tel" name="stu2_phone" value="${c?.stu2_phone || ''}" maxlength="30" ${c?.stu2_name || c?.stu2_phone ? '' : 'disabled'}></label></div></div>
   <h4 class="fsec">Head of the institution (principal / headmaster)</h4>
   <div class="formgrid"><label class="f"><span>Name</span><input type="text" name="head_name" value="${c?.head_name || ''}" maxlength="100"></label><label class="f"><span>Phone</span><input type="tel" name="head_phone" value="${c?.head_phone || ''}" maxlength="30"></label></div>`;
 
@@ -469,3 +474,11 @@ actions.qzOrder = async el => {
   if (el.dataset.again && !await confirmBox('Mix the questions and the places of the right answers? A paper or key you printed before will no longer match.', 'Mix', false)) return;
   await api(el.dataset.url, 'POST', { again: !!el.dataset.again, shuffle: el.dataset.shuffle === '1' }); toast('Done'); (typeof QA !== 'undefined' && QA?.round && el.dataset.url.includes('/staff/') ? qaOpenRound(qaId()) : pgQuiz($('#pg')));
 };
+
+// "Add one more student coordinator": shows the second set of boxes; unticked, they are hidden and left out of the save
+document.addEventListener('change', e => {
+  const t = e.target.closest?.('[data-stu2]'); if (!t) return;
+  const box = t.closest('form')?.querySelector('.stu2box'); if (!box) return;
+  box.hidden = !t.checked; box.querySelectorAll('input').forEach(i => { i.disabled = !t.checked; if (!t.checked) i.value = ''; });
+  if (t.checked) box.querySelector('input')?.focus();
+});

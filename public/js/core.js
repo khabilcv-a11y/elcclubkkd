@@ -405,3 +405,22 @@ document.addEventListener('DOMContentLoaded', () => { if (!document.querySelecto
   const mark = () => document.querySelectorAll('.main tbody tr:not(.xr)').forEach(tr => { if (rowInfo(tr)) { tr.classList.add('xr'); tr.title = 'Click for full details'; } });
   let xt = 0; new MutationObserver(() => { clearTimeout(xt); xt = setTimeout(mark, 120); }).observe(document.documentElement, { childList: true, subtree: true });
 });
+
+// ---------- eye button beside every password box: show / hide what was typed ----------
+{
+  const EYE = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+  const EYE_OFF = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.9 10.9 0 0 1 12 19C5 19 1 12 1 12a18.5 18.5 0 0 1 5.06-5.94M9.9 4.24A9.1 9.1 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24"/><path d="M1 1l22 22"/></svg>';
+  const addEyes = () => document.querySelectorAll('input[type=password]:not([data-pw])').forEach(i => {
+    i.dataset.pw = '1'; const had = document.activeElement === i, w = document.createElement('span'); w.className = 'pwwrap';
+    i.parentNode.insertBefore(w, i); w.append(i);
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'pweye'; b.title = 'Show password'; b.setAttribute('aria-label', 'Show password'); b.setAttribute('aria-pressed', 'false'); b.innerHTML = EYE; w.append(b);
+    if (had) i.focus();
+  });
+  document.addEventListener('click', e => {
+    const b = e.target.closest?.('.pweye'); if (!b) return;
+    const i = b.parentNode.querySelector('input'), show = i.type === 'password'; i.type = show ? 'text' : 'password';
+    b.innerHTML = show ? EYE_OFF : EYE; b.title = b.ariaLabel = show ? 'Hide password' : 'Show password'; b.setAttribute('aria-label', b.title); b.setAttribute('aria-pressed', String(show)); i.focus();
+  });
+  let pt = 0; new MutationObserver(() => { clearTimeout(pt); pt = setTimeout(addEyes, 30); }).observe(document.documentElement, { childList: true, subtree: true });
+  document.addEventListener('DOMContentLoaded', addEyes);
+}

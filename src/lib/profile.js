@@ -2,7 +2,7 @@
 // One set of fields, used by the staff Colleges / Schools pages and by the institution's own Profile page.
 import { str, emailOk } from './util.js';
 
-export const EXTRA = ['coord_phone', 'coord_email', 'designation', 'head_name', 'head_phone', 'inst_type', 'inst_code'];
+export const EXTRA = ['coord_phone', 'coord_email', 'designation', 'head_name', 'head_phone', 'inst_type', 'inst_code', 'stu1_name', 'stu1_phone', 'stu2_name', 'stu2_phone'];
 const PROFILE_PARTS = [['address', 'Address'], ['phone', 'Contact number'], ['email', 'Email'], ['coordinator', 'Coordinator name'], ['designation', 'Coordinator designation'], ['coord_phone', 'Coordinator phone'], ['coord_email', 'Coordinator email'], ['head_name', 'Head of institution'], ['head_phone', 'Head of institution phone'], ['inst_type', 'Type of institution'], ['inst_code', 'Institution code']];
 export function profileStatus(c) {
   const missing = PROFILE_PARTS.filter(([k]) => !String(c[k] ?? '').trim()).map(([, l]) => l);
@@ -13,5 +13,6 @@ export function extraBody(b) {
   return {
     coord_phone: str(b.coord_phone, 30), coord_email: b.coord_email ? emailOk(b.coord_email, 'Coordinator email') : '', designation: str(b.designation, 80),
     head_name: str(b.head_name, 100), head_phone: str(b.head_phone, 30), inst_type: INST_TYPES.includes(b.inst_type) ? b.inst_type : '', inst_code: str(b.inst_code, 40),
+    stu1_name: str(b.stu1_name, 100), stu1_phone: str(b.stu1_phone, 30), stu2_name: str(b.stu2_name, 100), stu2_phone: str(b.stu2_phone, 30),
   };
 }
