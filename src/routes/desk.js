@@ -5,6 +5,9 @@ import { HttpError, bad, isDate, todayStr, nowIso, str, reqStr, int } from '../l
 
 export const ACTIVITIES = ['Help desk', 'Flash Mob', 'Class to Class Campaign', 'Game Zone', 'Other'];
 const OTHER_ACTIVITIES = ACTIVITIES.slice(1);
+// a special-drive visit is logged as Other: <drive name>; show the drive name on its own
+const DRIVE_ACTS = ['Vote Unnathi', 'Sea Your Vote', 'Vote Unbound'];
+const actText = r => (r.activity === 'Other' && r.activity_other ? (DRIVE_ACTS.includes(r.activity_other) ? r.activity_other : 'Other: ' + r.activity_other) : r.activity);
 const clog = (ctx, action, detail) => log(ctx.db, 'college', ctx.college.name, null, action, detail, ctx.ip);
 const kindOf = c => (c.kind === 'school' ? 'school' : 'college');
 
@@ -83,7 +86,7 @@ route('DELETE', '/api/college/desk/activity/:id', 'college', async ctx => {
 // every name the college has entered: the student-wise list and the day-by-day list are built from this on the page
 route('GET', '/api/college/desk/volunteers', 'college', async ctx => {
   const rows = await ctx.db.all('SELECT id,date,activity,activity_other,name FROM activity_log WHERE college_id=? ORDER BY date DESC,id DESC LIMIT 6000', ctx.college.id);
-  return rows.map(r => ({ id: r.id, date: r.date, activity: r.activity === 'Other' && r.activity_other ? 'Other: ' + r.activity_other : r.activity, name: r.name }));
+  return rows.map(r => ({ id: r.id, date: r.date, activity: actText(r), name: r.name }));
 });
 
 // ---------- reports for the district ----------
@@ -105,7 +108,7 @@ export async function deskReport(ctx, type, q) {
   const typeOf = id => (info.get(id).kind === 'school' ? 'School' : 'College');
   const days = (await ctx.db.all('SELECT * FROM desk_days ORDER BY date DESC')).filter(r => inScope(r.college_id) && inDates(r.date) && (!text || info.get(r.college_id).name.toLowerCase().includes(text) || String(r.notes || '').toLowerCase().includes(text)));
   const acts = (await ctx.db.all('SELECT * FROM activity_log ORDER BY date DESC,id DESC')).filter(r => inScope(r.college_id) && inDates(r.date) && (!text || [info.get(r.college_id).name, r.name, r.activity, r.activity_other].some(x => String(x || '').toLowerCase().includes(text))));
-  const actName = r => (r.activity === 'Other' && r.activity_other ? `Other: ${r.activity_other}` : r.activity);
+  const actName = actText;
   if (type === 'desk') return { title: 'Help desk day by day', cols: [T('date', 'Date'), T('college', 'Institution'), T('type', 'Type'), N('registrations', 'Registrations made'), N('volunteers', 'Volunteers at help desk'), T('notes', 'Notes')],
     rows: days.map(r => ({ date: r.date, college: info.get(r.college_id).name, type: typeOf(r.college_id), registrations: r.registrations, volunteers: r.volunteers, notes: r.notes })) };
   if (type === 'activities') return { title: 'Volunteers: activity and date', cols: [T('date', 'Date'), T('college', 'Institution'), T('type', 'Type'), T('activity', 'Activity'), T('name', 'Volunteer'), T('contact', 'Contact')],

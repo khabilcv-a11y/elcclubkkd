@@ -55,7 +55,8 @@ async function batchFor(db, campId, collegeId, create = true) {
   if (!b && create) { const id = await db.insert('INSERT INTO cert_batches(campaign_id,college_id,status,created_at) VALUES (?,?,?,?)', campId, collegeId, 'draft', nowIso()); b = await db.get('SELECT * FROM cert_batches WHERE id=?', id); }
   return b;
 }
-const actLabel = r => (r.activity === 'Other' && r.activity_other ? `Other: ${r.activity_other}` : r.activity);
+const DRIVE_ACTS = ['Vote Unnathi', 'Sea Your Vote', 'Vote Unbound'];   // special-drive visits are logged as Other: <drive name>
+const actLabel = r => (r.activity === 'Other' && r.activity_other ? (DRIVE_ACTS.includes(r.activity_other) ? r.activity_other : `Other: ${r.activity_other}`) : r.activity);
 
 // ---------- the college side ----------
 // draft -> (college asks) submitted -> (district admin) approved -> the college generates. A rejected request goes back to draft with the admin's note.

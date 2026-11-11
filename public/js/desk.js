@@ -43,7 +43,7 @@ async function pgDesk(el) {
   if (future) toast('That date has not happened yet', true);
   loadVol();
 }
-const actLabel = a => (a.activity === 'Other' && a.activity_other ? `Other: ${a.activity_other}` : a.activity);
+const actLabel = a => (a.activity === 'Other' && a.activity_other ? (['Vote Unnathi', 'Sea Your Vote', 'Vote Unbound'].includes(a.activity_other) ? a.activity_other : `Other: ${a.activity_other}`) : a.activity);
 function groupActs(rows) { const m = new Map(); for (const r of rows) (m.get(actLabel(r)) || m.set(actLabel(r), []).get(actLabel(r))).push(r); return [...m.entries()]; }
 actions.deskPrev = () => { DESKDATE = addDays(DESKDATE, -1); pgDesk($('#pg')); };
 actions.deskNext = () => { if (DESKDATE < COL.today) { DESKDATE = addDays(DESKDATE, 1); pgDesk($('#pg')); } };

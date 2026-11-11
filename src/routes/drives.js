@@ -164,6 +164,11 @@ route('POST', '/api/college/drives/:drive/visit', 'college', async ctx => {
   const people = whole(b.people, 100000), registered = whole(b.registered, 100000); if (registered > people) throw bad('New registrations cannot be more than the people reached');
   const vols = cleanVols(b.volunteers);
   await ctx.db.insert('INSERT INTO drive_visits(drive,unit_id,college_id,on_date,type,people,registered,note,by_name,created_at,volunteers) VALUES (?,?,?,?,?,?,?,?,?,?,?)', ctx.params.drive, u.id, ctx.college.id, b.on_date, b.type, people, registered, str(b.note, 400), str(ctx.college.coordinator || ctx.college.name, 80), nowIso(), JSON.stringify(vols));
+  // each volunteer also goes into the institution's volunteer list (activity 'Other: <drive name>'), so the visit counts for certificates
+  for (const nm of vols) {
+    if (await ctx.db.get("SELECT 1 x FROM activity_log WHERE college_id=? AND date=? AND activity='Other' AND COALESCE(activity_other,'')=? AND lower(name)=lower(?)", ctx.college.id, b.on_date, d.name, nm)) continue;
+    await ctx.db.insert('INSERT INTO activity_log(college_id,date,activity,activity_other,name,contact,created_at) VALUES (?,?,?,?,?,?,?)', ctx.college.id, b.on_date, 'Other', d.name, nm, '', nowIso());
+  }
   if (u.status === 'todo') await ctx.db.run("UPDATE drive_alloc SET status='doing',updated_at=? WHERE id=?", nowIso(), u.alloc_id);
   await clog(ctx, `${ctx.params.drive}_visit`, `${u.name}: ${d.types[b.type]}, ${people} people, ${vols.length} volunteers`); return { ok: true };
 });
