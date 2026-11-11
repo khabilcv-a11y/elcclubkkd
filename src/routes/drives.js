@@ -54,7 +54,7 @@ route('GET', '/api/staff/drives/:drive/overview', 'staff', async ctx => {
   const d = drive(ctx), k = ctx.params.drive;
   const [units, allots, colleges, vis] = await Promise.all([ctx.db.all(`SELECT ${unitCols} FROM drive_units WHERE drive=? ORDER BY lsgd,name`, k),
     ctx.db.all('SELECT a.id,a.unit_id,a.college_id,a.status,c.name college FROM drive_alloc a JOIN colleges c ON c.id=a.college_id WHERE a.drive=?', k),
-    ctx.db.all("SELECT id,name,COALESCE(kind,'college') kind,COALESCE(lsgi,'') lsgi FROM colleges WHERE active=1 ORDER BY name"),
+    ctx.db.all("SELECT id,name,COALESCE(kind,'college') kind,COALESCE(lsgi,'') lsgi FROM colleges WHERE active=1 AND COALESCE(kind,'college')='college' ORDER BY name"),
     ctx.db.all('SELECT unit_id,COUNT(*) n,COALESCE(SUM(people),0) people,COALESCE(SUM(registered),0) registered,MAX(on_date) last FROM drive_visits WHERE drive=? GROUP BY unit_id', k)]);
   const al = new Map(allots.map(a => [a.unit_id, a])), vm = new Map(vis.map(v => [v.unit_id, v]));
   const out = units.map(u => { const a = al.get(u.id), v = vm.get(u.id) || {}; return { ...u, alloc_id: a?.id || null, college_id: a?.college_id || null, college: a?.college || '', status: a ? a.status : '', visits: v.n || 0, people: v.people || 0, registered: v.registered || 0, last: v.last || '' }; });
@@ -103,7 +103,7 @@ route('DELETE', '/api/staff/drives/:drive/unit/:id', OPS, async ctx => {
 });
 // give an institution chosen units, or every unit of a local body or village
 route('POST', '/api/staff/drives/:drive/alloc', OPS, async ctx => {
-  const d = drive(ctx), k = ctx.params.drive, b = ctx.body, c = await ctx.db.get('SELECT id,name FROM colleges WHERE id=?', Number(b.college_id)); if (!c) throw bad('Choose the institution');
+  const d = drive(ctx), k = ctx.params.drive, b = ctx.body, c = await ctx.db.get("SELECT id,name FROM colleges WHERE id=? AND COALESCE(kind,'college')='college'", Number(b.college_id)); if (!c) throw bad('Choose a college (special drives are for colleges only)');
   let ids = (Array.isArray(b.unit_ids) ? b.unit_ids : []).map(Number).filter(Boolean);
   if (b.lsgd) ids = ids.concat((await ctx.db.all('SELECT id FROM drive_units WHERE drive=? AND lsgd=?', k, String(b.lsgd))).map(u => u.id));
   if (b.village) ids = ids.concat((await ctx.db.all('SELECT id FROM drive_units WHERE drive=? AND village=?', k, String(b.village))).map(u => u.id));
@@ -125,7 +125,7 @@ route('DELETE', '/api/staff/drives/:drive/alloc/:id', OPS, async ctx => {
 // an institution that is the only one based in a local body gets that body's units
 route('POST', '/api/staff/drives/:drive/suggest', OPS, async ctx => {
   drive(ctx); const k = ctx.params.drive;
-  const [units, colleges] = await Promise.all([ctx.db.all('SELECT u.id,u.lsgd FROM drive_units u WHERE u.drive=? AND NOT EXISTS (SELECT 1 FROM drive_alloc a WHERE a.unit_id=u.id)', k), ctx.db.all("SELECT id,name,COALESCE(lsgi,'') lsgi FROM colleges WHERE active=1")]);
+  const [units, colleges] = await Promise.all([ctx.db.all('SELECT u.id,u.lsgd FROM drive_units u WHERE u.drive=? AND NOT EXISTS (SELECT 1 FROM drive_alloc a WHERE a.unit_id=u.id)', k), ctx.db.all("SELECT id,name,COALESCE(lsgi,'') lsgi FROM colleges WHERE active=1 AND COALESCE(kind,'college')='college'")]);
   const byBody = new Map(); for (const u of units) { const b = u.lsgd ? lsgdInfo(u.lsgd).base_key : ''; if (b) { if (!byBody.has(b)) byBody.set(b, []); byBody.get(b).push(u.id); } }
   const owners = new Map(); for (const c of colleges) { if (!c.lsgi) continue; const b = lsgdInfo(c.lsgi).base_key; if (!owners.has(b)) owners.set(b, []); owners.get(b).push(c); }
   const made = [], shared = [];

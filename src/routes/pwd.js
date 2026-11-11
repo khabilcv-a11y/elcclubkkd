@@ -48,12 +48,12 @@ route('GET', '/api/staff/pwd/overview', 'staff', async ctx => {
   const owned = new Map(); for (const a of allots) { if (!owned.has(a.college_id)) owned.set(a.college_id, []); owned.get(a.college_id).push({ lsgd_key: a.lsgd_key, ward: a.ward || '' }); }
   const colProgress = [];
   for (const c of colleges) { const own = owned.get(c.id); if (!own) continue; const counted = await reg(ctx).areaCounts(own), k = cc.get(c.id) || {}; colProgress.push({ id: c.id, name: c.name, people: counted.reduce((s, a) => s + a.n, 0), areas: own.length, calls: k.calls || 0, called: k.people || 0, reached: k.reached || 0, help: k.help || 0, last: k.last || '' }); }
-  return { ...ov, areas: ov.areas.map(a => ({ ...a, allotted: byArea.get(a.lsgd_key) || [] })), colleges: colleges.map(c => ({ id: c.id, name: c.name, kind: c.kind, lsgi: c.lsgi })), progress: colProgress, views: await reg(ctx).recentViews(15), outcomes: OUTCOMES, help: HELP };
+  return { ...ov, areas: ov.areas.map(a => ({ ...a, allotted: byArea.get(a.lsgd_key) || [] })), colleges: colleges.filter(c => c.kind === 'college').map(c => ({ id: c.id, name: c.name, kind: c.kind, lsgi: c.lsgi })), progress: colProgress, views: await reg(ctx).recentViews(15), outcomes: OUTCOMES, help: HELP };
 });
 route('GET', '/api/staff/pwd/wards/:key', 'staff', async ctx => ({ wards: await reg(ctx).wards(ctx.params.key) }));
 // give a college a whole local body (no wards chosen) or chosen wards of it
 route('POST', '/api/staff/pwd/alloc', OPS, async ctx => {
-  const b = ctx.body, c = await ctx.db.get('SELECT id,name FROM colleges WHERE id=?', Number(b.college_id)); if (!c) throw bad('Choose the institution');
+  const b = ctx.body, c = await ctx.db.get("SELECT id,name FROM colleges WHERE id=? AND COALESCE(kind,'college')='college'", Number(b.college_id)); if (!c) throw bad('Choose a college (special drives are for colleges only)');
   const key = String(b.lsgd_key || ''), wards = (await reg(ctx).wards(key)); if (!wards.length) throw bad('That local body is not in the register');
   const area = (await reg(ctx).overview()).areas.find(a => a.lsgd_key === key), chosen = [...new Set((Array.isArray(b.wards) ? b.wards : []).map(String))].filter(w => wards.some(x => String(x.ward) === w));
   const mine = await ctx.db.all('SELECT id,ward FROM pwd_alloc WHERE college_id=? AND lsgd_key=?', c.id, key);
@@ -68,7 +68,7 @@ route('DELETE', '/api/staff/pwd/alloc/:id', OPS, async ctx => {
 });
 // a local body that exactly one institution is based in goes to that institution; shared ones (the Corporation, the towns) are left to be shared out by ward
 route('POST', '/api/staff/pwd/suggest', OPS, async ctx => {
-  const [ov, colleges, have] = await Promise.all([reg(ctx).overview(), ctx.db.all("SELECT id,name,COALESCE(lsgi,'') lsgi FROM colleges WHERE active=1"), ctx.db.all('SELECT DISTINCT college_id FROM pwd_alloc')]);
+  const [ov, colleges, have] = await Promise.all([reg(ctx).overview(), ctx.db.all("SELECT id,name,COALESCE(lsgi,'') lsgi FROM colleges WHERE active=1 AND COALESCE(kind,'college')='college'"), ctx.db.all('SELECT DISTINCT college_id FROM pwd_alloc')]);
   const done = new Set(have.map(h => h.college_id)), areaBy = new Map(ov.areas.map(a => [a.base_key, a])), groups = new Map(), none = [];
   for (const c of colleges) { if (done.has(c.id) || !c.lsgi) continue; const a = areaBy.get(lsgdInfo(c.lsgi).base_key); if (!a) { none.push(c.name); continue; } if (!groups.has(a.lsgd_key)) groups.set(a.lsgd_key, { a, cs: [] }); groups.get(a.lsgd_key).cs.push(c); }
   const made = [], shared = [];
@@ -149,7 +149,7 @@ route('DELETE', '/api/staff/pwd/villages/link/:id', OPS, async ctx => { await ct
 route('POST', '/api/staff/pwd/villages/remove', OPS, async ctx => { const v = vname(ctx.body.village); await ctx.db.run('DELETE FROM pwd_village WHERE village=?', v); await slog(ctx, 'pwd_village_del', v); return { ok: true }; });
 // give an institution every ward a village covers
 route('POST', '/api/staff/pwd/alloc-village', OPS, async ctx => {
-  const c = await ctx.db.get('SELECT id,name FROM colleges WHERE id=?', Number(ctx.body.college_id)); if (!c) throw bad('Choose the institution');
+  const c = await ctx.db.get("SELECT id,name FROM colleges WHERE id=? AND COALESCE(kind,'college')='college'", Number(ctx.body.college_id)); if (!c) throw bad('Choose a college (special drives are for colleges only)');
   const village = vname(ctx.body.village), links = await ctx.db.all('SELECT lsgd_key,lsgd,ward FROM pwd_village WHERE village=?', village); if (!links.length) throw bad('This village is not linked to any ward yet');
   const groups = new Map(); for (const l of links) { if (!groups.has(l.lsgd_key)) groups.set(l.lsgd_key, { lsgd: l.lsgd, whole: false, wards: [] }); const g = groups.get(l.lsgd_key); if (l.ward) g.wards.push(l.ward); else g.whole = true; }
   let n = 0;
