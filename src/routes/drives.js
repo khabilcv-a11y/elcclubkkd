@@ -28,6 +28,14 @@ async function knownNames(db, collegeId) {
   for (const nm of [...visits.flatMap(v => volsOf(v.volunteers)), ...acts.map(r => r.name), ...pool.map(r => r.name)]) { const t = String(nm || '').trim(), key = t.toLowerCase(); if (key && !seen.has(key)) { seen.add(key); out.push(t); } }
   return out.slice(0, 500);
 }
+async function logVols(db, collegeId, date, driveName, names) {
+  let n = 0;
+  for (const nm of names) {
+    if (await db.get("SELECT 1 x FROM activity_log WHERE college_id=? AND date=? AND activity='Other' AND COALESCE(activity_other,'')=? AND lower(name)=lower(?)", collegeId, date, driveName, nm)) continue;
+    await db.insert('INSERT INTO activity_log(college_id,date,activity,activity_other,name,contact,created_at) VALUES (?,?,?,?,?,?,?)', collegeId, date, 'Other', driveName, nm, '', nowIso()); n++;
+  }
+  return n;
+}
 const phoneOf = v => { const d = String(v || '').replace(/\D/g, ''); return d.length >= 10 ? d.slice(-10) : ''; };
 function cleanUnit(r, d) {
   const name = str(r.name, 120); if (!name) return null;
@@ -135,6 +143,14 @@ route('GET', '/api/staff/drives/:drive/export', OPS, async ctx => {
   await slog(ctx, `${k}_export`, rows.length + ' visits');
   return { __raw: true, text, headers: { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="${d.slug}-visits.csv"` } };
 });
+route('POST', '/api/staff/drives/volunteers/catchup', OPS, async ctx => {
+  ctx.db.deferred = true;
+  const visits = await ctx.db.all("SELECT drive,college_id,on_date,volunteers FROM drive_visits WHERE volunteers IS NOT NULL AND volunteers<>'' AND volunteers<>'[]'");
+  let added = 0, seen = 0;
+  for (const v of visits) { const d = DRIVES[v.drive], names = volsOf(v.volunteers); if (!d || !names.length) continue; seen++; added += await logVols(ctx.db, v.college_id, v.on_date, d.name, names); }
+  await slog(ctx, 'drives_vols_catchup', `${seen} visits checked, ${added} volunteer entries added`);
+  return { ok: true, visits: seen, added };
+});
 route('POST', '/api/staff/drives/:drive/clear', ['super_admin'], async ctx => {
   drive(ctx); if (String(ctx.body.confirm || '') !== 'DELETE') throw bad('Type DELETE to confirm');
   const k = ctx.params.drive; for (const t of ['drive_visits', 'drive_alloc', 'drive_units']) await ctx.db.run(`DELETE FROM ${t} WHERE drive=?`, k);
@@ -165,10 +181,7 @@ route('POST', '/api/college/drives/:drive/visit', 'college', async ctx => {
   const vols = cleanVols(b.volunteers);
   await ctx.db.insert('INSERT INTO drive_visits(drive,unit_id,college_id,on_date,type,people,registered,note,by_name,created_at,volunteers) VALUES (?,?,?,?,?,?,?,?,?,?,?)', ctx.params.drive, u.id, ctx.college.id, b.on_date, b.type, people, registered, str(b.note, 400), str(ctx.college.coordinator || ctx.college.name, 80), nowIso(), JSON.stringify(vols));
   // each volunteer also goes into the institution's volunteer list (activity 'Other: <drive name>'), so the visit counts for certificates
-  for (const nm of vols) {
-    if (await ctx.db.get("SELECT 1 x FROM activity_log WHERE college_id=? AND date=? AND activity='Other' AND COALESCE(activity_other,'')=? AND lower(name)=lower(?)", ctx.college.id, b.on_date, d.name, nm)) continue;
-    await ctx.db.insert('INSERT INTO activity_log(college_id,date,activity,activity_other,name,contact,created_at) VALUES (?,?,?,?,?,?,?)', ctx.college.id, b.on_date, 'Other', d.name, nm, '', nowIso());
-  }
+  await logVols(ctx.db, ctx.college.id, b.on_date, d.name, vols);
   if (u.status === 'todo') await ctx.db.run("UPDATE drive_alloc SET status='doing',updated_at=? WHERE id=?", nowIso(), u.alloc_id);
   await clog(ctx, `${ctx.params.drive}_visit`, `${u.name}: ${d.types[b.type]}, ${people} people, ${vols.length} volunteers`); return { ok: true };
 });

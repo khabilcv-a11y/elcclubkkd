@@ -43,7 +43,7 @@ function dvBody() {
       ${d.progress.map(p => html`<tr><td><b>${p.name}</b></td><td class="num">${p.units}</td><td class="num">${p.doing}</td><td class="num">${p.done}</td><td class="num">${p.visits}</td><td class="num">${n(p.people)}</td><td class="num">${n(p.registered)}</td><td class="small">${p.last ? fdt(p.last + 'T00:00:00') : html`<span class="muted">none yet</span>`}</td></tr>`)}</tbody></table></div></div>`
       : html`<div class="card">${empty('No institution has been allotted a place yet', `Allot ${c.units} under Places and allotment.`, 'building')}</div>`);
   } else {
-    show(b, html`<div class="card"><div class="card-head"><h3>Recent visits</h3>${ops ? html`<button class="btn secondary sm" data-act="dvExport">${icon('download')} Download all visits (CSV)</button>` : ''}</div>
+    show(b, html`<div class="card"><div class="card-head"><h3>Recent visits</h3>${ops ? html`<div class="row gap-s"><button class="btn secondary sm" data-act="dvVolCatchup" title="Visits saved before volunteers were written into the volunteer list">${icon('users')} Add earlier visits to volunteer lists</button><button class="btn secondary sm" data-act="dvExport">${icon('download')} Download all visits (CSV)</button></div>` : ''}</div>
       ${d.recent.length ? html`<div class="tablewrap"><table data-nosort><thead><tr><th>Date</th><th>Institution</th><th>${c.unit[0].toUpperCase() + c.unit.slice(1)}</th><th>Activity</th><th class="num">People</th><th class="num">Registered</th><th>Volunteers</th></tr></thead><tbody>${d.recent.map(v => html`<tr><td class="small">${v.on_date}</td><td>${v.college}</td><td>${v.unit || '–'}</td><td class="small">${c.types[v.type] || v.type}${v.note ? html`<div class="muted xs">${v.note}</div>` : ''}</td><td class="num">${v.people}</td><td class="num">${v.registered}</td><td class="small">${v.volunteers?.length ? html`<b>${v.volunteers.length}</b> <span class="muted">${v.volunteers.join(', ')}</span>` : '–'}</td></tr>`)}</tbody></table></div>` : html`<p class="muted small">No visit has been recorded yet.</p>`}
       ${isSuper() ? html`<div style="margin-top:14px"><button class="btn ghost danger" data-act="dvClear">${icon('trash')} Empty this list</button></div>` : ''}</div>`);
   }
@@ -114,3 +114,10 @@ actions.dvSuggest = async () => {
 };
 actions.dvExport = () => { window.location.href = `/api/staff/drives/${DV.k}/export`; };
 actions.dvClear = async () => { if (!await confirmBox(`Empty the whole list? Every ${DV.d.cfg.unit}, allotment and visit of this drive is removed. This cannot be undone.`, 'Empty the list', true)) return; await api(`/api/staff/drives/${DV.k}/clear`, 'POST', { confirm: 'DELETE' }); toast('The list is empty'); apDrive($('#pg'), DV.k); };
+
+// visits recorded before the volunteers went into each institution's volunteer list: add them now (all three drives; safe to repeat)
+actions.dvVolCatchup = async () => {
+  if (!await confirmBox('Add the volunteers of earlier drive visits (all three drives) to each institution\'s volunteer list, so they count for certificates? Names already there are not repeated.', 'Add them')) return;
+  const r = await api('/api/staff/drives/volunteers/catchup', 'POST', {});
+  toast(r.added ? `${r.added} volunteer entr${r.added === 1 ? 'y' : 'ies'} added from ${r.visits} visit${r.visits === 1 ? '' : 's'}` : `Nothing to add: the ${r.visits} visit${r.visits === 1 ? '' : 's'} with volunteers are already in the lists`);
+};
