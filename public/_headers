@@ -1,7 +1,7 @@
 /js/*
-  Cache-Control: public, max-age=60, stale-while-revalidate=86400
+  Cache-Control: public, max-age=0, must-revalidate
 /style.css
-  Cache-Control: public, max-age=60, stale-while-revalidate=86400
+  Cache-Control: public, max-age=0, must-revalidate
 /vendor/*
   Cache-Control: public, max-age=86400
 /img/*
