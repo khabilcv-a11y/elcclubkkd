@@ -284,7 +284,7 @@ if (document.readyState !== 'loading') { applyA11y(); initA11y(); }
 let FEAT = null;
 async function loadFeatures() { try { FEAT = await api('/api/features'); } catch { FEAT = null; } }
 // schools never take part in the village programme: village options stay off for them whatever the switches say
-const SCHOOL_NEVER = ['villages', 'students', 'schedule', 'log', 'report', 'officers', 'unnathi', 'sea', 'unbound', 'unbound_inst'];   // special drives are for colleges only
+const SCHOOL_NEVER = ['villages', 'students', 'schedule', 'log', 'report', 'officers'];
 const feat = (aud, id) => (aud === 'school' && SCHOOL_NEVER.includes(id) ? false : !FEAT || FEAT[aud]?.[id] !== false);
 
 // Student certificates for one certified village (data from /certificates/...): preview in a dialog, print them all at once

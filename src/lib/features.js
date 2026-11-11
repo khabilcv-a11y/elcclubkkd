@@ -3,12 +3,12 @@
 export const FEATURES = {
   college: {
     title: 'College logins',
-    items: [['home', 'Home', 1], ['enrol', 'Enrolment drive (department link)', 1], ['desk', 'Help desk daily report', 1], ['gallery', 'Gallery and photo frames', 1], ['posters', 'Posters and banners', 1], ['profile', 'Institution profile', 1], ['certs', 'Certificates', 1], ['selfie', 'Selfie contest', 1], ['quiz', 'Quiz competition', 1], ['unbound', 'Vote Unbound call campaign', 1], ['unbound_inst', 'Vote Unbound: welfare institutions to visit', 1], ['unnathi', 'Vote Unnathi', 1], ['sea', 'Sea Your Vote', 1], ['notices', 'Announcements', 1], ['help', 'Help desk (issues)', 1], ['resources', 'Resource centre', 1],
+    items: [['home', 'Home', 1], ['enrol', 'Enrolment drive (department link)', 1], ['desk', 'Help desk daily report', 1], ['gallery', 'Gallery and photo frames', 1], ['posters', 'Posters and banners', 1], ['profile', 'Institution profile', 1], ['certs', 'Certificates', 1], ['selfie', 'Selfie contest', 1], ['quiz', 'Quiz competition', 1], ['unbound', 'Vote Unbound call campaign (switch on when ready)', 0], ['unbound_inst', 'Vote Unbound: welfare institutions to visit', 1], ['unnathi', 'Vote Unnathi (switch on when ready)', 0], ['sea', 'Sea Your Vote (switch on when ready)', 0], ['notices', 'Announcements', 1], ['help', 'Help desk (issues)', 1], ['resources', 'Resource centre', 1],
       ['students', 'Village volunteers (students list)', 0], ['schedule', 'Village schedule', 0], ['log', 'Village daily log', 0], ['villages', 'My villages', 0], ['report', 'Village reports', 0]],
   },
   school: {
     title: 'School logins',
-    items: [['home', 'Home', 1], ['enrol', 'Enrolment drive (class link)', 1], ['desk', 'Help desk daily report', 1], ['gallery', 'Gallery and photo frames', 1], ['posters', 'Posters and banners', 1], ['profile', 'Institution profile', 1], ['certs', 'Certificates', 1], ['selfie', 'Selfie contest', 1], ['quiz', 'Quiz competition', 1], , ['notices', 'Announcements', 1], ['help', 'Help desk (issues)', 1], ['resources', 'Resource centre', 1]],
+    items: [['home', 'Home', 1], ['enrol', 'Enrolment drive (class link)', 1], ['desk', 'Help desk daily report', 1], ['gallery', 'Gallery and photo frames', 1], ['posters', 'Posters and banners', 1], ['profile', 'Institution profile', 1], ['certs', 'Certificates', 1], ['selfie', 'Selfie contest', 1], ['quiz', 'Quiz competition', 1], ['unbound', 'Vote Unbound call campaign (switch on when ready)', 0], ['unbound_inst', 'Vote Unbound: welfare institutions to visit', 1], ['unnathi', 'Vote Unnathi', 1], ['sea', 'Sea Your Vote', 1], ['notices', 'Announcements', 1], ['help', 'Help desk (issues)', 1], ['resources', 'Resource centre', 1]],
   },
   staff: {
     title: 'Admin, intern and super admin consoles',
