@@ -5,9 +5,18 @@ const ubPct = (a, b) => (b ? Math.round(a / b * 100) : 0);
 let UBC = { d: null, f: { status: 'open', ward: '', lsgd: '', q: '' }, items: [], numbers: [], total: 0, loading: false };
 const ubTel = m => 'tel:+91' + String(m || '').replace(/\D/g, '').slice(-10);
 const ubOutBadge = p => (p.last_outcome ? badge({ reached_ok: 'Reached', needs_help: 'Needs help', callback: 'Call again', not_reachable: 'Not reachable', wrong_number: 'Wrong number', refused: 'Declined' }[p.last_outcome], p.last_outcome === 'needs_help' ? 'warn' : p.last_outcome === 'reached_ok' ? 'ok' : 'grey') : '');
+// Vote Unbound has up to two parts here, each with its own switch: the welfare institutions allotted to visit, and the call campaign
+const ubParts = () => { const aud = COL?.college?.kind === 'school' ? 'school' : 'college'; return { inst: feat(aud, 'unbound_inst'), calls: feat(aud, 'unbound') }; };
+const ubcSwitch = cur => { const p = ubParts(); return p.inst && p.calls ? html`<div class="chips ubpart" role="tablist" aria-label="Vote Unbound">${[['inst', 'Welfare institutions'], ['calls', 'Call campaign']].map(([k, l]) => html`<button class="chip ${cur === k ? 'on' : ''}" role="tab" aria-selected="${cur === k}" data-act="ubcPart" data-k="${k}">${l}</button>`)}</div>` : ''; };
+actions.ubcPart = el => { UBC.part = el.dataset.k; pgUnbound($('#pg')); };
 async function pgUnbound(el) {
+  const p = ubParts(), part = p.inst && p.calls ? (UBC.part || 'inst') : p.inst ? 'inst' : 'calls';
+  if (part === 'inst') return pgDrive(el, 'unbound');
+  return pgUnboundCalls(el);
+}
+async function pgUnboundCalls(el) {
   const d = await api('/api/college/pwd'); UBC.d = d;
-  const head = html`<div class="ub-head"><img src="/img/drives/vote-unbound.webp" alt="Vote Unbound" class="ub-logo"><div><h1>Vote Unbound</h1><p>Call persons with disabilities in your allotted area, tell them about voting facilities, and note what each person needs. Please be patient, polite and brief.</p></div></div>`;
+  const head = html`${ubcSwitch('calls')}<div class="ub-head"><img src="/img/drives/vote-unbound.webp" alt="Vote Unbound" class="ub-logo"><div><h1>Vote Unbound</h1><p>Call persons with disabilities in your allotted area, tell them about voting facilities, and note what each person needs. Please be patient, polite and brief.</p></div></div>`;
   if (!d.allotted) return show(el, html`${head}<div class="card">${empty('No area has been allotted to you yet', 'The district team will allot the local bodies or wards you will call. Please check again soon.', 'map-pin')}</div>`);
   const s = d.stats;
   show(el, html`${head}

@@ -60,7 +60,6 @@ actions.pw = () => modal(html`<h2>Change password</h2><form data-form="pw" class
 forms.pw = async f => { await api('/api/staff/password', 'POST', fd(f)); f.closest('.overlay').close(); toast('Password updated. Other sessions were signed out.'); };
 
 // ---------- shared bits ----------
-const mfoot = (label, cls = 'primary') => html`<div data-err></div><div class="row" style="justify-content:flex-end;margin-top:14px"><button type="button" class="btn secondary" data-act="closeModal">Cancel</button><button class="btn ${cls}" type="submit">${label}</button></div>`;
 const searchBox = (id, ph) => html`<label class="f" style="margin:0;min-width:240px"><span class="sr">${ph}</span><input type="search" id="${id}" placeholder="${ph}"></label>`;
 function wireSearch(id, sel) { const q = $('#' + id); if (!q) return; q.addEventListener('input', () => { const v = q.value.toLowerCase(); $$(sel).forEach(r => r.classList.toggle('hide', !r.textContent.toLowerCase().includes(v))); }); }
 const tbl = (head, rows, { cap = '' } = {}) => html`<div class="tablewrap"><table>${cap ? html`<caption class="sr">${cap}</caption>` : ''}<thead><tr>${head.map(h => html`<th class="${String(h).startsWith('#') ? 'num' : ''}">${String(h).replace(/^#/, '')}</th>`)}</tr></thead><tbody>${rows}</tbody></table></div>`;

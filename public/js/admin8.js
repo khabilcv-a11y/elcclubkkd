@@ -1,5 +1,5 @@
 'use strict';
-// ---------- Vote Unnathi and Sea Your Vote (staff): the places of each drive, their allotment to institutions, and the visits recorded ----------
+// ---------- Vote Unnathi, Sea Your Vote and the Vote Unbound welfare institutions (staff): the places of each drive, their allotment to institutions, and the visits recorded ----------
 // No personal data here: only the settlements or landing centres, a figure for how many people live there, and a contact person for the place.
 let DV = { k: 'unnathi', d: null, tab: 'units', q: '', only: '', sel: new Set() };
 const dvPct = (a, b) => (b ? Math.round(a / b * 100) : 0);
@@ -9,7 +9,7 @@ function apSea(el) { return apDrive(el, 'sea'); }
 async function apDrive(el, k) {
   if (DV.k !== k) { DV = { k, d: null, tab: 'units', q: '', only: '', sel: new Set() }; }
   const d = await api(`/api/staff/drives/${k}/overview`); DV.d = d; const ops = isOps(), c = d.cfg, t = d.totals;
-  const head = pageHead(c.name, c.blurb, html`${ops ? html`<button class="btn secondary" data-act="dvAdd">${icon('map-pin')} Add a ${c.unit}</button><button class="btn secondary" data-act="dvImportOpen">${icon('upload')} Import a list</button>` : ''}`, 'Special drives');
+  const head = html`${k === 'unbound' && typeof ubSwitch === 'function' ? ubSwitch('inst') : ''}${pageHead(c.name, c.blurb, html`${ops ? html`<button class="btn secondary" data-act="dvAdd">${icon('map-pin')} Add a ${c.unit}</button><button class="btn secondary" data-act="dvImportOpen">${icon('upload')} Import a list</button>` : ''}`, 'Special drives')}`;
   if (!t.units) {
     return show(el, html`${head}<div class="card ub-empty"><img src="${c.logo}" alt="${esc(c.name)}" class="ub-logo"><h3>Start the list of ${c.units}</h3><p class="muted">${ops ? html`Add the ${c.units} one by one, or import a sheet (CSV). The columns can be in any order; the ones the portal looks for are: <b>Name, Local body, Ward, Village, Population, Households, Contact person, Contact phone, Address, Note</b>. Only the name is needed. Then allot them to institutions, and each institution sees only its own.` : 'The list has not been added yet.'}</p>
       ${ops ? html`<div class="row gap-s" style="justify-content:center"><label class="btn primary lg">${icon('upload')} Choose a CSV file<input type="file" id="dvfile" accept=".csv,text/csv" hidden></label><button class="btn secondary lg" data-act="dvTemplate">${icon('download')} Blank sheet to fill in</button><button class="btn secondary lg" data-act="dvAdd">${icon('map-pin')} Add one by hand</button></div><div id="dverr" style="margin-top:12px"></div>` : ''}</div>`),
@@ -44,17 +44,17 @@ function dvBody() {
       : html`<div class="card">${empty('No institution has been allotted a place yet', `Allot ${c.units} under Places and allotment.`, 'building')}</div>`);
   } else {
     show(b, html`<div class="card"><div class="card-head"><h3>Recent visits</h3>${ops ? html`<button class="btn secondary sm" data-act="dvExport">${icon('download')} Download all visits (CSV)</button>` : ''}</div>
-      ${d.recent.length ? html`<div class="tablewrap"><table data-nosort><thead><tr><th>Date</th><th>Institution</th><th>${c.unit[0].toUpperCase() + c.unit.slice(1)}</th><th>Activity</th><th class="num">People</th><th class="num">Registered</th></tr></thead><tbody>${d.recent.map(v => html`<tr><td class="small">${v.on_date}</td><td>${v.college}</td><td>${v.unit || '–'}</td><td class="small">${c.types[v.type] || v.type}${v.note ? html`<div class="muted xs">${v.note}</div>` : ''}</td><td class="num">${v.people}</td><td class="num">${v.registered}</td></tr>`)}</tbody></table></div>` : html`<p class="muted small">No visit has been recorded yet.</p>`}
+      ${d.recent.length ? html`<div class="tablewrap"><table data-nosort><thead><tr><th>Date</th><th>Institution</th><th>${c.unit[0].toUpperCase() + c.unit.slice(1)}</th><th>Activity</th><th class="num">People</th><th class="num">Registered</th><th>Volunteers</th></tr></thead><tbody>${d.recent.map(v => html`<tr><td class="small">${v.on_date}</td><td>${v.college}</td><td>${v.unit || '–'}</td><td class="small">${c.types[v.type] || v.type}${v.note ? html`<div class="muted xs">${v.note}</div>` : ''}</td><td class="num">${v.people}</td><td class="num">${v.registered}</td><td class="small">${v.volunteers?.length ? html`<b>${v.volunteers.length}</b> <span class="muted">${v.volunteers.join(', ')}</span>` : '–'}</td></tr>`)}</tbody></table></div>` : html`<p class="muted small">No visit has been recorded yet.</p>`}
       ${isSuper() ? html`<div style="margin-top:14px"><button class="btn ghost danger" data-act="dvClear">${icon('trash')} Empty this list</button></div>` : ''}</div>`);
   }
 }
 actions.dvFree = () => { DV.only = DV.only ? '' : 'free'; dvBody(); };
 // ---- adding and editing ----
 const dvForm = (d, u = {}) => html`<form data-form="dvUnitF" data-id="${u.id || ''}" class="stack-s">
-  <label class="f"><span>Name *</span><input name="name" required maxlength="120" value="${esc(u.name || '')}" placeholder="${d.cfg.unit === 'settlement' ? 'e.g. the name of the settlement' : 'e.g. the name of the landing centre'}"></label>
+  <label class="f"><span>Name *</span><input name="name" required maxlength="120" value="${esc(u.name || '')}" placeholder="${d.cfg.placeholder || ''}"></label>
   <div class="grid g2"><label class="f"><span>Type</span><select name="kind">${d.cfg.kinds.map(k => html`<option ${u.kind === k ? 'selected' : ''}>${k}</option>`)}</select></label><label class="f"><span>Village</span><input name="village" maxlength="80" value="${esc(u.village || '')}"></label>
   <label class="f"><span>Local body (panchayat, municipality or corporation)</span><input name="lsgd" maxlength="100" value="${esc(u.lsgd || '')}"></label><label class="f"><span>Ward</span><input name="ward" maxlength="12" value="${esc(u.ward || '')}"></label>
-  <label class="f"><span>People living there (approx.)</span><input name="population" type="number" min="0" value="${u.population || ''}"></label><label class="f"><span>Households</span><input name="households" type="number" min="0" value="${u.households || ''}"></label>
+  <label class="f"><span>${d.cfg.pop || 'People living there (approx.)'}</span><input name="population" type="number" min="0" value="${u.population || ''}"></label><label class="f"><span>Households</span><input name="households" type="number" min="0" value="${u.households || ''}"></label>
   <label class="f"><span>Contact person (promoter, ward member, president…)</span><input name="contact_name" maxlength="80" value="${esc(u.contact_name || '')}"></label><label class="f"><span>Contact phone</span><input name="contact_phone" inputmode="tel" maxlength="15" value="${esc(u.contact_phone || '')}"></label></div>
   <label class="f"><span>Address or landmark</span><input name="address" maxlength="200" value="${esc(u.address || '')}"></label><label class="f"><span>Note</span><input name="note" maxlength="300" value="${esc(u.note || '')}"></label>
   ${u.id ? html`<div class="row" style="justify-content:space-between"><button type="button" class="btn ghost danger" data-act="dvDelete" data-id="${u.id}">${icon('trash')} Delete</button><span></span></div>` : ''}${mfoot(u.id ? 'Save' : 'Add')}</form>`;
@@ -90,7 +90,7 @@ async function dvImport(file) {
 }
 actions.dvTemplate = () => {
   const c = DV.d.cfg, text = '﻿' + 'Name,Type,Local body,Ward,Village,Population,Households,Contact person,Contact phone,Address,Note\r\n' + `"Example ${c.unit}","${c.kinds[0]}","Example Panchayat",5,"Example village",120,34,"Ward member",9XXXXXXXXX,"Near the school",""\r\n`;
-  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv' })); a.download = (DV.k === 'sea' ? 'sea-your-vote' : 'vote-unnathi') + '-template.csv'; a.click();
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv' })); a.download = (DV.d.cfg.slug || DV.k) + '-template.csv'; a.click();
 };
 // ---- allotment ----
 const dvAllotModal = (ids, title) => {

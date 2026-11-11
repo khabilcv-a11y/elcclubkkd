@@ -1,4 +1,4 @@
-// Vote Unnathi and Sea Your Vote: the places of each drive, their allotment to institutions, and the visits an institution records. Only the
+// Vote Unnathi, Sea Your Vote and the Vote Unbound welfare institutions: the places of each drive, their allotment to institutions, and the visits an institution records. Only the
 // units allotted to an institution are ever sent to it, and it can only record visits for those.
 import { route } from '../lib/router.js';
 import { log } from '../lib/db.js';
@@ -13,6 +13,21 @@ const slog = (ctx, a, d) => log(ctx.db, 'staff', ctx.user.username, ctx.user.rol
 const clog = (ctx, a, d) => log(ctx.db, 'college', ctx.college.name, null, a, d, ctx.ip);
 const whole = (v, max = 1e6) => { const n = Math.round(Number(v)); return Number.isFinite(n) && n >= 0 && n <= max ? n : 0; };
 const ukey = u => `${normName(u.name)}|${normName(u.lsgd)}|${u.ward}`;
+// the volunteers of a visit, kept as a JSON list of names
+const volsOf = v => { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a.map(String) : []; } catch { return []; } };
+function cleanVols(v) {
+  const list = Array.isArray(v) ? v : String(v || '').split(/[,\n;]/), seen = new Set(), out = [];
+  for (const x of list) { const nm = str(x, 80), key = nm.toLowerCase(); if (nm && !seen.has(key)) { seen.add(key); out.push(nm); } if (out.length >= 80) break; }
+  return out;
+}
+// names this institution has used before (earlier drive visits, help desk and other activities, its student list), most recent first
+async function knownNames(db, collegeId) {
+  const [visits, acts, pool] = await Promise.all([db.all('SELECT volunteers FROM drive_visits WHERE college_id=? ORDER BY id DESC LIMIT 200', collegeId),
+    db.all('SELECT name,MAX(date) last FROM activity_log WHERE college_id=? GROUP BY name ORDER BY last DESC LIMIT 300', collegeId), db.all('SELECT name FROM pool WHERE college_id=? AND active=1 ORDER BY name', collegeId)]);
+  const seen = new Set(), out = [];
+  for (const nm of [...visits.flatMap(v => volsOf(v.volunteers)), ...acts.map(r => r.name), ...pool.map(r => r.name)]) { const t = String(nm || '').trim(), key = t.toLowerCase(); if (key && !seen.has(key)) { seen.add(key); out.push(t); } }
+  return out.slice(0, 500);
+}
 const phoneOf = v => { const d = String(v || '').replace(/\D/g, ''); return d.length >= 10 ? d.slice(-10) : ''; };
 function cleanUnit(r, d) {
   const name = str(r.name, 120); if (!name) return null;
@@ -37,7 +52,8 @@ route('GET', '/api/staff/drives/:drive/overview', 'staff', async ctx => {
   const out = units.map(u => { const a = al.get(u.id), v = vm.get(u.id) || {}; return { ...u, alloc_id: a?.id || null, college_id: a?.college_id || null, college: a?.college || '', status: a ? a.status : '', visits: v.n || 0, people: v.people || 0, registered: v.registered || 0, last: v.last || '' }; });
   const prog = new Map();
   for (const u of out) if (u.college_id) { if (!prog.has(u.college_id)) prog.set(u.college_id, { id: u.college_id, name: u.college, units: 0, doing: 0, done: 0, visits: 0, people: 0, registered: 0, last: '' }); const p = prog.get(u.college_id); p.units++; if (u.status === 'doing') p.doing++; if (u.status === 'done') p.done++; p.visits += u.visits; p.people += u.people; p.registered += u.registered; if (u.last > p.last) p.last = u.last; }
-  const recent = await ctx.db.all('SELECT v.id,v.unit_id,v.on_date,v.type,v.people,v.registered,v.note,v.by_name,v.college_id,c.name college,u.name unit FROM drive_visits v JOIN colleges c ON c.id=v.college_id LEFT JOIN drive_units u ON u.id=v.unit_id WHERE v.drive=? ORDER BY v.id DESC LIMIT 25', k);
+  const recent = await ctx.db.all('SELECT v.id,v.unit_id,v.on_date,v.type,v.people,v.registered,v.note,v.by_name,v.volunteers,v.college_id,c.name college,u.name unit FROM drive_visits v JOIN colleges c ON c.id=v.college_id LEFT JOIN drive_units u ON u.id=v.unit_id WHERE v.drive=? ORDER BY v.id DESC LIMIT 25', k);
+  for (const r of recent) r.volunteers = volsOf(r.volunteers);
   return { cfg: d, status: STATUS, units: out, colleges: colleges.map(c => ({ id: c.id, name: c.name, lsgi: c.lsgi })), progress: [...prog.values()].sort((a, b) => a.name.localeCompare(b.name)), recent,
     totals: { units: out.length, allotted: out.filter(u => u.college_id).length, started: out.filter(u => u.visits || u.status === 'doing' || u.status === 'done').length, done: out.filter(u => u.status === 'done').length, people: out.reduce((s, u) => s + u.people, 0), registered: out.reduce((s, u) => s + u.registered, 0), population: out.reduce((s, u) => s + u.population, 0) } };
 });
@@ -114,10 +130,10 @@ route('POST', '/api/staff/drives/:drive/suggest', OPS, async ctx => {
 });
 route('GET', '/api/staff/drives/:drive/export', OPS, async ctx => {
   const d = drive(ctx), k = ctx.params.drive, esc = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
-  const rows = await ctx.db.all('SELECT v.on_date,c.name college,u.name unit,u.lsgd,u.ward,v.type,v.people,v.registered,v.by_name,v.note FROM drive_visits v JOIN colleges c ON c.id=v.college_id LEFT JOIN drive_units u ON u.id=v.unit_id WHERE v.drive=? ORDER BY v.on_date,v.id', k);
-  const text = '﻿' + [['Date', 'Institution', d.unit[0].toUpperCase() + d.unit.slice(1), 'Local body', 'Ward', 'Activity', 'People reached', 'New registrations helped', 'Recorded by', 'Note'], ...rows.map(r => [r.on_date, r.college, r.unit, r.lsgd, r.ward, d.types[r.type] || r.type, r.people, r.registered, r.by_name, r.note])].map(r => r.map(esc).join(',')).join('\r\n');
+  const rows = await ctx.db.all('SELECT v.on_date,c.name college,u.name unit,u.lsgd,u.ward,v.type,v.people,v.registered,v.by_name,v.note,v.volunteers FROM drive_visits v JOIN colleges c ON c.id=v.college_id LEFT JOIN drive_units u ON u.id=v.unit_id WHERE v.drive=? ORDER BY v.on_date,v.id', k);
+  const text = '﻿' + [['Date', 'College or school', d.unit[0].toUpperCase() + d.unit.slice(1), 'Local body', 'Ward', 'Activity', 'People reached', 'New registrations helped', 'Volunteers', 'Number of volunteers', 'Recorded by', 'Note'], ...rows.map(r => { const vs = volsOf(r.volunteers); return [r.on_date, r.college, r.unit, r.lsgd, r.ward, d.types[r.type] || r.type, r.people, r.registered, vs.join(', '), vs.length, r.by_name, r.note]; })].map(r => r.map(esc).join(',')).join('\r\n');
   await slog(ctx, `${k}_export`, rows.length + ' visits');
-  return { __raw: true, text, headers: { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="${k === 'sea' ? 'sea-your-vote' : 'vote-unnathi'}-visits.csv"` } };
+  return { __raw: true, text, headers: { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="${d.slug}-visits.csv"` } };
 });
 route('POST', '/api/staff/drives/:drive/clear', ['super_admin'], async ctx => {
   drive(ctx); if (String(ctx.body.confirm || '') !== 'DELETE') throw bad('Type DELETE to confirm');
@@ -133,20 +149,23 @@ route('GET', '/api/college/drives/:drive', 'college', async ctx => {
       (SELECT COUNT(*) FROM drive_visits v WHERE v.unit_id=u.id AND v.college_id=a.college_id) visits, (SELECT COALESCE(SUM(people),0) FROM drive_visits v WHERE v.unit_id=u.id AND v.college_id=a.college_id) people,
       (SELECT COALESCE(SUM(registered),0) FROM drive_visits v WHERE v.unit_id=u.id AND v.college_id=a.college_id) registered, (SELECT MAX(on_date) FROM drive_visits v WHERE v.unit_id=u.id AND v.college_id=a.college_id) last
     FROM drive_alloc a JOIN drive_units u ON u.id=a.unit_id WHERE a.drive=? AND a.college_id=? ORDER BY u.lsgd,u.ward,u.name`, k, ctx.college.id);
-  return { cfg: d, status: STATUS, allotted: units.length > 0, units, stats: { units: units.length, started: units.filter(u => u.status !== 'todo').length, done: units.filter(u => u.status === 'done').length, visits: units.reduce((s, u) => s + u.visits, 0), people: units.reduce((s, u) => s + u.people, 0), registered: units.reduce((s, u) => s + u.registered, 0) } };
+  return { cfg: d, status: STATUS, allotted: units.length > 0, units, suggestions: units.length ? await knownNames(ctx.db, ctx.college.id) : [], stats: { units: units.length, started: units.filter(u => u.status !== 'todo').length, done: units.filter(u => u.status === 'done').length, visits: units.reduce((s, u) => s + u.visits, 0), people: units.reduce((s, u) => s + u.people, 0), registered: units.reduce((s, u) => s + u.registered, 0) } };
 });
 route('GET', '/api/college/drives/:drive/unit/:id', 'college', async ctx => {
   drive(ctx); const u = await mineUnit(ctx, ctx.params.id); if (!u) throw new HttpError(404, 'Not found');
-  return { visits: await ctx.db.all('SELECT id,on_date,type,people,registered,note,by_name FROM drive_visits WHERE unit_id=? AND college_id=? ORDER BY on_date DESC,id DESC LIMIT 50', u.id, ctx.college.id) };
+  const visits = await ctx.db.all('SELECT id,on_date,type,people,registered,note,by_name,volunteers FROM drive_visits WHERE unit_id=? AND college_id=? ORDER BY on_date DESC,id DESC LIMIT 50', u.id, ctx.college.id);
+  for (const v of visits) v.volunteers = volsOf(v.volunteers);
+  return { visits };
 });
 route('POST', '/api/college/drives/:drive/visit', 'college', async ctx => {
   const d = drive(ctx), b = ctx.body, u = await mineUnit(ctx, b.unit_id); if (!u) throw new HttpError(403, `This ${d.unit} is not allotted to you.`);
   if (!d.types[b.type]) throw bad('Choose what was done');
   if (!isDate(b.on_date) || b.on_date > todayStr()) throw bad('Choose the date of the visit (not a future date)');
   const people = whole(b.people, 100000), registered = whole(b.registered, 100000); if (registered > people) throw bad('New registrations cannot be more than the people reached');
-  await ctx.db.insert('INSERT INTO drive_visits(drive,unit_id,college_id,on_date,type,people,registered,note,by_name,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)', ctx.params.drive, u.id, ctx.college.id, b.on_date, b.type, people, registered, str(b.note, 400), str(ctx.college.coordinator || ctx.college.name, 80), nowIso());
+  const vols = cleanVols(b.volunteers);
+  await ctx.db.insert('INSERT INTO drive_visits(drive,unit_id,college_id,on_date,type,people,registered,note,by_name,created_at,volunteers) VALUES (?,?,?,?,?,?,?,?,?,?,?)', ctx.params.drive, u.id, ctx.college.id, b.on_date, b.type, people, registered, str(b.note, 400), str(ctx.college.coordinator || ctx.college.name, 80), nowIso(), JSON.stringify(vols));
   if (u.status === 'todo') await ctx.db.run("UPDATE drive_alloc SET status='doing',updated_at=? WHERE id=?", nowIso(), u.alloc_id);
-  await clog(ctx, `${ctx.params.drive}_visit`, `${u.name}: ${d.types[b.type]}, ${people} people`); return { ok: true };
+  await clog(ctx, `${ctx.params.drive}_visit`, `${u.name}: ${d.types[b.type]}, ${people} people, ${vols.length} volunteers`); return { ok: true };
 });
 route('POST', '/api/college/drives/:drive/status', 'college', async ctx => {
   const d = drive(ctx), u = await mineUnit(ctx, ctx.body.unit_id); if (!u) throw new HttpError(403, `This ${d.unit} is not allotted to you.`);

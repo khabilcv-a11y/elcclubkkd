@@ -196,6 +196,8 @@ const setUnauth = fn => { onUnauth = e => { sessClear(); fn(e); }; };
 actions.sessStay = async () => { await apiCall('/api/session/extend', 'POST'); hideSessWarn(); toast('You are still signed in'); };
 function handleErr(err) { if (err.status === 401) return onUnauth(err); toast(err.message || 'Something went wrong', true); }
 const fd = form => Object.fromEntries(new FormData(form).entries());
+// the Cancel / Save row at the foot of a form in a popup (staff console and college workspace)
+const mfoot = (label, cls = 'primary') => html`<div data-err></div><div class="row" style="justify-content:flex-end;margin-top:14px"><button type="button" class="btn secondary" data-act="closeModal">Cancel</button><button class="btn ${cls}" type="submit">${label}</button></div>`;
 actions.closeModal = el => el.closest('.overlay').close();
 actions.dropdown = el => { const d = el.closest('.dropdown'); d.classList.toggle('open'); el.setAttribute('aria-expanded', d.classList.contains('open')); };
 document.addEventListener('click', e => { if (!e.target.closest('.dropdown')) $$('.dropdown.open').forEach(d => { d.classList.remove('open'); $('[aria-expanded]', d)?.setAttribute('aria-expanded', 'false'); }); });
